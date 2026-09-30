@@ -210,7 +210,7 @@ export class IntroScene implements View {
       new THREE.MeshStandardMaterial({ map: cloudTexture(), transparent: true, depthWrite: false }),
     );
     // Tilt so the launch pad at the top of the globe sits at mid-latitudes rather than on the ice cap.
-    this.earth.rotation.x = this.clouds.rotation.x = 1.05;
+    this.earth.rotation.x = this.clouds.rotation.x = -1.05;
     this.atmo = atmosphere(EARTH_R * 1.07, 0x4aa3ff);
     this.scene.add(this.earth, this.clouds, this.atmo);
 

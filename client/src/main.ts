@@ -29,7 +29,7 @@ const timer = new THREE.Timer();
 let introOverlay: IntroOverlay | null = null;
 renderer.setAnimationLoop((time) => {
   timer.update(time);
-  const dt = Math.min(timer.getDelta(), 0.05);
+  const dt = Math.min(timer.getDelta(), 0.1);
   view.update(dt);
   view.render();
   introOverlay?.setCaption(intro.caption());
