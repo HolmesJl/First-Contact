@@ -11,7 +11,7 @@ const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.95;
 
 const intro = new IntroScene(renderer);
 let view: View = intro;
@@ -25,10 +25,11 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-const clock = new THREE.Clock();
+const timer = new THREE.Timer();
 let introOverlay: IntroOverlay | null = null;
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
+renderer.setAnimationLoop((time) => {
+  timer.update(time);
+  const dt = Math.min(timer.getDelta(), 0.05);
   view.update(dt);
   view.render();
   introOverlay?.setCaption(intro.caption());

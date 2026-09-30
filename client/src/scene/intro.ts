@@ -12,6 +12,8 @@ export const CAPTIONS: { from: number; to: number; text: string }[] = [
 ];
 
 const EARTH_R = 20;
+const SPACE = new THREE.Color(0x02030a);
+const SKY = new THREE.Color(0x2f6fb8);
 const MOON_POS = new THREE.Vector3(150, 18, -290);
 const SHIP_POS = new THREE.Vector3(118, 26, -245);
 
@@ -134,7 +136,15 @@ class Exhaust {
       geo,
       new THREE.PointsMaterial({
         color: new THREE.Color(0xffb070).multiplyScalar(1.6),
-        size: 0.22,
+        map: canvasTexture(64, 64, (ctx) => {
+          const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+          g.addColorStop(0, 'rgba(255,255,255,1)');
+          g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, 64, 64);
+        }),
+        size: 0.14,
         transparent: true,
         opacity: 0.75,
         blending: THREE.AdditiveBlending,
@@ -174,6 +184,7 @@ export class IntroScene implements View {
   private earth: THREE.Mesh;
   private clouds: THREE.Mesh;
   private moon: THREE.Mesh;
+  private atmo: THREE.Mesh;
   private rocket = buildRocket();
   private exhaust = new Exhaust();
   private shipUpdate: (dt: number) => void;
@@ -198,7 +209,10 @@ export class IntroScene implements View {
       new THREE.SphereGeometry(EARTH_R * 1.012, 64, 48),
       new THREE.MeshStandardMaterial({ map: cloudTexture(), transparent: true, depthWrite: false }),
     );
-    this.scene.add(this.earth, this.clouds, atmosphere(EARTH_R * 1.07, 0x4aa3ff));
+    // Tilt so the launch pad at the top of the globe sits at mid-latitudes rather than on the ice cap.
+    this.earth.rotation.x = this.clouds.rotation.x = 1.05;
+    this.atmo = atmosphere(EARTH_R * 1.07, 0x4aa3ff);
+    this.scene.add(this.earth, this.clouds, this.atmo);
 
     this.moon = new THREE.Mesh(new THREE.SphereGeometry(9, 40, 28), new THREE.MeshStandardMaterial({ map: moonTexture(), roughness: 1, flatShading: true }));
     this.moon.position.copy(MOON_POS);
@@ -269,6 +283,8 @@ export class IntroScene implements View {
     this.exhaust.update(dt);
 
     if (this.mode === 'idle') {
+      this.atmo.visible = true;
+      this.scene.background = SPACE;
       const a = this.t * 0.02;
       this.camera.position.set(-38 + Math.sin(a) * 6, 16 + Math.sin(a * 0.7) * 3, 52);
       this.camera.lookAt(35, 4, -120);
@@ -285,16 +301,16 @@ export class IntroScene implements View {
     const burning = t > 0.6 && u < 0.97;
     this.rocket.flame.visible = burning;
     this.rocket.flame.scale.setScalar(0.8 + Math.random() * 0.4);
-    if (burning) this.exhaust.emit(pos.clone().addScaledVector(tan, -0.6), tan.clone().negate(), t < 4 ? 6 : 3);
+    if (burning) this.exhaust.emit(pos.clone().addScaledVector(tan, -0.75), tan.clone().negate(), t < 4 ? 4 : 2);
     rocket.visible = u < 0.995;
     rocket.scale.setScalar(u > 0.93 ? Math.max(0.01, 1 - (u - 0.93) / 0.06) : 1);
 
     const up = new THREE.Vector3(0, 1, 0);
     const side = new THREE.Vector3().crossVectors(tan, up).normalize();
-    const camA = new THREE.Vector3(2.2, EARTH_R + 0.9, 3.2);
-    const lookA = pos.clone();
-    const camB = pos.clone().addScaledVector(tan, -5).addScaledVector(up, 1.4).addScaledVector(side, 1.8);
-    const lookB = pos.clone().addScaledVector(tan, 14);
+    const camA = new THREE.Vector3(3.2, EARTH_R + 1.3, 4.6);
+    const lookA = pos.clone().add(new THREE.Vector3(0, 0.6, 0));
+    const camB = pos.clone().addScaledVector(tan, -3.2).addScaledVector(up, 0.7).addScaledVector(side, 1.1);
+    const lookB = pos.clone().addScaledVector(tan, 8);
     const camC = SHIP_POS.clone().add(new THREE.Vector3(-30, 9, 28));
     const lookC = SHIP_POS.clone().lerp(pos, 0.25);
 
@@ -305,6 +321,8 @@ export class IntroScene implements View {
     if (t > 11.6) this.camera.position.add(new THREE.Vector3(1, 0.2, -0.6).multiplyScalar((t - 11.6) * 1.4));
     const look = new THREE.Vector3().addScaledVector(lookA, wA).addScaledVector(lookB, wB).addScaledVector(lookC, wC);
     this.camera.lookAt(look);
+    this.atmo.visible = this.camera.position.length() > EARTH_R * 1.08;
+    this.scene.background = this.atmo.visible ? SPACE : SKY.clone().lerp(SPACE, smoothstep(EARTH_R + 1, EARTH_R * 1.08, this.camera.position.length()));
 
     if (t >= INTRO_LENGTH) this.finish();
   }

@@ -88,7 +88,7 @@ export class LabScene implements View {
     });
     this.holo.add(ship);
     this.shipUpdate = update;
-    this.composer = makeComposer(renderer, this.scene, this.camera, { strength: 0.55, radius: 0.45, threshold: 0.82 });
+    this.composer = makeComposer(renderer, this.scene, this.camera, { strength: 0.4, radius: 0.35, threshold: 1.1 });
     this.bindInput();
   }
 
@@ -96,10 +96,13 @@ export class LabScene implements View {
     const s = this.scene;
     s.background = new THREE.Color(0x04060c);
     s.fog = new THREE.Fog(0x04060c, 14, 34);
-    s.add(new THREE.HemisphereLight(0x9cc4ff, 0x1a1420, 0.9));
-    const key = new THREE.DirectionalLight(0xcfe3ff, 0.9);
-    key.position.set(4, 10, 6);
+    s.add(new THREE.HemisphereLight(0xb8ccf0, 0x1a1420, 0.5));
+    const key = new THREE.DirectionalLight(0xfff0e0, 1.5);
+    key.position.set(3, 9, 8);
     s.add(key);
+    const rim = new THREE.DirectionalLight(0x6fc8ff, 0.5);
+    rim.position.set(-4, 5, -8);
+    s.add(rim);
 
     const floorTex = canvasTexture(256, 256, (ctx) => {
       ctx.fillStyle = '#1a2130';
@@ -234,7 +237,7 @@ export class LabScene implements View {
 
     const glass = new THREE.Mesh(
       new THREE.CylinderGeometry(0.56, 0.56, 2.1, 24, 1, true),
-      new THREE.MeshStandardMaterial({ color: 0xbfefff, transparent: true, opacity: 0.16, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }),
+      new THREE.MeshStandardMaterial({ color: 0xbfefff, transparent: true, opacity: 0.09, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }),
     );
     glass.rotation.z = Math.PI / 2;
     glass.position.y = TUBE_Y;
@@ -247,7 +250,7 @@ export class LabScene implements View {
     fluidMesh.renderOrder = 1;
     g.add(fluidMesh);
 
-    const light = new THREE.PointLight(0x3fd0ff, 2.2, 4.5, 1.6);
+    const light = new THREE.PointLight(0x3fd0ff, 0.8, 3.5, 1.6);
     light.position.set(0, TUBE_Y, 0.7);
     g.add(light);
 
@@ -414,7 +417,7 @@ export class LabScene implements View {
     const x = TUBE_X[this.creatorTube];
     const narrow = this.camera.aspect < 0.9;
     if (narrow) return [new THREE.Vector3(x, 2.1, TUBE_Z + 5.2), new THREE.Vector3(x, 0.55, TUBE_Z)];
-    return [new THREE.Vector3(x + 0.25, 1.7, TUBE_Z + 2.9), new THREE.Vector3(x + 0.95, 1.22, TUBE_Z)];
+    return [new THREE.Vector3(x + 0.3, 1.75, TUBE_Z + 3.4), new THREE.Vector3(x + 1.05, 1.18, TUBE_Z)];
   }
 
   // ---- input ----
@@ -486,9 +489,9 @@ export class LabScene implements View {
 
     this.tubes.forEach((t, i) => {
       t.flash = Math.max(0, t.flash - dt * 0.8);
-      const pulse = 0.12 + Math.sin(this.time * 1.6 + i) * 0.03;
-      t.fluid.opacity = pulse + t.flash * 0.7;
-      t.light.intensity = 2 + Math.sin(this.time * 1.6 + i) * 0.3 + t.flash * 12;
+      const pulse = 0.06 + Math.sin(this.time * 1.6 + i) * 0.02;
+      t.fluid.opacity = pulse + t.flash * 0.6;
+      t.light.intensity = 0.8 + Math.sin(this.time * 1.6 + i) * 0.15 + t.flash * 10;
       const pos = t.bubbles.geometry.attributes.position as THREE.BufferAttribute;
       for (let k = 0; k < pos.count; k++) {
         let y = pos.getY(k) + dt * (0.18 + (k % 5) * 0.05);
