@@ -1,0 +1,14 @@
+{
+  "name": "@first-contact/tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline asset pipeline. Not needed to run the game; the built models are committed under client/public/models.",
+  "scripts": {
+    "build:characters": "node build-characters.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "sharp": "^0.34.0"
+  }
+}

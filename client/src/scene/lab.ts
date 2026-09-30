@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { canvasTexture, makeComposer, starfield, type View } from './common';
-import { animateRig, buildRig, disposeObject, floatRig, type Rig } from './character';
+import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { buildShip } from './ship';
 import { HOLO_TABLE, TUBE_COUNT, TUBE_X, TUBE_Y, TUBE_Z, clampToLab } from '../../../shared/lab';
 import { JOB_INFO, type Appearance, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
-const WALK_SPEED = 3.2;
-const RUN_SPEED = 5.6;
+const WALK_SPEED = 2.2;
+const RUN_SPEED = 4.8;
 const SEND_INTERVAL = 1 / 15;
 
 interface Entity {
@@ -20,6 +20,7 @@ interface Entity {
   tz: number;
   trot: number;
   moving: boolean;
+  speed: number;
   spawnFx: number;
 }
 
@@ -56,8 +57,8 @@ export class LabScene implements View {
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
   private camYaw = 0;
-  private camPitch = 0.42;
-  private camDist = 5.2;
+  private camPitch = 0.34;
+  private camDist = 3.9;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
   private drag: { id: number; x: number; y: number } | null = null;
@@ -323,12 +324,11 @@ export class LabScene implements View {
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, spawnFx: 0 };
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, spawnFx: 0 };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
       (rig.root.getObjectByName('shadow') as THREE.Object3D).visible = false;
-      if (!p.connected) rig.root.traverse((o) => ((o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined)?.color?.multiplyScalar(0.5));
       if (!isSelf) e.label = this.makeLabel(null, p.connected ? 'Forming…' : 'In stasis', false);
       if (e.label) {
         e.label.position.set(TUBE_X[p.tube] + 0.0, TUBE_Y + 0.95, TUBE_Z);
@@ -339,7 +339,7 @@ export class LabScene implements View {
       rig.root.position.set(pos.x, 0, pos.z);
       rig.root.rotation.y = pos.rot;
       e.label = this.makeLabel(p.character!.job, `${p.character!.firstName} ${p.character!.lastName}`, isSelf);
-      e.label.position.y = 2.12;
+      e.label.position.y = 2.08;
       rig.root.add(e.label);
       if (wasInTube) {
         e.spawnFx = 1;
@@ -358,7 +358,7 @@ export class LabScene implements View {
       e.label.element.remove();
     }
     e.rig.root.removeFromParent();
-    disposeObject(e.rig.root);
+    disposeRig(e.rig);
     this.entities.delete(id);
   }
 
@@ -383,6 +383,7 @@ export class LabScene implements View {
       if (id === this.selfId) continue;
       const e = this.entities.get(id);
       if (!e || e.inTube) continue;
+      e.speed = Math.hypot(x - e.tx, z - e.tz) * 15;
       e.tx = x;
       e.tz = z;
       e.trot = rot;
@@ -456,7 +457,7 @@ export class LabScene implements View {
     };
     const wheel = (e: WheelEvent) => {
       if (this.mode !== 'walk') return;
-      this.camDist = Math.min(9, Math.max(2.6, this.camDist + Math.sign(e.deltaY) * 0.5));
+      this.camDist = Math.min(9, Math.max(2.2, this.camDist + Math.sign(e.deltaY) * 0.5));
     };
     canvas.addEventListener('pointerdown', pd);
     canvas.addEventListener('pointermove', pm);
@@ -514,14 +515,14 @@ export class LabScene implements View {
       if (isSelf) {
         r.root.position.set(this.local.x, 0, this.local.z);
         r.root.rotation.y = lerpAngle(r.root.rotation.y, this.local.rot, 1 - Math.exp(-14 * dt));
-        animateRig(r, dt, this.local.moving, this.local.running ? 1.5 : 1);
+        animateRig(r, dt, this.local.moving, this.local.running ? 2 : 1);
       } else {
         const k = 1 - Math.exp(-12 * dt);
         r.root.position.x += (e.tx - r.root.position.x) * k;
         r.root.position.z += (e.tz - r.root.position.z) * k;
         r.root.rotation.y = lerpAngle(r.root.rotation.y, e.trot, k);
-        const speed = Math.hypot(e.tx - r.root.position.x, e.tz - r.root.position.z);
-        animateRig(r, dt, e.moving || speed > 0.05);
+        const lag = Math.hypot(e.tx - r.root.position.x, e.tz - r.root.position.z);
+        animateRig(r, dt, e.moving || lag > 0.05, e.speed / WALK_SPEED);
       }
       if (e.spawnFx > 0) {
         e.spawnFx = Math.max(0, e.spawnFx - dt * 0.9);
@@ -581,7 +582,7 @@ export class LabScene implements View {
       [pos, look] = this.creatorCamera();
       pos.y += Math.sin(this.time * 0.4) * 0.04;
     } else {
-      look = new THREE.Vector3(this.local.x, 1.35, this.local.z);
+      look = new THREE.Vector3(this.local.x, 1.45, this.local.z);
       const d = this.camDist;
       pos = new THREE.Vector3(
         look.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * d,

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Net } from './net';
 import { IntroScene } from './scene/intro';
 import { LabScene } from './scene/lab';
+import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CreatorPanel, Hud, IntroOverlay, TitleScreen, banner, flash, joystick, toast } from './ui';
 import type { ClientMsg, Job, PlayerState, ServerMsg } from '../../shared/protocol';
@@ -15,6 +16,7 @@ renderer.toneMappingExposure = 0.95;
 
 const intro = new IntroScene(renderer);
 let view: View = intro;
+const characters = preloadCharacters();
 
 function resize() {
   const w = window.innerWidth;
@@ -98,7 +100,10 @@ function onWelcome(m: Extract<ServerMsg, { t: 'welcome' }>) {
   title.destroy();
 
   const me = players.get(selfId)!;
-  if (me.character) return startLab();
+  if (me.character) {
+    void startLab();
+    return;
+  }
 
   introOverlay = new IntroOverlay(() => intro.skip());
   const onKey = (e: KeyboardEvent) => {
@@ -110,7 +115,7 @@ function onWelcome(m: Extract<ServerMsg, { t: 'welcome' }>) {
     introOverlay?.destroy();
     introOverlay = null;
     flash();
-    startLab();
+    void startLab();
   });
 }
 
@@ -118,7 +123,14 @@ function takenJobs(): Job[] {
   return [...players.values()].filter((p) => p.id !== selfId && p.character).map((p) => p.character!.job);
 }
 
-function startLab() {
+async function startLab() {
+  if (lab) return;
+  try {
+    await characters;
+  } catch {
+    banner('Could not load the crew models. Check your connection.', { label: 'Reload', run: () => location.reload() });
+    return;
+  }
   lab = new LabScene(renderer, document.getElementById('app')!, selfId, {
     onMove: (x, z, rot, moving) => net?.send({ t: 'move', x, z, rot, moving }),
   });
