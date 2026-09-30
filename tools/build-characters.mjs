@@ -55,7 +55,7 @@ const HAIR = {
   ],
 };
 
-const KEEP_CLIPS = ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop', 'Swim_Idle_Loop'];
+const KEEP_CLIPS = ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop'];
 
 const io = new NodeIO();
 

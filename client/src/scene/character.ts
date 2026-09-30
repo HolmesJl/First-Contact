@@ -10,7 +10,7 @@ import type { Appearance, Face, Sex } from '../../../shared/protocol';
  * painted face using UV landmarks.
  */
 
-type Clip = 'idle' | 'walk' | 'run' | 'float';
+type Clip = 'idle' | 'walk' | 'run';
 type BodyMorph = 'smile' | 'frown' | 'smirk' | 'press' | 'squint' | 'lids' | 'blink' | 'wink';
 type BrowMorph = 'browAngry' | 'browRaise' | 'browRaiseL';
 
@@ -132,7 +132,7 @@ function prepareClips(anims: GLTF, body: GLTF): Record<Clip, THREE.AnimationClip
     for (const t of clip.tracks) if (t.name === 'pelvis.position') for (let i = 0; i < t.values.length; i++) t.values[i] *= ratio;
     return clip;
   };
-  return { idle: pick('Idle_Loop'), walk: pick('Walk_Loop'), run: pick('Jog_Fwd_Loop'), float: pick('Swim_Idle_Loop') };
+  return { idle: pick('Idle_Loop'), walk: pick('Walk_Loop'), run: pick('Jog_Fwd_Loop') };
 }
 
 // ---------------------------------------------------------------- procedural face morphs
@@ -361,7 +361,6 @@ export function buildRig(app: Appearance | null): Rig {
     idle: mixer.clipAction(clips.idle),
     walk: mixer.clipAction(clips.walk),
     run: mixer.clipAction(clips.run),
-    float: mixer.clipAction(clips.float),
   };
   const offset = Math.random() * 3;
   for (const a of Object.values(actions)) a.time = offset;
@@ -457,7 +456,7 @@ export function animateRig(rig: Rig, dt: number, moving: boolean, speed = 1) {
 /** Relaxed floating pose for figures inside a tube. */
 export function floatRig(rig: Rig, dt: number) {
   rig.time += dt;
-  play(rig, 'float', 0.6);
+  play(rig, 'idle', 0.45);
   rig.mixer.update(dt);
   updateFace(rig, dt);
 }
