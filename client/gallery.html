@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>First Contact · Character gallery (dev)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #04060c; overflow: hidden; font-family: Inter, system-ui, sans-serif; }
+      canvas { display: block; }
+      .labels { position: fixed; inset: 0; pointer-events: none; }
+      .labels div { position: absolute; color: #cfe3ff; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; transform: translateX(-50%); text-shadow: 0 1px 3px #000; }
+      .title { position: fixed; top: 10px; left: 14px; color: #5ee7ff; font: 700 13px Inter, sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+    </style>
+  </head>
+  <body>
+    <div class="title" id="title"></div>
+    <div class="labels" id="labels"></div>
+    <script type="module" src="/src/gallery.ts"></script>
+  </body>
+</html>
