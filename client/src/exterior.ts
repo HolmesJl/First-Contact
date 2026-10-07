@@ -1,6 +1,6 @@
 /**
  * Dev-only ship exterior viewer: /exterior.html
- * Query params: view=hero|bow|stern|port|starboard|top|bottom, spin=1, labels=1, docks=1, ui=0.
+ * Query params: view=hero|bow|stern|port|starboard|top|bottom, spin=1, labels=1, docks=1, explode=<amount>, ui=0.
  * Frame in the layout data: +x starboard, +z bow, stern (-z) at the top of the top view.
  */
 import * as THREE from 'three';
@@ -56,8 +56,14 @@ const ship = buildShipExterior();
 scene.add(ship.root);
 
 const target = new THREE.Vector3();
-ship.bounds.getCenter(target);
-target.y = 0.4 * target.y;
+let explodeTarget = 0;
+let explodeCur = 0;
+function retarget() {
+  (explodeTarget > 0 ? ship.boundsAt(explodeTarget) : ship.bounds).getCenter(target);
+  target.y = 0.4 * target.y;
+}
+retarget();
+const distanceScale = () => 1 + 0.5 * explodeTarget;
 
 const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 1, 3000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -106,7 +112,7 @@ function setView(name: string, animate = true) {
   if (!animate) {
     tween = null;
     controls.target.copy(target);
-    placeCamera(p.azimuth, p.elevation, p.distance);
+    placeCamera(p.azimuth, p.elevation, p.distance * distanceScale());
     current = p;
     return;
   }
@@ -114,7 +120,7 @@ function setView(name: string, animate = true) {
   const from = currentSpherical();
   let da = p.azimuth - from.azimuth;
   da = ((((da + 180) % 360) + 360) % 360) - 180;
-  tween = { from: { ...from, azimuth: p.azimuth - da }, to: p, t: 0 };
+  tween = { from: { ...from, azimuth: p.azimuth - da }, to: { ...p, distance: p.distance * distanceScale() }, t: 0 };
   current = p;
 }
 
@@ -134,12 +140,41 @@ function setSpin(on: boolean) {
 }
 spinBtn.addEventListener('click', () => setSpin(!controls.autoRotate));
 
+const explodeBtn = document.getElementById('explodeBtn') as HTMLButtonElement;
+const explodeBox = document.getElementById('explodeBox')!;
+const explodeAmt = document.getElementById('explodeAmt') as HTMLInputElement;
+function setExploded(on: boolean, amount = Number(explodeAmt.value)) {
+  explodeTarget = on ? amount : 0;
+  explodeBtn.classList.toggle('on', on);
+  explodeBox.classList.toggle('show', on);
+  document.body.classList.toggle('exploded', on);
+  retarget();
+  setView(Object.entries(PRESETS).find(([, p]) => p === current)?.[0] ?? 'hero');
+}
+explodeBtn.addEventListener('click', () => setExploded(explodeTarget === 0));
+explodeAmt.addEventListener('input', () => {
+  if (explodeTarget > 0) {
+    explodeTarget = Number(explodeAmt.value);
+    retarget();
+    setView(Object.entries(PRESETS).find(([, p]) => p === current)?.[0] ?? 'hero');
+  }
+});
+
+const leadersEl = document.getElementById('leaders')!;
 const labelsEl = document.getElementById('labels')!;
+const SVG_NS = 'http://www.w3.org/2000/svg';
 const labelNodes = ship.labels.map((l) => {
   const d = document.createElement('div');
   d.textContent = l.text;
   labelsEl.appendChild(d);
   return d;
+});
+const leaderLines = ship.labels.map(() => {
+  const line = document.createElementNS(SVG_NS, 'line');
+  const dot = document.createElementNS(SVG_NS, 'circle');
+  dot.setAttribute('r', '3.5');
+  leadersEl.append(line, dot);
+  return { line, dot };
 });
 let labelsOn = false;
 const labelsBtn = document.getElementById('labelsBtn') as HTMLButtonElement;
@@ -147,6 +182,7 @@ function setLabels(on: boolean) {
   labelsOn = on;
   labelsBtn.classList.toggle('on', on);
   labelsEl.style.display = on ? '' : 'none';
+  leadersEl.style.display = on ? '' : 'none';
 }
 labelsBtn.addEventListener('click', () => setLabels(!labelsOn));
 
@@ -161,6 +197,13 @@ setLabels(params.get('labels') === '1');
 setDocks(params.get('docks') === '1');
 setView(params.get('view') && PRESETS[params.get('view')!] ? params.get('view')! : 'hero', false);
 if (params.get('spin') === '1') setSpin(true);
+if (params.get('explode')) {
+  explodeAmt.value = params.get('explode')!;
+  explodeCur = explodeTarget = Number(explodeAmt.value);
+  ship.setExplode(explodeCur);
+  setExploded(true);
+  setView(params.get('view') && PRESETS[params.get('view')!] ? params.get('view')! : 'hero', false);
+}
 
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
@@ -190,14 +233,47 @@ function frame(time?: number) {
   } else {
     controls.update(dt);
   }
+  if (Math.abs(explodeCur - explodeTarget) > 1e-3) {
+    explodeCur += (explodeTarget - explodeCur) * Math.min(1, dt * 5);
+    if (Math.abs(explodeCur - explodeTarget) <= 1e-3) explodeCur = explodeTarget;
+    ship.setExplode(explodeCur);
+  }
   if (labelsOn) {
+    const lift = explodeTarget > 0 ? 34 : 0;
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     ship.labels.forEach((l, i) => {
       tmp.copy(l.position).project(camera);
       const node = labelNodes[i];
+      const { line, dot } = leaderLines[i];
       const visible = tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1;
       node.style.display = visible ? '' : 'none';
-      node.style.left = `${((tmp.x + 1) / 2) * innerWidth}px`;
-      node.style.top = `${((1 - tmp.y) / 2) * innerHeight}px`;
+      const lx = ((tmp.x + 1) / 2) * innerWidth;
+      let ly = ((1 - tmp.y) / 2) * innerHeight - lift;
+      if (visible && lift > 0) {
+        const hw = node.offsetWidth / 2 + 4;
+        const hh = node.offsetHeight / 2 + 2;
+        for (let tries = 0; tries < 8; tries++) {
+          const hit = placed.find((r) => lx + hw > r.x0 && lx - hw < r.x1 && ly + hh > r.y0 && ly - hh < r.y1);
+          if (!hit) break;
+          ly = hit.y0 - hh - 1;
+        }
+        placed.push({ x0: lx - hw, x1: lx + hw, y0: ly - hh, y1: ly + hh });
+      }
+      node.style.left = `${lx}px`;
+      node.style.top = `${ly}px`;
+      const showLeader = visible && lift > 0;
+      line.style.display = dot.style.display = showLeader ? '' : 'none';
+      if (showLeader) {
+        tmp.copy(l.anchor).project(camera);
+        const ax = ((tmp.x + 1) / 2) * innerWidth;
+        const ay = ((1 - tmp.y) / 2) * innerHeight;
+        line.setAttribute('x1', String(lx));
+        line.setAttribute('y1', String(ly + 11));
+        line.setAttribute('x2', String(ax));
+        line.setAttribute('y2', String(ay));
+        dot.setAttribute('cx', String(ax));
+        dot.setAttribute('cy', String(ay));
+      }
     });
   }
   renderer.render(scene, camera);
@@ -214,5 +290,16 @@ renderer.setAnimationLoop(frame);
     placeCamera(azimuth, elevation, distance);
     renderer.render(scene, camera);
   },
+  /** Instantly apply an explode amount (0 = assembled) and re-aim the camera at the current preset. */
+  setExploded: (amount: number) => {
+    explodeAmt.value = String(amount || 1);
+    explodeCur = explodeTarget = amount;
+    ship.setExplode(amount);
+    explodeBtn.classList.toggle('on', amount > 0);
+    explodeBox.classList.toggle('show', amount > 0);
+    document.body.classList.toggle('exploded', amount > 0);
+    retarget();
+  },
+  setLabels,
   current: () => current,
 };

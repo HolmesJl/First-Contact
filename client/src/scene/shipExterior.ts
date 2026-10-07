@@ -5,6 +5,7 @@ import {
   type Corridor,
   type Dock,
   type Facing,
+  type ModuleId,
   type Rect,
   type Room,
   type ShipLayout,
@@ -18,7 +19,13 @@ import {
 
 export interface ExteriorLabel {
   text: string;
+  module: ModuleId;
+  /** Label point above the module (moves with the module when exploded). */
   position: THREE.Vector3;
+  /** Point inside the module that the leader line ends on. */
+  anchor: THREE.Vector3;
+  basePosition: THREE.Vector3;
+  baseAnchor: THREE.Vector3;
 }
 
 export interface ShipExterior {
@@ -27,6 +34,10 @@ export interface ShipExterior {
   docks: THREE.Group;
   labels: ExteriorLabel[];
   bounds: THREE.Box3;
+  /** Push modules outward from the Commons. 0 = assembled; 1 = default exploded; larger spreads further. */
+  setExplode(amount: number): void;
+  /** Bounds of the hull with the given explode amount applied (leaves the current amount untouched). */
+  boundsAt(amount: number): THREE.Box3;
 }
 
 type Pt = [number, number];
@@ -969,7 +980,25 @@ function buildEngine(ctx: Ctx) {
   return { flatTop: cy + r, flatRegion: null as Rect | null };
 }
 
-function buildModule(room: Room, group: THREE.Group, layout: ShipLayout, labels: ExteriorLabel[]) {
+const LABEL_NAMES: Record<string, string> = {
+  commons: 'Commons',
+  bay: 'Hibernation & cloning bay',
+  'fore-node': 'Fore node',
+  'aft-node': 'Aft node',
+  bridge: 'Bridge',
+  ops: 'Operations',
+  cabin: "Captain's cabin",
+  bunks: 'Bunk room',
+  'npc-dorm': 'NPC dorm',
+  greenhouse: 'Greenhouse',
+  medical: 'Medical lab',
+  hold: 'Hold',
+  science: 'Science lab',
+  hangar: 'Hangar (deck -2)',
+  engine: 'Engine',
+};
+
+function buildModule(room: Room, group: THREE.Group, layout: ShipLayout, labels: ExteriorLabel[], groups: Map<ModuleId, THREE.Group>) {
   const base = floorY(room.level);
   const { x, z } = rectCenter(room.outer);
   const { w, d } = rectSize(room.outer);
@@ -1017,8 +1046,18 @@ function buildModule(room: Room, group: THREE.Group, layout: ShipLayout, labels:
   if (room.id === 'science') ctx.g.add(dish(x - 2, base + 3.9, z + 3.5, 0.7));
 
   group.add(g);
+  groups.set(room.module, g);
   const labelY = base + (room.ceiling?.apex ?? room.height) + (room.id === 'engine' ? 6 : 2.2);
-  labels.push({ text: room.id, position: new THREE.Vector3(x, labelY, z) });
+  const pos = new THREE.Vector3(x, labelY, z);
+  const anchor = new THREE.Vector3(x, base + Math.min(room.height, 6) / 2, z);
+  labels.push({
+    text: LABEL_NAMES[room.id] ?? room.id,
+    module: room.module,
+    position: pos.clone(),
+    anchor: anchor.clone(),
+    basePosition: pos,
+    baseAnchor: anchor,
+  });
 }
 
 function buildHoldDetail(ctx: Ctx) {
@@ -1159,6 +1198,7 @@ function buildPort(dock: Dock, s: { x: number; z: number; nx: number; nz: number
   const R = dock.width / 2 + 0.1;
   const g = new THREE.Group();
   g.name = `port:${dock.id}`;
+  g.userData.module = dock.module;
   g.position.set(s.x + s.nx * 0.12, floorY(dock.level) + 1.6, s.z + s.nz * 0.12);
   g.rotation.y = Math.atan2(s.nx, s.nz);
   g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.22, 10, 36), mats.plain));
@@ -1186,6 +1226,7 @@ function buildPorts(layout: ShipLayout) {
     const s = dockSurface(dock, layout);
     ports.add(buildPort(dock, s));
     const m = new THREE.Group();
+    m.userData.module = dock.module;
     m.position.set(s.x, floorY(dock.level) + 1.6, s.z);
     m.rotation.y = Math.atan2(s.nx, s.nz);
     m.add(new THREE.Mesh(new THREE.PlaneGeometry(dock.width + 1, 3.6), markMat));
@@ -1228,14 +1269,99 @@ export function buildStars() {
   return new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xcfe0ff, size: 1.6, sizeAttenuation: false, fog: false, toneMapped: false }));
 }
 
+/* ------------------------------------------------------------------ explode */
+
+const EXPLODE_RADIAL = 0.7;
+const EXPLODE_DROP = 12;
+
+function moduleCenters(layout: ShipLayout) {
+  const centers = new Map<ModuleId, { x: number; z: number; level: number }>();
+  for (const m of layout.modules) {
+    for (const room of m.rooms) {
+      const c = rectCenter(room.outer);
+      centers.set(room.module, { x: c.x, z: c.z, level: room.level });
+    }
+  }
+  return centers;
+}
+
+interface Connector {
+  corridor: Corridor;
+  group: THREE.Group;
+  tube: THREE.Mesh;
+  rings: THREE.Mesh[];
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  modA: ModuleId;
+  modB: ModuleId;
+}
+
+function buildConnectors(layout: ShipLayout, root: THREE.Group) {
+  const centers = moduleCenters(layout);
+  const roomModule = new Map<string, ModuleId>();
+  for (const m of layout.modules) for (const room of m.rooms) roomModule.set(room.id, room.module);
+  roomModule.set('lift-commons', 'commons');
+
+  const ghostMat = new THREE.MeshStandardMaterial({ color: 0x8fa0ba, metalness: 0.2, roughness: 0.5, transparent: true, opacity: 0.38, emissive: 0x2a4a6a, emissiveIntensity: 0.6, depthWrite: false });
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x5ee7ff, toneMapped: false });
+  const unit = cylZ(1, 1, 1, 28);
+  const out: Connector[] = [];
+  const group = new THREE.Group();
+  group.name = 'connectors';
+  group.visible = false;
+  for (const c of layout.corridors) {
+    const y = floorY(c.level) + c.height / 2;
+    const { x, z } = rectCenter(c.outer);
+    const p1 = c.axis === 'z' ? new THREE.Vector3(x, y, c.outer.minZ) : new THREE.Vector3(c.outer.minX, y, z);
+    const p2 = c.axis === 'z' ? new THREE.Vector3(x, y, c.outer.maxZ) : new THREE.Vector3(c.outer.maxX, y, z);
+    const mA = roomModule.get(c.joins[0] as string)!;
+    const mB = roomModule.get(c.joins[1] as string)!;
+    const cA = centers.get(mA)!;
+    const cB = centers.get(mB)!;
+    const d1A = Math.hypot(p1.x - cA.x, p1.z - cA.z);
+    const d2A = Math.hypot(p2.x - cA.x, p2.z - cA.z);
+    const d1B = Math.hypot(p1.x - cB.x, p1.z - cB.z);
+    const d2B = Math.hypot(p2.x - cB.x, p2.z - cB.z);
+    const swap = d1A + d2B > d2A + d1B;
+    const a = swap ? p2 : p1;
+    const b = swap ? p1 : p2;
+    const g = new THREE.Group();
+    const tube = new THREE.Mesh(unit, ghostMat);
+    g.add(tube);
+    const rings = [0, 1].map(() => {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 32), ringMat);
+      g.add(r);
+      return r;
+    });
+    group.add(g);
+    out.push({ corridor: c, group: g, tube, rings, a, b, modA: mA, modB: mB });
+  }
+  root.add(group);
+  return { connectors: out, group, centers };
+}
+
+function explodeOffsets(centers: Map<ModuleId, { x: number; z: number; level: number }>, amount: number) {
+  const hub = centers.get('commons')!;
+  const out = new Map<ModuleId, THREE.Vector3>();
+  for (const [id, c] of centers) {
+    const k = EXPLODE_RADIAL * amount;
+    out.set(id, new THREE.Vector3((c.x - hub.x) * k, c.level < -1 ? (c.level / 2) * EXPLODE_DROP * amount : 0, (c.z - hub.z) * k));
+  }
+  return out;
+}
+
 export function buildShipExterior(layout: ShipLayout = SHIP_LAYOUT): ShipExterior {
   const root = new THREE.Group();
   root.name = 'ship-exterior';
   const labels: ExteriorLabel[] = [];
+  const groups = new Map<ModuleId, THREE.Group>();
 
-  for (const m of layout.modules) for (const room of m.rooms) buildModule(room, root, layout, labels);
-  for (const c of layout.corridors) buildCorridor(c, root);
-  buildPassThroughStrut(root, layout);
+  for (const m of layout.modules) for (const room of m.rooms) buildModule(room, root, layout, labels, groups);
+  const struts = new THREE.Group();
+  struts.name = 'struts';
+  for (const c of layout.corridors) buildCorridor(c, struts);
+  buildPassThroughStrut(struts, layout);
+  root.add(struts);
   buildLiftTrunk(layout, root);
 
   const { ports, markers } = buildPorts(layout);
@@ -1243,6 +1369,59 @@ export function buildShipExterior(layout: ShipLayout = SHIP_LAYOUT): ShipExterio
   markers.visible = false;
   root.add(markers);
 
+  const { connectors, group: connectorGroup, centers } = buildConnectors(layout, root);
+  const ghostScale = new THREE.Vector3();
+
+  const apply = (amount: number) => {
+    const off = explodeOffsets(centers, amount);
+    for (const [id, g] of groups) g.position.copy(off.get(id)!);
+    for (const holder of [ports, markers]) {
+      for (const child of holder.children) {
+        const o = off.get(child.userData.module as ModuleId);
+        if (o) child.position.copy(child.userData.base ??= child.position.clone()).add(o);
+      }
+    }
+    for (const l of labels) {
+      const o = off.get(l.module)!;
+      l.position.copy(l.basePosition).add(o);
+      l.anchor.copy(l.baseAnchor).add(o);
+    }
+    const exploded = amount > 0.001;
+    struts.visible = !exploded;
+    connectorGroup.visible = exploded;
+    if (exploded) {
+      for (const k of connectors) {
+        const a = k.a.clone().add(off.get(k.modA)!);
+        const b = k.b.clone().add(off.get(k.modB)!);
+        const len = a.distanceTo(b);
+        k.group.position.copy(a).add(b).multiplyScalar(0.5);
+        k.group.lookAt(b);
+        k.tube.scale.set(k.corridor.width / 2, STRUT_RY, Math.max(0.01, len));
+        k.rings[0].position.z = -len / 2;
+        k.rings[1].position.z = len / 2;
+        for (const r of k.rings) r.scale.set(k.corridor.width / 2 + 0.2, STRUT_RY + 0.2, 1);
+      }
+    }
+    void ghostScale;
+  };
+
   const bounds = new THREE.Box3().setFromObject(root);
-  return { root, docks: markers, labels, bounds };
+  const boundsAt = (amount: number) => {
+    apply(amount);
+    const b = new THREE.Box3().setFromObject(root);
+    apply(current);
+    return b;
+  };
+  let current = 0;
+  return {
+    root,
+    docks: markers,
+    labels,
+    bounds,
+    setExplode(amount: number) {
+      current = amount;
+      apply(amount);
+    },
+    boundsAt,
+  };
 }

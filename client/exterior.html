@@ -17,10 +17,18 @@
       button.on, button.active { background: #134a5c; border-color: #5ee7ff; color: #fff; }
       .labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
       .labels div { position: absolute; color: #eaf4ff; font: 600 11px Inter, system-ui, sans-serif; letter-spacing: .05em; padding: 1px 5px; background: rgba(8, 14, 26, .7); border-radius: 3px; transform: translate(-50%, -50%); white-space: nowrap; }
+      .leaders { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      .leaders line { stroke: rgba(150, 215, 255, .75); stroke-width: 1.2; }
+      .leaders circle { fill: #5ee7ff; }
+      body.exploded .labels div { font-size: 15px; padding: 2px 8px; background: rgba(8, 14, 26, .86); border: 1px solid rgba(94, 231, 255, .55); }
+      .slider { display: none; align-items: center; gap: 8px; color: #cfe3ff; font: 600 11px Inter, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; background: rgba(14, 22, 38, .82); border: 1px solid #2a3a58; border-radius: 6px; padding: 6px 12px; }
+      .slider.show { display: flex; }
+      .slider input { width: 120px; }
       body.clean .ui { display: none; }
     </style>
   </head>
   <body>
+    <svg class="leaders" id="leaders"></svg>
     <div class="labels" id="labels"></div>
     <div class="ui">
       <div class="title">
@@ -31,6 +39,8 @@
         <button id="spin">Turntable</button>
         <button id="labelsBtn">Labels</button>
         <button id="docksBtn">Docks</button>
+        <button id="explodeBtn">Exploded</button>
+        <label class="slider" id="explodeBox">Spread <input id="explodeAmt" type="range" min="0.3" max="1.6" step="0.05" value="1" /></label>
       </div>
       <div class="bar views" id="views"></div>
     </div>
