@@ -5,6 +5,10 @@
  * Frame: the hibernation and cloning bay is the origin (it keeps the old lab numbers).
  * +x = starboard, +z = bow, y up, level 0 floor at y = 0. Metres.
  * `outer` rects are wall centre lines (for rendering); `walk` rects are the walkable interiors.
+ *
+ * Revision 2 (exterior silhouette pass): rooms carry a `shape` and a `height`, the hangar and
+ * engine swapped places (hangar aft of the Commons with a pass-through, engine detached further
+ * aft), and an NPC dorm hangs off the bunk room. Deviations from ship-layout.md are listed in the PR.
  */
 
 export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -23,6 +27,7 @@ export type ModuleId =
   | 'greenhouse'
   | 'medical'
   | 'hold'
+  | 'npc-dorm'
   | 'aft-node'
   | 'science'
   | 'engine'
@@ -42,6 +47,7 @@ export type RoomId =
   | 'greenhouse'
   | 'medical'
   | 'hold'
+  | 'npc-dorm'
   | 'hangar';
 
 export type CorridorId =
@@ -51,6 +57,8 @@ export type CorridorId =
   | 'c-cabin'
   | 'c-aft'
   | 'c-engine'
+  | 'c-spine'
+  | 'c-dorm'
   | 'c-science'
   | 'c-quarters'
   | 'c-greenhouse'
@@ -63,8 +71,28 @@ export type SpaceId = RoomId | CorridorId;
 export type Job = 'captain' | 'engineer' | 'military' | 'doctor' | 'botanist';
 export type Facing = 'N' | 'S' | 'E' | 'W';
 
-/** Ceiling shape. Flat by default; the greenhouse is the first non-flat ceiling. */
-export type Ceiling = { kind: 'dome'; apex: number };
+/**
+ * Plan form of a module's hull.
+ * box: rectangle; wedge: trapezoid with a narrower nose (+z end); cylinder: round walls;
+ * spheroid: egg-shaped pod; drum: horizontal cylinder along z; hangar: tall block with a pass-through trench.
+ */
+export type ModuleShape = 'box' | 'wedge' | 'cylinder' | 'spheroid' | 'drum' | 'hangar';
+
+/**
+ * Roof form. `apex` is metres above the room's floor. Flat if absent.
+ * dome: glass dome; vault: barrel vault along x; hip: pyramid roof; shed: single slope rising toward the stern;
+ * rotunda: raised round clerestory; step: a smaller upper tier.
+ */
+export type Ceiling = { kind: 'dome' | 'vault' | 'hip' | 'shed' | 'rotunda' | 'step'; apex: number };
+
+/** A tunnel through a module that a strut continues along (the hangar's pass-through). */
+export interface PassThrough {
+  axis: 'z';
+  x: number;
+  width: number;
+  /** Level whose floor the passage runs at. */
+  level: Level;
+}
 
 export interface Room {
   id: RoomId;
@@ -72,10 +100,17 @@ export interface Room {
   level: Level;
   outer: Rect;
   walk: Rect;
-  /** Wall height in metres (floor to ceiling rim). */
+  shape: ModuleShape;
+  /** Wall height in metres (floor to wall top, the tallest flat part of the hull). */
   height: number;
-  /** Only set for non-flat ceilings. `apex` is metres above the floor. */
+  /** Decks stacked inside the module (the bridge has an upper deck later). */
+  storeys?: number;
+  /** Nose width in metres for `wedge` (the rear is the full outer width). */
+  nose?: number;
   ceiling?: Ceiling;
+  passThrough?: PassThrough;
+  /** False for modules that are hull only (the NPC dorm shows a status panel instead). */
+  walkable?: boolean;
   obstacles: Obstacle[];
   job?: Job;
 }
@@ -190,14 +225,14 @@ function mod(
   id: ModuleId,
   kind: ShipModule['kind'],
   level: Level,
-  room: Omit<Room, 'module' | 'level' | 'height' | 'obstacles'> & Partial<Pick<Room, 'height' | 'obstacles'>>,
+  room: Omit<Room, 'module' | 'level' | 'height' | 'obstacles' | 'shape'> & Partial<Pick<Room, 'height' | 'obstacles' | 'shape'>>,
 ): ShipModule {
   return {
     id,
     kind,
     level,
     frame: IDENTITY,
-    rooms: [{ module: id, level, height: WALL_HEIGHT, obstacles: [], ...room }],
+    rooms: [{ module: id, level, shape: 'box', height: WALL_HEIGHT, obstacles: [], ...room }],
     stations: [],
     spawns: [],
     berths: [],
@@ -205,33 +240,122 @@ function mod(
 }
 
 export const SHIP_LAYOUT: ShipLayout = {
-  version: 1,
+  version: 2,
   modules: [
     mod('commons', 'hub', 0, {
       id: 'commons',
       outer: R(-46.2, -30.2, -6.2, 7.3),
       walk: R(-45.3, -31.1, -5.3, 6.4),
+      height: 4.6,
+      ceiling: { kind: 'rotunda', apex: 7.4 },
       obstacles: [{ x: -38.2, z: 1.6, r: 1.25 }],
     }),
-    mod('bay', 'room', 0, { id: 'bay', outer: R(-10.2, 10.2, -6.2, 7.3), walk: R(-9.3, 9.3, -3.6, 6.3) }),
-    mod('fore-node', 'junction', 0, { id: 'fore-node', outer: R(-41.2, -35.2, 15.3, 21.3), walk: R(-40.3, -36.1, 16.2, 20.4) }),
-    mod('bridge', 'room', 0, { id: 'bridge', outer: R(-45.2, -31.2, 25.3, 35.3), walk: R(-44.3, -32.1, 26.2, 34.4) }),
-    mod('ops', 'room', 0, { id: 'ops', outer: R(-29.2, -17.2, 15, 27), walk: R(-28.3, -18.1, 15.9, 26.1) }),
-    mod('cabin', 'room', 0, { id: 'cabin', outer: R(-55.2, -47.2, 14.3, 22.3), walk: R(-54.3, -48.1, 15.2, 21.4) }),
-    mod('quarters', 'room', 0, { id: 'bunks', outer: R(-58.2, -50.2, 1, 11), walk: R(-57.3, -51.1, 1.9, 10.1) }),
+    mod('bay', 'room', 0, {
+      id: 'bay',
+      outer: R(-10.2, 10.2, -6.2, 7.3),
+      walk: R(-9.3, 9.3, -3.6, 6.3),
+      height: 3.4,
+      ceiling: { kind: 'vault', apex: 6.2 },
+    }),
+    mod('fore-node', 'junction', 0, {
+      id: 'fore-node',
+      outer: R(-41.2, -35.2, 15.3, 21.3),
+      walk: R(-40.3, -36.1, 16.2, 20.4),
+      shape: 'cylinder',
+      height: 3.8,
+    }),
+    mod('bridge', 'room', 0, {
+      id: 'bridge',
+      outer: R(-45.2, -31.2, 25.3, 35.3),
+      walk: R(-44.3, -32.1, 26.2, 34.4),
+      shape: 'wedge',
+      nose: 8,
+      height: 9,
+      storeys: 2,
+    }),
+    mod('ops', 'room', 0, {
+      id: 'ops',
+      outer: R(-29.2, -17.2, 15, 27),
+      walk: R(-28.3, -18.1, 15.9, 26.1),
+      height: 4.4,
+      ceiling: { kind: 'step', apex: 7.2 },
+    }),
+    mod('cabin', 'room', 0, {
+      id: 'cabin',
+      outer: R(-55.2, -47.2, 14.3, 22.3),
+      walk: R(-54.3, -48.1, 15.2, 21.4),
+      shape: 'spheroid',
+      height: 5.4,
+    }),
+    mod('quarters', 'room', 0, {
+      id: 'bunks',
+      outer: R(-58.2, -50.2, 1, 11),
+      walk: R(-57.3, -51.1, 1.9, 10.1),
+      height: 11,
+      ceiling: { kind: 'step', apex: 12.6 },
+    }),
+    mod('npc-dorm', 'room', 0, {
+      id: 'npc-dorm',
+      outer: R(-70.2, -62.2, 2, 10),
+      walk: R(-69.3, -63.1, 2.9, 9.1),
+      shape: 'cylinder',
+      height: 11,
+      walkable: false,
+    }),
     mod('greenhouse', 'room', 0, {
       id: 'greenhouse',
       outer: R(-79.2, -62.2, -18, -1),
       walk: R(-78.3, -63.1, -17.1, -1.9),
-      ceiling: { kind: 'dome', apex: 7 },
+      shape: 'cylinder',
+      height: 6.5,
+      ceiling: { kind: 'dome', apex: 11 },
       job: 'botanist',
     }),
-    mod('medical', 'room', 0, { id: 'medical', outer: R(-26.2, -14.2, 1, 13), walk: R(-25.3, -15.1, 1.9, 12.1), job: 'doctor' }),
-    mod('hold', 'room', 0, { id: 'hold', outer: R(-26.2, -14.2, -13, -1), walk: R(-25.3, -15.1, -12.1, -1.9) }),
-    mod('aft-node', 'junction', 0, { id: 'aft-node', outer: R(-41.2, -35.2, -20.2, -14.2), walk: R(-40.3, -36.1, -19.3, -15.1) }),
-    mod('science', 'room', 0, { id: 'science', outer: R(-59.2, -47.2, -27, -15), walk: R(-58.3, -48.1, -26.1, -15.9), job: 'engineer' }),
-    mod('engine', 'room', 0, { id: 'engine', outer: R(-45.2, -31.2, -36.2, -24.2), walk: R(-44.3, -32.1, -35.3, -25.1), job: 'engineer' }),
-    mod('hangar', 'room', -1, { id: 'hangar', outer: R(-38.2, -22.2, -34, -16), walk: R(-37.3, -23.1, -33.1, -16.9) }),
+    mod('medical', 'room', 0, {
+      id: 'medical',
+      outer: R(-26.2, -14.2, 1, 13),
+      walk: R(-25.3, -15.1, 1.9, 12.1),
+      height: 3.8,
+      ceiling: { kind: 'hip', apex: 6.6 },
+      job: 'doctor',
+    }),
+    mod('hold', 'room', 0, {
+      id: 'hold',
+      outer: R(-26.2, -14.2, -13, -1),
+      walk: R(-25.3, -15.1, -12.1, -1.9),
+      height: 5.2,
+    }),
+    mod('aft-node', 'junction', 0, {
+      id: 'aft-node',
+      outer: R(-41.2, -35.2, -20.2, -14.2),
+      walk: R(-40.3, -36.1, -19.3, -15.1),
+      shape: 'cylinder',
+      height: 3.8,
+    }),
+    mod('science', 'room', 0, {
+      id: 'science',
+      outer: R(-59.2, -47.2, -27, -15),
+      walk: R(-58.3, -48.1, -26.1, -15.9),
+      height: 3.8,
+      ceiling: { kind: 'shed', apex: 6.8 },
+      job: 'engineer',
+    }),
+    mod('hangar', 'room', -2, {
+      id: 'hangar',
+      outer: R(-46.2, -30.2, -47.2, -29.2),
+      walk: R(-45.3, -31.1, -46.3, -30.1),
+      shape: 'hangar',
+      height: 13.4,
+      passThrough: { axis: 'z', x: -38.2, width: 6, level: 0 },
+    }),
+    mod('engine', 'room', 0, {
+      id: 'engine',
+      outer: R(-45.2, -31.2, -71.2, -59.2),
+      walk: R(-44.3, -32.1, -70.3, -60.1),
+      shape: 'drum',
+      height: 8,
+      job: 'engineer',
+    }),
   ],
 
   corridors: [
@@ -240,14 +364,16 @@ export const SHIP_LAYOUT: ShipLayout = {
     { id: 'c-ops', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-35.2, -29.2, 16.3, 20.3), walk: R(-34.3, -30.1, 17.2, 19.4), joins: ['fore-node', 'ops'], ends: ['fore-node-ops', 'ops-in'] },
     { id: 'c-cabin', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-47.2, -41.2, 16.3, 20.3), walk: R(-46.3, -42.1, 17.2, 19.4), joins: ['fore-node', 'cabin'], ends: ['fore-node-cabin', 'cabin-in'] },
     { id: 'c-aft', level: 0, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-40.2, -36.2, -14.2, -6.2), walk: R(-39.3, -37.1, -13.3, -7.1), joins: ['commons', 'aft-node'], ends: ['commons-aft', 'aft-node-n'] },
-    { id: 'c-engine', level: 0, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-40.2, -36.2, -24.2, -20.2), walk: R(-39.3, -37.1, -23.3, -21.1), joins: ['aft-node', 'engine'], ends: ['aft-node-engine', 'engine-in'] },
+    { id: 'c-engine', level: 0, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-40.2, -36.2, -29.2, -20.2), walk: R(-39.3, -37.1, -28.3, -21.1), joins: ['aft-node', 'hangar'], ends: ['aft-node-engine', 'hangar-pass-fore'] },
+    { id: 'c-spine', level: 0, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-40.2, -36.2, -59.2, -47.2), walk: R(-39.3, -37.1, -58.3, -48.1), joins: ['hangar', 'engine'], ends: ['hangar-pass-aft', 'engine-in'] },
     { id: 'c-science', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-47.2, -41.2, -19.2, -15.2), walk: R(-46.3, -42.1, -18.3, -16.1), joins: ['aft-node', 'science'], ends: ['aft-node-sci', 'science-in'] },
     { id: 'c-quarters', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-50.2, -46.2, 1.5, 5.5), walk: R(-49.3, -47.1, 2.4, 4.6), joins: ['commons', 'bunks'], ends: ['commons-quarters', 'bunks-in'] },
-    { id: 'c-greenhouse', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-62.2, -46.2, -5.5, -1.5), walk: R(-61.3, -47.1, -4.6, -2.4), joins: ['commons', 'greenhouse'], ends: ['commons-greenhouse', 'greenhouse-in'] },
+    { id: 'c-greenhouse', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-67.5, -46.2, -5.5, -1.5), walk: R(-66.6, -47.1, -4.6, -2.4), joins: ['commons', 'greenhouse'], ends: ['commons-greenhouse', 'greenhouse-in'] },
+    { id: 'c-dorm', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-62.2, -58.2, 4, 8), walk: R(-61.3, -59.1, 4.9, 7.1), joins: ['bunks', 'npc-dorm'], ends: ['bunks-dorm', 'dorm-in'] },
     { id: 'c-medical', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-30.2, -26.2, 1.5, 5.5), walk: R(-29.3, -27.1, 2.4, 4.6), joins: ['commons', 'medical'], ends: ['commons-medical', 'medical-in'] },
     { id: 'c-hold', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-30.2, -26.2, -5.5, -1.5), walk: R(-29.3, -27.1, -4.6, -2.4), joins: ['commons', 'hold'], ends: ['commons-hold', 'hold-in'] },
     { id: 'c-bay', level: 0, axis: 'x', width: 4, height: WALL_HEIGHT, outer: R(-14.2, -10.2, 1.5, 5.5), walk: R(-13.3, -11.1, 2.4, 4.6), joins: ['medical', 'bay'], ends: ['medical-bay', 'bay-in'] },
-    { id: 'c-lower', level: -1, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-34.2, -30.2, -16, 2.5), walk: R(-33.3, -31.1, -15.1, 1.6), joins: ['lift-commons', 'hangar'], ends: ['lift-commons', 'lower-hangar'] },
+    { id: 'c-lower', level: -2, axis: 'z', width: 4, height: WALL_HEIGHT, outer: R(-34.2, -30.2, -29.2, 2.5), walk: R(-33.3, -31.1, -28.3, 1.6), joins: ['lift-commons', 'hangar'], ends: ['lift-commons', 'lower-hangar'] },
   ],
 
   doors: [
@@ -262,11 +388,15 @@ export const SHIP_LAYOUT: ShipLayout = {
     { id: 'commons-aft', level: 0, a: 'commons', b: 'c-aft', axis: 'x', x: -38.2, z: -6.2, width: 3.0 },
     { id: 'aft-node-n', level: 0, a: 'c-aft', b: 'aft-node', axis: 'x', x: -38.2, z: -14.2, width: 3.0 },
     { id: 'aft-node-engine', level: 0, a: 'aft-node', b: 'c-engine', axis: 'x', x: -38.2, z: -20.2, width: 3.0 },
-    { id: 'engine-in', level: 0, a: 'c-engine', b: 'engine', axis: 'x', x: -38.2, z: -24.2, width: 3.0 },
+    { id: 'hangar-pass-fore', level: 0, a: 'c-engine', b: 'hangar', axis: 'x', x: -38.2, z: -29.2, width: 3.0 },
+    { id: 'hangar-pass-aft', level: 0, a: 'hangar', b: 'c-spine', axis: 'x', x: -38.2, z: -47.2, width: 3.0 },
+    { id: 'engine-in', level: 0, a: 'c-spine', b: 'engine', axis: 'x', x: -38.2, z: -59.2, width: 3.0 },
     { id: 'aft-node-sci', level: 0, a: 'aft-node', b: 'c-science', axis: 'z', x: -41.2, z: -17.2, width: 3.0 },
     { id: 'science-in', level: 0, a: 'c-science', b: 'science', axis: 'z', x: -47.2, z: -17.2, width: 3.0 },
     { id: 'commons-quarters', level: 0, a: 'commons', b: 'c-quarters', axis: 'z', x: -46.2, z: 3.5, width: 2.8 },
     { id: 'bunks-in', level: 0, a: 'c-quarters', b: 'bunks', axis: 'z', x: -50.2, z: 3.5, width: 3.0 },
+    { id: 'bunks-dorm', level: 0, a: 'bunks', b: 'c-dorm', axis: 'z', x: -58.2, z: 6, width: 3.0 },
+    { id: 'dorm-in', level: 0, a: 'c-dorm', b: 'npc-dorm', axis: 'z', x: -62.2, z: 6, width: 3.0 },
     { id: 'commons-greenhouse', level: 0, a: 'commons', b: 'c-greenhouse', axis: 'z', x: -46.2, z: -3.5, width: 2.8 },
     { id: 'greenhouse-in', level: 0, a: 'c-greenhouse', b: 'greenhouse', axis: 'z', x: -62.2, z: -3.5, width: 3.0 },
     { id: 'commons-medical', level: 0, a: 'commons', b: 'c-medical', axis: 'z', x: -30.2, z: 3.5, width: 2.8 },
@@ -275,21 +405,22 @@ export const SHIP_LAYOUT: ShipLayout = {
     { id: 'bay-in', level: 0, a: 'c-bay', b: 'bay', axis: 'z', x: -10.2, z: 3.5, width: 2.8 },
     { id: 'commons-hold', level: 0, a: 'commons', b: 'c-hold', axis: 'z', x: -30.2, z: -3.5, width: 2.8 },
     { id: 'hold-in', level: 0, a: 'c-hold', b: 'hold', axis: 'z', x: -26.2, z: -3.5, width: 3.0 },
-    { id: 'lower-hangar', level: -1, a: 'c-lower', b: 'hangar', axis: 'x', x: -32.2, z: -16.0, width: 3.0 },
+    { id: 'lower-hangar', level: -2, a: 'c-lower', b: 'hangar', axis: 'x', x: -32.2, z: -29.2, width: 3.0 },
   ],
 
-  lifts: [{ id: 'lift-commons', pad: R(-33.3, -31.1, -0.7, 1.5), levels: [0, -1] }],
+  lifts: [{ id: 'lift-commons', pad: R(-33.3, -31.1, -0.7, 1.5), levels: [0, -2] }],
 
   docks: [
-    { id: 'spine', kind: 'spine', module: 'engine', level: 0, x: -38.2, z: -36.2, facing: 'N', width: 6, occupant: null },
+    { id: 'spine', kind: 'spine', module: 'engine', level: 0, x: -38.2, z: -71.2, facing: 'N', width: 6, occupant: null },
     { id: 'prow', kind: 'prow', module: 'bridge', level: 0, x: -38.2, z: 35.3, facing: 'S', width: 4, occupant: null },
     { id: 'wing-sensor', kind: 'wing', module: 'bridge', level: 0, x: -45.2, z: 30.3, facing: 'W', width: 3, occupant: null },
     { id: 'wing-ops', kind: 'wing', module: 'ops', level: 0, x: -17.2, z: 21, facing: 'E', width: 3, occupant: null },
     { id: 'ext-bay', kind: 'wing', module: 'bay', level: 0, x: 10.2, z: 0.5, facing: 'E', width: 3, occupant: null },
-    { id: 'ring-resid', kind: 'ring', module: 'quarters', level: 0, x: -58.2, z: 6, facing: 'W', width: 3, occupant: null },
+    { id: 'ring-resid', kind: 'ring', module: 'quarters', level: 0, x: -58.2, z: 6, facing: 'W', width: 3, occupant: 'c-dorm' },
+    { id: 'dorm-grow', kind: 'ring', module: 'npc-dorm', level: 0, x: -70.2, z: 6, facing: 'W', width: 3, occupant: null },
     { id: 'ring-agri', kind: 'ring', module: 'greenhouse', level: 0, x: -79.2, z: -9.5, facing: 'W', width: 3, occupant: null },
     { id: 'ring-ind', kind: 'ring', module: 'aft-node', level: 0, x: -35.2, z: -17.2, facing: 'E', width: 3, occupant: null },
     { id: 'hold-ext', kind: 'wing', module: 'hold', level: 0, x: -20.2, z: -13, facing: 'N', width: 3, occupant: null },
-    { id: 'bay-hull', kind: 'bay', module: 'hangar', level: -1, x: -22.2, z: -25, facing: 'E', width: 3, occupant: null },
+    { id: 'bay-hull', kind: 'bay', module: 'hangar', level: -2, x: -30.2, z: -41.5, facing: 'E', width: 3, occupant: null },
   ],
 };

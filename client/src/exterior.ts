@@ -17,9 +17,9 @@ interface Preset {
 
 /** Azimuth runs from the bow (+z) toward starboard (+x). */
 const PRESETS: Record<string, Preset> = {
-  hero: { label: 'Hero 3/4', azimuth: 38, elevation: 24, distance: 125 },
+  hero: { label: 'Hero 3/4', azimuth: 215, elevation: 26, distance: 125 },
   bow: { label: 'Bow', azimuth: 0, elevation: 12, distance: 105 },
-  stern: { label: 'Stern', azimuth: 180, elevation: 12, distance: 135 },
+  stern: { label: 'Stern', azimuth: 180, elevation: 18, distance: 135 },
   port: { label: 'Port', azimuth: 270, elevation: 10, distance: 130 },
   starboard: { label: 'Starboard', azimuth: 90, elevation: 10, distance: 130 },
   top: { label: 'Top', azimuth: 0, elevation: 89.9, distance: 205 },
@@ -57,7 +57,7 @@ scene.add(ship.root);
 
 const target = new THREE.Vector3();
 ship.bounds.getCenter(target);
-target.y = 0;
+target.y = 0.4 * target.y;
 
 const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 1, 3000);
 const controls = new OrbitControls(camera, renderer.domElement);
