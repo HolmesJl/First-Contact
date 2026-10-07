@@ -17,13 +17,13 @@ interface Preset {
 
 /** Azimuth runs from the bow (+z) toward starboard (+x). */
 const PRESETS: Record<string, Preset> = {
-  hero: { label: 'Hero 3/4', azimuth: 215, elevation: 26, distance: 125 },
-  bow: { label: 'Bow', azimuth: 0, elevation: 12, distance: 105 },
-  stern: { label: 'Stern', azimuth: 180, elevation: 18, distance: 135 },
-  port: { label: 'Port', azimuth: 270, elevation: 10, distance: 130 },
-  starboard: { label: 'Starboard', azimuth: 90, elevation: 10, distance: 130 },
-  top: { label: 'Top', azimuth: 0, elevation: 89.9, distance: 205 },
-  bottom: { label: 'Bottom', azimuth: 0, elevation: -89.9, distance: 205 },
+  hero: { label: 'Hero 3/4', azimuth: 325, elevation: 26, distance: 150 },
+  bow: { label: 'Bow', azimuth: 0, elevation: 12, distance: 125 },
+  stern: { label: 'Stern', azimuth: 180, elevation: 18, distance: 145 },
+  port: { label: 'Port', azimuth: 270, elevation: 10, distance: 155 },
+  starboard: { label: 'Starboard', azimuth: 90, elevation: 10, distance: 155 },
+  top: { label: 'Top', azimuth: 0, elevation: 89.9, distance: 235 },
+  bottom: { label: 'Bottom', azimuth: 0, elevation: -89.9, distance: 235 },
 };
 
 const params = new URLSearchParams(location.search);
