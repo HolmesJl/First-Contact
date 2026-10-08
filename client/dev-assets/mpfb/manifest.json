@@ -5,40 +5,15 @@
   "male": [
    {
     "id": "caucasian",
-    "label": "Light",
+    "label": "Default",
     "file": "skins/male-caucasian.webp"
-   },
-   {
-    "id": "asian",
-    "label": "Medium",
-    "file": "skins/male-asian.webp"
-   },
-   {
-    "id": "african",
-    "label": "Dark",
-    "file": "skins/male-african.webp"
    }
   ],
   "female": [
    {
     "id": "caucasian",
-    "label": "Light",
+    "label": "Default",
     "file": "skins/female-caucasian.webp"
-   },
-   {
-    "id": "caucasian2",
-    "label": "Light, freckled",
-    "file": "skins/female-caucasian2.webp"
-   },
-   {
-    "id": "asian",
-    "label": "Medium",
-    "file": "skins/female-asian.webp"
-   },
-   {
-    "id": "african",
-    "label": "Dark",
-    "file": "skins/female-african.webp"
    }
   ]
  },
@@ -54,7 +29,7 @@
   {
    "id": "male-a",
    "sex": "male",
-   "label": "Male A (athletic)",
+   "label": "Male (athletic)",
    "file": "male-a.glb",
    "brows": "eyebrow003",
    "hair": [
@@ -63,7 +38,7 @@
     "afro01"
    ],
    "vertices": {
-    "Body": 9816,
+    "Body": 9802,
     "Brows": 124,
     "Eyes": 96,
     "Hair_afro01": 2196,
@@ -98,11 +73,11 @@
      ]
     },
     "walk": {
-     "footSlideCmS": 17.6,
+     "footSlideCmS": 17.5,
      "contactFrames": 12,
      "frames": 34,
      "duration": 1.133,
-     "groundSpeed": 1.15,
+     "groundSpeed": 1.152,
      "source": "Male1_bvh/Male1_B3_Walk.bvh",
      "takeFrames": [
       47,
@@ -114,7 +89,7 @@
      "contactFrames": 13,
      "frames": 34,
      "duration": 1.133,
-     "groundSpeed": 1.15,
+     "groundSpeed": 1.152,
      "source": "Male1_bvh/Male1_B3_Walk.bvh",
      "takeFrames": [
       47,
@@ -122,11 +97,11 @@
      ]
     },
     "jog": {
-     "footSlideCmS": 46.9,
+     "footSlideCmS": 46.7,
      "contactFrames": 1,
      "frames": 26,
      "duration": 0.867,
-     "groundSpeed": 3.329,
+     "groundSpeed": 3.334,
      "source": "Male1_bvh/Male1_C03_Run.bvh",
      "takeFrames": [
       17,
@@ -134,11 +109,11 @@
      ]
     },
     "raw_jog": {
-     "footSlideCmS": 48.9,
+     "footSlideCmS": 48.6,
      "contactFrames": 1,
      "frames": 26,
      "duration": 0.867,
-     "groundSpeed": 3.329,
+     "groundSpeed": 3.334,
      "source": "Male1_bvh/Male1_C03_Run.bvh",
      "takeFrames": [
       17,
@@ -150,7 +125,7 @@
      "contactFrames": 0,
      "frames": 20,
      "duration": 0.667,
-     "groundSpeed": 4.328,
+     "groundSpeed": 4.334,
      "source": "Male1_bvh/Male1_C03_Run.bvh",
      "takeFrames": [
       17,
@@ -162,7 +137,7 @@
      "contactFrames": 0,
      "frames": 20,
      "duration": 0.667,
-     "groundSpeed": 4.328,
+     "groundSpeed": 4.334,
      "source": "Male1_bvh/Male1_C03_Run.bvh",
      "takeFrames": [
       17,
@@ -170,133 +145,12 @@
      ]
     }
    },
-   "bytes": 787376
-  },
-  {
-   "id": "male-b",
-   "sex": "male",
-   "label": "Male B (lean)",
-   "file": "male-b.glb",
-   "brows": "eyebrow007",
-   "hair": [
-    "short02",
-    "short04",
-    "afro01"
-   ],
-   "vertices": {
-    "Body": 9825,
-    "Brows": 124,
-    "Eyes": 96,
-    "Hair_afro01": 2196,
-    "Hair_short02": 1794,
-    "Hair_short04": 983,
-    "Lashes": 250
-   },
-   "bodyMorphTargets": 28,
-   "clips": {
-    "idle": {
-     "footSlideCmS": 1.1,
-     "contactFrames": 119,
-     "frames": 119,
-     "duration": 3.967,
-     "groundSpeed": 0.002,
-     "source": "Male1_bvh/Male1_A2_Sway.bvh",
-     "takeFrames": [
-      24,
-      143
-     ]
-    },
-    "raw_idle": {
-     "footSlideCmS": 1.1,
-     "contactFrames": 119,
-     "frames": 119,
-     "duration": 3.967,
-     "groundSpeed": 0.002,
-     "source": "Male1_bvh/Male1_A2_Sway.bvh",
-     "takeFrames": [
-      24,
-      143
-     ]
-    },
-    "walk": {
-     "footSlideCmS": 15.6,
-     "contactFrames": 12,
-     "frames": 34,
-     "duration": 1.133,
-     "groundSpeed": 1.022,
-     "source": "Male1_bvh/Male1_B3_Walk.bvh",
-     "takeFrames": [
-      47,
-      81
-     ]
-    },
-    "raw_walk": {
-     "footSlideCmS": 14.4,
-     "contactFrames": 13,
-     "frames": 34,
-     "duration": 1.133,
-     "groundSpeed": 1.022,
-     "source": "Male1_bvh/Male1_B3_Walk.bvh",
-     "takeFrames": [
-      47,
-      81
-     ]
-    },
-    "jog": {
-     "footSlideCmS": 41.3,
-     "contactFrames": 1,
-     "frames": 26,
-     "duration": 0.867,
-     "groundSpeed": 2.96,
-     "source": "Male1_bvh/Male1_C03_Run.bvh",
-     "takeFrames": [
-      17,
-      37
-     ]
-    },
-    "raw_jog": {
-     "footSlideCmS": 43.2,
-     "contactFrames": 1,
-     "frames": 26,
-     "duration": 0.867,
-     "groundSpeed": 2.96,
-     "source": "Male1_bvh/Male1_C03_Run.bvh",
-     "takeFrames": [
-      17,
-      37
-     ]
-    },
-    "sprint": {
-     "footSlideCmS": 0,
-     "contactFrames": 0,
-     "frames": 20,
-     "duration": 0.667,
-     "groundSpeed": 3.848,
-     "source": "Male1_bvh/Male1_C03_Run.bvh",
-     "takeFrames": [
-      17,
-      37
-     ]
-    },
-    "raw_sprint": {
-     "footSlideCmS": 0,
-     "contactFrames": 0,
-     "frames": 20,
-     "duration": 0.667,
-     "groundSpeed": 3.848,
-     "source": "Male1_bvh/Male1_C03_Run.bvh",
-     "takeFrames": [
-      17,
-      37
-     ]
-    }
-   },
-   "bytes": 790260
+   "bytes": 789000
   },
   {
    "id": "female-a",
    "sex": "female",
-   "label": "Female A (athletic)",
+   "label": "Female (athletic)",
    "file": "female-a.glb",
    "brows": "eyebrow009",
    "hair": [
@@ -413,127 +267,6 @@
     }
    },
    "bytes": 860408
-  },
-  {
-   "id": "female-b",
-   "sex": "female",
-   "label": "Female B (curvy)",
-   "file": "female-b.glb",
-   "brows": "eyebrow002",
-   "hair": [
-    "long01",
-    "bob02",
-    "ponytail01"
-   ],
-   "vertices": {
-    "Body": 9807,
-    "Brows": 124,
-    "Eyes": 96,
-    "Hair_bob02": 1688,
-    "Hair_long01": 3312,
-    "Hair_ponytail01": 3902,
-    "Lashes": 250
-   },
-   "bodyMorphTargets": 28,
-   "clips": {
-    "idle": {
-     "footSlideCmS": 2.6,
-     "contactFrames": 126,
-     "frames": 126,
-     "duration": 4.2,
-     "groundSpeed": 0.003,
-     "source": "Female1_bvh/Female1_A02_Sway.bvh",
-     "takeFrames": [
-      39,
-      165
-     ]
-    },
-    "raw_idle": {
-     "footSlideCmS": 2.6,
-     "contactFrames": 126,
-     "frames": 126,
-     "duration": 4.2,
-     "groundSpeed": 0.003,
-     "source": "Female1_bvh/Female1_A02_Sway.bvh",
-     "takeFrames": [
-      39,
-      165
-     ]
-    },
-    "walk": {
-     "footSlideCmS": 9.9,
-     "contactFrames": 6,
-     "frames": 38,
-     "duration": 1.267,
-     "groundSpeed": 0.83,
-     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
-     "takeFrames": [
-      53,
-      91
-     ]
-    },
-    "raw_walk": {
-     "footSlideCmS": 24.3,
-     "contactFrames": 20,
-     "frames": 38,
-     "duration": 1.267,
-     "groundSpeed": 0.83,
-     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
-     "takeFrames": [
-      53,
-      91
-     ]
-    },
-    "jog": {
-     "footSlideCmS": 91.3,
-     "contactFrames": 5,
-     "frames": 27,
-     "duration": 0.9,
-     "groundSpeed": 2.869,
-     "source": "Female1_bvh/Female1_C03_Run.bvh",
-     "takeFrames": [
-      5,
-      26
-     ]
-    },
-    "raw_jog": {
-     "footSlideCmS": 76.9,
-     "contactFrames": 5,
-     "frames": 27,
-     "duration": 0.9,
-     "groundSpeed": 2.869,
-     "source": "Female1_bvh/Female1_C03_Run.bvh",
-     "takeFrames": [
-      5,
-      26
-     ]
-    },
-    "sprint": {
-     "footSlideCmS": 147.1,
-     "contactFrames": 3,
-     "frames": 21,
-     "duration": 0.7,
-     "groundSpeed": 3.688,
-     "source": "Female1_bvh/Female1_C03_Run.bvh",
-     "takeFrames": [
-      5,
-      26
-     ]
-    },
-    "raw_sprint": {
-     "footSlideCmS": 168.1,
-     "contactFrames": 2,
-     "frames": 21,
-     "duration": 0.7,
-     "groundSpeed": 3.688,
-     "source": "Female1_bvh/Female1_C03_Run.bvh",
-     "takeFrames": [
-      5,
-      26
-     ]
-    }
-   },
-   "bytes": 860448
   }
  ],
  "eye": {
@@ -552,9 +285,7 @@
  },
  "brows": {
   "eyebrow003": "brows/eyebrow003.webp",
-  "eyebrow007": "brows/eyebrow007.webp",
-  "eyebrow009": "brows/eyebrow009.webp",
-  "eyebrow002": "brows/eyebrow002.webp"
+  "eyebrow009": "brows/eyebrow009.webp"
  },
  "lashes": "brows/eyelashes01.webp"
 }

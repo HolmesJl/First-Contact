@@ -73,13 +73,94 @@ def vertex_count_after_masks(obj):
     return len(obj.evaluated_get(dg).data.vertices)
 
 
+# ---------------------------------------------------------------------------------- shoulder relief
+
+def sculpt_shoulders(body, rig):
+    """Adds the bony landmarks MakeHuman's base mesh leaves out: clavicle ridge, infraclavicular hollow,
+    acromion corner and a squarer trapezius line. Offsets are applied to the mesh and to every shape key.
+    """
+    import math
+
+    me = body.data
+    me.update()
+    coords = [v.co.copy() for v in me.vertices]
+    normals = [v.normal.copy() for v in me.vertices]
+    offsets = [Vector() for _ in coords]
+
+    def seg_dist(p, a, b):
+        """Distance in the coronal (x, z) plane: the bones sit mid-body, the skin is in front of them."""
+        p2, a2, b2 = Vector((p.x, p.z)), Vector((a.x, a.z)), Vector((b.x, b.z))
+        ab = b2 - a2
+        t = max(0.0, min(1.0, (p2 - a2).dot(ab) / ab.dot(ab)))
+        return (p2 - (a2 + ab * t)).length
+
+    g = lambda d, sigma: math.exp(-((d / sigma) ** 2))
+    for side in ("l", "r"):
+        bone = rig.data.bones[f"clavicle_{side}"]
+        a = Vector(bone.head_local)
+        b = Vector(bone.tail_local)
+        sign = 1.0 if side == "l" else -1.0
+        neck = Vector((sign * 0.05, a.y, b.z + 0.045))
+        for i, p in enumerate(coords):
+            n = normals[i]
+            if abs(p.x) < 0.012:
+                continue
+            front = max(0.0, -n.y)
+            w = g(seg_dist(p, a + Vector((0, 0, 0.012)), b + Vector((0, 0, 0.012))), 0.0115)
+            offsets[i] += n * (0.011 * w * front)
+            hollow = g(seg_dist(p, a + Vector((0, 0, -0.04)), b + Vector((0, 0, -0.045))), 0.02)
+            offsets[i] -= n * (0.006 * hollow * front)
+            up = max(0.0, n.z)
+            acro = g(seg_dist(p, b + Vector((sign * 0.005, 0, 0.01)), b + Vector((sign * 0.005, 0, 0.011))), 0.026)
+            offsets[i] += Vector((sign * 0.008, 0, 0.016)) * acro * max(up, abs(n.x) * 0.5)
+            trap = g(seg_dist(p, neck, b + Vector((0, 0, 0.02))), 0.028)
+            offsets[i] += Vector((0, 0, 0.012)) * trap * up
+    for v, o in zip(me.vertices, offsets):
+        v.co += o
+    if me.shape_keys:
+        for k in me.shape_keys.key_blocks:
+            for d, o in zip(k.data, offsets):
+                d.co += o
+    me.update()
+
+
+def smooth_shoulder_weights(mesh, vweights, zmax, iterations=8, strength=0.6):
+    """Laplacian-smooths skin weights around the armpit, chest edge and deltoid so lowering the arm rolls the
+    skin instead of folding a shelf where the arm and chest weights meet."""
+    neighbours = [[] for _ in mesh.vertices]
+    for e in mesh.edges:
+        a, b = e.vertices
+        neighbours[a].append(b)
+        neighbours[b].append(a)
+    zone = [
+        0.66 * zmax < v.co.z < HEAD_CUT * zmax and abs(v.co.x) < 0.34 * zmax for v in mesh.vertices
+    ]
+    for _ in range(iterations):
+        new = []
+        for i, w in enumerate(vweights):
+            if not zone[i] or not neighbours[i]:
+                new.append(w)
+                continue
+            acc = {}
+            for j in neighbours[i]:
+                for gi, x in vweights[j].items():
+                    acc[gi] = acc.get(gi, 0.0) + x / len(neighbours[i])
+            merged = {}
+            for gi in set(w) | set(acc):
+                merged[gi] = (1 - strength) * w.get(gi, 0.0) + strength * acc.get(gi, 0.0)
+            new.append(merged)
+        vweights[:] = new
+
+
 # ---------------------------------------------------------------------------------- decimation
 
 HEAD_CUT = 0.86
 HEAD_TARGET = 2700
+SHOULDER_Z = (0.74, HEAD_CUT)
+SHOULDER_X = 0.25
 
 
-def decimate_body(body, rig, budget):
+def decimate_body(body, rig, budget, sharp_shoulders=False):
     """Returns a new body object with at most ~budget vertices; keeps face and hands denser."""
     bpy.context.view_layer.objects.active = body
     body.select_set(True)
@@ -95,9 +176,19 @@ def decimate_body(body, rig, budget):
     for m in list(work.modifiers):
         work.modifiers.remove(m)
 
+    if sharp_shoulders:
+        sculpt_shoulders(src, rig)
+        for v, sv in zip(work.data.vertices, src.data.vertices):
+            v.co = sv.co
     zmax = max(v.co.z for v in src.data.vertices)
     head_z = HEAD_CUT * zmax
     head_before = sum(1 for v in work.data.vertices if v.co.z > head_z)
+
+    def in_shoulder_ring(co):
+        """Clavicle, deltoid and upper-trapezius zone, kept at full density when sharp_shoulders is on."""
+        return sharp_shoulders and SHOULDER_Z[0] * zmax < co.z <= head_z and abs(co.x) < SHOULDER_X * zmax
+
+    shoulder_before = sum(1 for v in work.data.vertices if in_shoulder_ring(v.co))
 
     def decimate_pass(protect_head, target_total):
         """One collapse pass; vertices in the protected group (weight 1, inverted) are left alone."""
@@ -105,7 +196,12 @@ def decimate_body(body, rig, budget):
             work.vertex_groups.remove(g)
         grp = work.vertex_groups.new(name="__protect")
         for v in work.data.vertices:
-            if (v.co.z > head_z) == protect_head:
+            head = v.co.z > head_z
+            if protect_head:
+                protected = head or in_shoulder_ring(v.co)
+            else:
+                protected = not head
+            if protected:
                 grp.add([v.index], 1.0, "REPLACE")
         bpy.context.view_layer.objects.active = work
         mod = work.modifiers.new("dec", "DECIMATE")
@@ -128,6 +224,7 @@ def decimate_body(body, rig, budget):
     decimate_pass(True, body_target + head_before)
     decimate_pass(False, budget)
     new_mesh = work.data
+    log("shoulder ring verts", shoulder_before, "->", sum(1 for v in new_mesh.vertices if in_shoulder_ring(v.co)))
     log("head verts", head_before, "->", sum(1 for v in new_mesh.vertices if v.co.z > head_z), "of", len(new_mesh.vertices))
     log("decimated body", total, "->", len(new_mesh.vertices))
 
@@ -147,11 +244,17 @@ def decimate_body(body, rig, budget):
     new_vgroups = {g.name: work.vertex_groups.new(name=g.name) for g in src.vertex_groups if g.name in bone_names}
 
     deltas = {k.name: [] for k in src_keys if k.name != "Basis"}
+    new_normals = []
+    vweights = []
     for v in new_mesh.vertices:
         loc, _n, fi, _d = tree.find_nearest(v.co)
         face = bm.faces[fi]
         verts = [l.vert for l in face.loops]
         w = poly_3d_calc([vv.co for vv in verts], loc)
+        nrm = Vector()
+        for vv, ww in zip(verts, w):
+            nrm += src.data.vertices[vv.index].normal * ww
+        new_normals.append(nrm.normalized() if nrm.length > 1e-6 else Vector((0, 0, 1)))
         for k in src_keys:
             if k.name == "Basis":
                 continue
@@ -164,14 +267,24 @@ def decimate_body(body, rig, budget):
             for g in src.data.vertices[vv.index].groups:
                 if group_names[g.group] in bone_names:
                     weights[g.group] = weights.get(g.group, 0.0) + g.weight * ww
+        vweights.append(weights)
+    bm.free()
+
+    if sharp_shoulders:
+        smooth_shoulder_weights(new_mesh, vweights, zmax)
+    for v, weights in zip(new_mesh.vertices, vweights):
         top = sorted(weights.items(), key=lambda kv: -kv[1])[:4]
         tot = sum(x for _, x in top) or 1.0
-        top = [(gi, wt / tot) for gi, wt in top]
         for gi, wt in top:
             name = group_names[gi]
-            if name in new_vgroups and wt > 0:
-                new_vgroups[name].add([v.index], wt, "REPLACE")
-    bm.free()
+            if name in new_vgroups and wt / tot > 0:
+                new_vgroups[name].add([v.index], wt / tot, "REPLACE")
+
+    if sharp_shoulders:
+        # Decimated triangles are too coarse to shade the clavicle ridge and deltoid on their own: reuse the
+        # smooth normals of the full-resolution mesh.
+        new_mesh.polygons.foreach_set("use_smooth", [True] * len(new_mesh.polygons))
+        new_mesh.normals_split_custom_set_from_vertices([tuple(n) for n in new_normals])
 
     work.shape_key_add(name="Basis")
     for name, ds in deltas.items():
@@ -322,7 +435,7 @@ def build(preset_id, out_dir):
 
     ExportService.bake_modifiers_remove_helpers(body, bake_masks=True, bake_subdiv=False, remove_helpers=True, also_proxy=False)
     log("basemesh without helpers", len(body.data.vertices))
-    body = decimate_body(body, rig, BODY_VERTEX_BUDGET)
+    body = decimate_body(body, rig, BODY_VERTEX_BUDGET, preset.get("sharpShoulders", False))
 
     keep = set(KEEP_SHAPES) | {"Basis"}
     for o in [body] + [o for k, o in objs.items() if not k.startswith("Hair_")]:

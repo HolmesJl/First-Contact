@@ -31,18 +31,10 @@ const skipBlender = process.argv.includes('--skip-blender');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(HERE, 'blender/presets.json'), 'utf8'));
 
+// One skin tone per sex (design decision: players pick sex, face, hair style, hair colour and eye colour only).
 const SKINS = {
-  male: [
-    ['caucasian', 'young_caucasian_male', 'Light'],
-    ['asian', 'young_asian_male', 'Medium'],
-    ['african', 'young_african_male', 'Dark'],
-  ],
-  female: [
-    ['caucasian', 'young_caucasian_female', 'Light'],
-    ['caucasian2', 'young_caucasian_female2', 'Light, freckled'],
-    ['asian', 'young_asian_female', 'Medium'],
-    ['african', 'young_african_female', 'Dark'],
-  ],
+  male: [['caucasian', 'young_caucasian_male', 'Default']],
+  female: [['caucasian', 'young_caucasian_female', 'Default']],
 };
 
 function blender(script, blend, args) {

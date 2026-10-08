@@ -125,7 +125,7 @@ Everyone blinks. Hair, beard, and eyes are tinted per character; "no facial hair
 
 ### Character pipeline spike (dev only)
 
-`/characters.html` (run `npm run dev -w client`) shows the current Quaternius characters next to realistic MakeHuman / MPFB characters (about 9.8k body vertices, ARKit blendshape faces, tintable hair/eyes/skin) animated with gendered motion capture, with idle / walk / jog / sprint toggles and an orbit camera. The game itself does not use any of it. Findings and the migration estimate are in the spike notes (`docs/character-spike.md` in the project store); the pipeline lives in `tools/blender/` and `tools/build-mpfb-characters.mjs`:
+`/characters.html` (run `npm run dev -w client`) shows the current Quaternius characters next to realistic MakeHuman / MPFB characters (about 9.8k body vertices, ARKit blendshape faces, tintable hair and eyes; one body and skin tone per sex) animated with gendered motion capture, with idle / walk / jog / sprint toggles and an orbit camera. The game itself does not use any of it. Findings and the migration estimate are in the spike notes (`docs/character-spike.md` in the project store); the pipeline lives in `tools/blender/` and `tools/build-mpfb-characters.mjs`:
 
 ```bash
 tools/blender/setup.sh                    # one-time: Blender, MPFB, CC0 asset packs, ACCAD mocap -> tools/.cache

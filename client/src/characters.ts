@@ -24,12 +24,12 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b111c);
-scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x2c2430, 1.15));
-const key = new THREE.DirectionalLight(0xfff1e2, 2.5);
-key.position.set(3, 8, 7);
+scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x2c2430, 0.75));
+const key = new THREE.DirectionalLight(0xfff1e2, 2.9);
+key.position.set(-4.5, 9, 4.5);
 scene.add(key);
-const fill = new THREE.DirectionalLight(0x9cc4ff, 0.7);
-fill.position.set(-6, 3, 4);
+const fill = new THREE.DirectionalLight(0x9cc4ff, 0.6);
+fill.position.set(6, 2.5, 6);
 scene.add(fill);
 const rim = new THREE.DirectionalLight(0x6fc8ff, 0.9);
 rim.position.set(-4, 5, -8);
@@ -77,10 +77,8 @@ const oldAppearance = (sex: 'male' | 'female'): Appearance => ({
 });
 
 const newLooks: Record<string, Partial<mpfb.Look>> = {
-  'male-a': { skin: 0, hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5' },
-  'male-b': { skin: 1, hairStyle: 1, hairColor: '#17140f', eyeColor: '#4a3320' },
-  'female-a': { skin: 0, hairStyle: 0, hairColor: '#7a4a24', eyeColor: '#3f8a4f' },
-  'female-b': { skin: 3, hairStyle: 2, hairColor: '#1c1512', eyeColor: '#5a3a1e' },
+  'male-a': { hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5' },
+  'female-a': { hairStyle: 0, hairColor: '#7a4a24', eyeColor: '#3f8a4f' },
 };
 
 function addLabel(cls: string, title: string, sub: string) {
@@ -250,33 +248,14 @@ eyeColor.addEventListener('input', () => {
   }
 });
 gEye.appendChild(eyeColor);
-const gSkin = group(topBar, 'Skin');
-button(gSkin, 'tone', () => {
-  for (const e of newEntries()) {
-    e.rig.look.skin = (e.rig.look.skin + 1) % manifest.skins[e.sex].length;
-    mpfb.applyLook(e.rig);
-  }
-});
-const skinTint = document.createElement('input');
-skinTint.type = 'color';
-skinTint.value = '#ffffff';
-skinTint.title = 'Skin tint (multiplies the texture)';
-skinTint.addEventListener('input', () => {
-  for (const e of newEntries()) {
-    e.rig.look.skinTint = skinTint.value;
-    mpfb.applyLook(e.rig);
-  }
-});
-gSkin.appendChild(skinTint);
-
 type CamName = 'front' | 'faces' | 'top' | 'males' | 'females' | 'orbit';
 let autoOrbit = false;
 const CAMS: Record<Exclude<CamName, 'orbit'>, [number[], number[]]> = {
-  front: [[0, 1.35, 9.9], [0, 0.95, 0]],
+  front: [[0, 1.3, 7.4], [0, 0.95, 0]],
   faces: [[0, 1.62, 5.4], [0, 1.52, 0]],
   top: [[0, 12, 2.5], [0, 0, 0]],
-  males: [[-3.1, 1.3, 5.4], [-3.1, 0.95, 0]],
-  females: [[3.1, 1.3, 5.4], [3.1, 0.95, 0]],
+  males: [[-1.95, 1.3, 4.6], [-1.95, 0.95, 0]],
+  females: [[1.95, 1.3, 4.6], [1.95, 0.95, 0]],
 };
 function setCam(name: CamName) {
   if (name === 'orbit') {

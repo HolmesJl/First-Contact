@@ -33,12 +33,12 @@
   "presets": {
     "male-a": {
       "sex": "male",
-      "label": "Male A (athletic)",
+      "label": "Male (athletic)",
       "gender": 1.0,
-      "muscle": 0.62,
-      "weight": 0.5,
+      "muscle": 0.82,
+      "weight": 0.44,
       "height": 0.5,
-      "proportions": 0.55,
+      "proportions": 0.58,
       "race": {
         "caucasian": 0.8,
         "asian": 0.1,
@@ -49,44 +49,29 @@
         "chin-width-incr": 0.35,
         "chin-prominent-incr": 0.4,
         "nose-width1-decr": 0.2,
-        "forehead-nubian-incr": 0.2
+        "forehead-nubian-incr": 0.2,
+        "torso-vshape-incr": 0.85,
+        "torso-muscle-pectoral-incr": 0.6,
+        "torso-muscle-dorsi-incr": 0.7,
+        "measure-shoulder-dist-incr": 0.45,
+        "torso-scale-horiz-incr": 0.15,
+        "l-upperarm-shoulder-muscle-incr": 0.6,
+        "r-upperarm-shoulder-muscle-incr": 0.6,
+        "l-upperarm-muscle-incr": 0.5,
+        "r-upperarm-muscle-incr": 0.5,
+        "neck-scale-horiz-incr": 0.25
       },
       "brows": "eyebrow003",
       "hair": [
         "short02",
         "short04",
         "afro01"
-      ]
-    },
-    "male-b": {
-      "sex": "male",
-      "label": "Male B (lean)",
-      "gender": 0.95,
-      "muscle": 0.35,
-      "weight": 0.38,
-      "height": 0.38,
-      "proportions": 0.45,
-      "race": {
-        "caucasian": 0.15,
-        "asian": 0.7,
-        "african": 0.15
-      },
-      "details": {
-        "head-oval": 0.6,
-        "chin-height-decr": 0.3,
-        "nose-scale-horiz-incr": 0.2,
-        "mouth-lowerlip-volume-incr": 0.2
-      },
-      "brows": "eyebrow007",
-      "hair": [
-        "short02",
-        "short04",
-        "afro01"
-      ]
+      ],
+      "sharpShoulders": true
     },
     "female-a": {
       "sex": "female",
-      "label": "Female A (athletic)",
+      "label": "Female (athletic)",
       "gender": 0.0,
       "muscle": 0.5,
       "weight": 0.45,
@@ -104,32 +89,6 @@
         "mouth-upperlip-volume-incr": 0.35
       },
       "brows": "eyebrow009",
-      "hair": [
-        "long01",
-        "bob02",
-        "ponytail01"
-      ]
-    },
-    "female-b": {
-      "sex": "female",
-      "label": "Female B (curvy)",
-      "gender": 0.02,
-      "muscle": 0.4,
-      "weight": 0.62,
-      "height": 0.36,
-      "proportions": 0.5,
-      "race": {
-        "caucasian": 0.1,
-        "asian": 0.2,
-        "african": 0.7
-      },
-      "details": {
-        "head-round": 0.5,
-        "chin-prominent-decr": 0.2,
-        "nose-width1-incr": 0.3,
-        "mouth-lowerlip-volume-incr": 0.4
-      },
-      "brows": "eyebrow002",
       "hair": [
         "long01",
         "bob02",

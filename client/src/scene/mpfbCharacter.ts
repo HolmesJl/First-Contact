@@ -213,7 +213,7 @@ export function applyLook(rig: MpfbRig) {
   const m = manifest!;
   const { info, look, meshes } = rig;
   const skins = m.skins[info.sex];
-  const skin = new THREE.MeshStandardMaterial({ map: tex(skins[look.skin % skins.length].file), color: look.skinTint, roughness: 0.62, metalness: 0 });
+  const skin = new THREE.MeshStandardMaterial({ map: tex(skins[look.skin % skins.length].file), color: look.skinTint, roughness: 0.5, metalness: 0 });
   meshes.Body.material = skin;
   const eyes = new THREE.MeshStandardMaterial({ map: eyeTexture(look.eyeColor), roughness: 0.12, metalness: 0 });
   meshes.Eyes.material = eyes;
