@@ -24,8 +24,8 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b111c);
-scene.add(new THREE.HemisphereLight(0xbdd0f2, 0x241c24, 0.9));
-const key = new THREE.DirectionalLight(0xfff1e2, 2.1);
+scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x2c2430, 1.15));
+const key = new THREE.DirectionalLight(0xfff1e2, 2.5);
 key.position.set(3, 8, 7);
 scene.add(key);
 const fill = new THREE.DirectionalLight(0x9cc4ff, 0.7);
@@ -114,8 +114,8 @@ layout.forEach((slot, i) => {
     rig.root.position.set(x, 0, 0);
     scene.add(rig.root);
     addRing(x);
-    const sub = 'Quaternius · ~7k verts · UAL clips';
-    entries.push({ kind: 'old', sex: slot.sex, rig, label: addLabel('old', `Current ${slot.sex}`, sub), sub });
+    const sub = '~7k verts · UAL clips';
+    entries.push({ kind: 'old', sex: slot.sex, rig, label: addLabel('old', `Current · ${slot.sex}`, sub), sub });
   } else {
     const preset = manifest.presets.find((p) => p.id === slot.id)!;
     const base: mpfb.Look = { skin: 0, skinTint: '#ffffff', hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5', ...newLooks[preset.id] };
@@ -123,8 +123,8 @@ layout.forEach((slot, i) => {
     rig.root.position.set(x, 0, 0);
     scene.add(rig.root);
     addRing(x);
-    const sub = `${preset.vertices.Body.toLocaleString()} body verts · ${preset.sex === 'male' ? 'Male1' : 'Female1'} mocap`;
-    entries.push({ kind: 'new', sex: slot.sex, rig, label: addLabel('new', `MPFB ${preset.label}`, sub), sub });
+    const sub = `${(preset.vertices.Body / 1000).toFixed(1)}k body verts`;
+    entries.push({ kind: 'new', sex: slot.sex, rig, label: addLabel('new', `MPFB · ${preset.label}`, sub), sub });
   }
 });
 
@@ -135,9 +135,18 @@ let expression: mpfb.Expression = (params.get('expr') as mpfb.Expression) ?? 'sm
 const FACE_MAP: Record<mpfb.Expression, Appearance['face']> = { neutral: 'serious', smiling: 'smiling', serious: 'serious', angry: 'angry', flirty: 'flirty' };
 
 let styled = params.get('gait') !== 'raw';
+function updateStatus() {
+  const speed = (sex: 'male' | 'female') => {
+    const p = manifest.presets.find((x) => x.sex === sex)!;
+    return p.clips[`${styled ? '' : 'raw_'}${motion}` as mpfb.ClipKey].groundSpeed;
+  };
+  status.textContent = `${motion}: natural ground speed M ${speed('male').toFixed(2)} m/s, F ${speed('female').toFixed(2)} m/s (new characters) · ${styled ? 'gendered gait styling' : 'raw performer mocap'}`;
+}
+
 function setMotion(m: mpfb.Motion, nextStyled = styled) {
   motion = m;
   styled = nextStyled;
+  updateStatus();
   for (const e of entries) {
     if (e.kind === 'new') mpfb.setMotion(e.rig, m, styled);
   }
@@ -263,7 +272,7 @@ gSkin.appendChild(skinTint);
 type CamName = 'front' | 'faces' | 'top' | 'males' | 'females' | 'orbit';
 let autoOrbit = false;
 const CAMS: Record<Exclude<CamName, 'orbit'>, [number[], number[]]> = {
-  front: [[0, 1.45, 8.8], [0, 0.95, 0]],
+  front: [[0, 1.35, 9.9], [0, 0.95, 0]],
   faces: [[0, 1.62, 5.4], [0, 1.52, 0]],
   top: [[0, 12, 2.5], [0, 0, 0]],
   males: [[-3.1, 1.3, 5.4], [-3.1, 0.95, 0]],
@@ -331,7 +340,6 @@ function step(dt: number) {
 setMotion(motion, styled);
 setExpression(expression);
 setFacing(facing);
-status.textContent = `${manifest.presets.length} MPFB presets loaded · ${entries.length} characters`;
 
 const timer = new THREE.Timer();
 if (!manual) {
@@ -353,6 +361,11 @@ Object.assign(window, {
     setExpression,
     setCam,
     setFacing,
+    caption: (title: string, sub = '') => {
+      const el = document.getElementById('caption')!;
+      el.style.display = title ? 'block' : 'none';
+      el.innerHTML = `${title}<small>${sub}</small>`;
+    },
     advance: (dt: number) => step(dt),
     camera,
     controls,

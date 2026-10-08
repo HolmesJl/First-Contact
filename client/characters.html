@@ -26,6 +26,8 @@
       .labels div.new { color: #7ff0c8; }
       .banner { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); color: #8fa3c4; font: 500 12px Inter, system-ui, sans-serif; pointer-events: none; text-shadow: 0 1px 3px #000; }
       body.clean .panel, body.clean .banner { display: none; }
+      #caption { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); color: #eaf4ff; font: 700 22px Inter, system-ui, sans-serif; letter-spacing: .18em; text-transform: uppercase; text-shadow: 0 2px 6px #000; pointer-events: none; display: none; }
+      #caption small { display: block; text-align: center; margin-top: 4px; font: 500 13px Inter, system-ui, sans-serif; letter-spacing: .04em; text-transform: none; color: #9fb4d6; }
       #status { position: fixed; left: 16px; bottom: 14px; color: #8fa3c4; font: 500 12px Inter, system-ui, sans-serif; }
     </style>
   </head>
@@ -38,6 +40,7 @@
     <div class="banner">Drag to orbit · wheel to zoom · right-drag to pan</div>
     <div class="panel top" id="top"></div>
     <div class="panel bottom" id="bottom"></div>
+    <div id="caption"></div>
     <div id="status">loading…</div>
     <script type="module" src="/src/characters.ts"></script>
   </body>

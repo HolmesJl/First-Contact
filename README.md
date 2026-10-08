@@ -102,6 +102,8 @@ client/     Vite + TypeScript + Three.js
   src/scene/character.ts  rigged glTF characters: appearance, procedural expressions, animation
   public/models/          built character assets (see Credits)
   gallery.html            dev-only expression gallery: /gallery.html?view=close or ?view=game
+  characters.html         dev-only character pipeline spike (MPFB + mocap vs current): /characters.html
+  dev-assets/mpfb/        spike character assets (not part of the game build)
 tools/      offline asset pipeline (build-characters.mjs); not needed to run the game
   src/ui.ts               title screen, HUD, character creator, joystick
 ```
@@ -121,6 +123,15 @@ Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one
 
 Everyone blinks. Hair, beard, and eyes are tinted per character; "no facial hair" swaps to a clean-shaven skin texture.
 
+### Character pipeline spike (dev only)
+
+`/characters.html` (run `npm run dev -w client`) shows the current Quaternius characters next to realistic MakeHuman / MPFB characters (about 9.8k body vertices, ARKit blendshape faces, tintable hair/eyes/skin) animated with gendered motion capture, with idle / walk / jog / sprint toggles and an orbit camera. The game itself does not use any of it. Findings and the migration estimate are in the spike notes (`docs/character-spike.md` in the project store); the pipeline lives in `tools/blender/` and `tools/build-mpfb-characters.mjs`:
+
+```bash
+tools/blender/setup.sh                    # one-time: Blender, MPFB, CC0 asset packs, ACCAD mocap -> tools/.cache
+cd tools && npm install && npm run build:mpfb
+```
+
 To rebuild the assets (only needed when changing the pipeline):
 
 ```bash
@@ -132,4 +143,4 @@ cd tools && npm install && npm run build:characters
 - Character bodies, hair, beard and eyes: **[Universal Base Characters](https://quaternius.com/packs/universalbasecharacters.html)** by [Quaternius](https://quaternius.com), CC0 1.0.
 - Animations: **[Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)** by Quaternius, CC0 1.0.
 
-The license text ships in `client/public/models/LICENSE-quaternius.txt`. CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the clips were trimmed.
+The license text ships in `client/public/models/LICENSE-quaternius.txt`. The spike assets in `client/dev-assets/mpfb` are CC0 (MakeHuman) plus motion from the ACCAD Open Motion Project, CC BY 3.0; see `client/dev-assets/mpfb/LICENSES.txt`. CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the clips were trimmed.

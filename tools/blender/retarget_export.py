@@ -152,6 +152,13 @@ def apply_style(world, style):
     for bone, k in style.get("amp", {}).items():
         if bone in out and k != 1.0:
             out[bone] = scale_about_mean(out[bone], k)
+    pitch = math.radians(style.get("head_up", 0.0))
+    if pitch:
+        # The performers look at the floor; raise the gaze so faces read from a raised camera.
+        for bone, share in (("head", 0.7), ("neck_01", 0.3)):
+            c, s = math.cos(-pitch * share), math.sin(-pitch * share)
+            Rx = np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+            out[bone] = np.einsum("ij,fjk->fik", Rx, out[bone])
     a = math.radians(style.get("adduct", 0.0))
     if a:
         for side, sign in (("l", 1.0), ("r", -1.0)):
@@ -224,6 +231,27 @@ def build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style=None
     return W, pelvis, n, ground_speed
 
 
+def foot_slide(W, pelvis, n, parent, rest, head, ground_speed, ball_rest_z):
+    """Mean world speed (m/s) of the planted foot: 0 means no skating at the clip's ground speed.
+
+    The planted foot is the lower of the two on each frame, counted only when its ball joint is within 2 cm
+    of the standing height and moving slower than 0.15 m/s vertically.
+    """
+    pos = {s: np.array([fk_head(f, f"ball_{s}", W, parent, rest, head, pelvis[f]) for f in range(n)]) for s in ("l", "r")}
+    vel = {}
+    for s in ("l", "r"):
+        v = (np.roll(pos[s], -1, axis=0) - pos[s]) * FPS
+        v[-1] = v[-2]
+        v[:, 1] -= ground_speed  # the character travels along -Y at the clip's ground speed
+        vel[s] = v
+    speeds = []
+    for f in range(n):
+        s = "l" if pos["l"][f][2] <= pos["r"][f][2] else "r"
+        if pos[s][f][2] < ball_rest_z + 0.02 and abs(vel[s][f][2]) < 0.15:
+            speeds.append(float(np.linalg.norm(vel[s][f][:2])))
+    return (float(np.mean(speeds)) if speeds else 0.0, len(speeds))
+
+
 def run(preset_id, out_glb):
     preset = PRESETS[preset_id]
     rig = bpy.data.objects["Armature"]
@@ -274,8 +302,9 @@ def run(preset_id, out_glb):
         pelvis[:, 2] += ball_rest_z - np.percentile(lows, 30 if name.endswith("idle") else 4)
         pelvis[:, 0] += head["pelvis"][0]
         pelvis[:, 1] += head["pelvis"][1]
+        slide = foot_slide(W, pelvis, n, parent, rest, head, gs, ball_rest_z)
         clips[name] = (W, pelvis, n)
-        meta[name] = {"frames": n, "duration": round(n / FPS, 3), "groundSpeed": round(gs, 3), "source": spec["file"], "takeFrames": list(spec["frames"])}
+        meta[name] = {"footSlideCmS": round(slide[0] * 100, 1), "contactFrames": slide[1], "frames": n, "duration": round(n / FPS, 3), "groundSpeed": round(gs, 3), "source": spec["file"], "takeFrames": list(spec["frames"])}
 
     rig.animation_data_create()
     for tb in TARGET_BONES:
