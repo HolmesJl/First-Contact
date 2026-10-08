@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  CORRIDOR_PROFILE,
   SHIP_LAYOUT,
   floorY,
   type Corridor,
@@ -44,7 +45,6 @@ type Pt = [number, number];
 
 const HULL_BOTTOM = 0.45;
 const HULL_TOP = 0.3;
-const STRUT_RY = 1.75;
 const PANEL_TILE = 6;
 const NAME = 'FIRST CONTACT';
 
@@ -322,6 +322,109 @@ function extrudeAlongX(profile: Pt[], xMin: number, xMax: number, bevel = 0.2) {
   return projectUV(geo);
 }
 
+type V3 = [number, number, number];
+
+/** Flat-shaded convex solid from stacked rings: consecutive rings are bridged by quads, the end rings are capped. */
+function convexSolid(rings: V3[][]) {
+  const all = rings.flat();
+  const c = all.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]).map((v) => v / all.length) as V3;
+  const pos: number[] = [];
+  const tri = (a: V3, b: V3, d: V3) => {
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const e2 = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const m = [(a[0] + b[0] + d[0]) / 3 - c[0], (a[1] + b[1] + d[1]) / 3 - c[1], (a[2] + b[2] + d[2]) / 3 - c[2]];
+    const out = n[0] * m[0] + n[1] * m[1] + n[2] * m[2] >= 0;
+    const t = out ? [a, b, d] : [a, d, b];
+    for (const v of t) pos.push(v[0], v[1], v[2]);
+  };
+  for (let r = 0; r + 1 < rings.length; r++) {
+    const A = rings[r];
+    const B = rings[r + 1];
+    for (let i = 0; i < A.length; i++) {
+      const j = (i + 1) % A.length;
+      tri(A[i], A[j], B[j]);
+      tri(A[i], B[j], B[i]);
+    }
+  }
+  for (const ring of [rings[0], rings[rings.length - 1]]) {
+    for (let i = 1; i + 1 < ring.length; i++) tri(ring[0], ring[i], ring[i + 1]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return projectUV(geo);
+}
+
+/** Elongated octagon (chamfered rectangle), half extents hw x hh, chamfer legs cx (along x) and cy (along y). */
+function octPts(hw: number, hh: number, cx: number, cy: number): Pt[] {
+  return [
+    [hw, -(hh - cy)],
+    [hw, hh - cy],
+    [hw - cx, hh],
+    [-(hw - cx), hh],
+    [-hw, hh - cy],
+    [-hw, -(hh - cy)],
+    [-(hw - cx), -hh],
+    [hw - cx, -hh],
+  ];
+}
+
+/** Insets a convex polygon by d (positive = inward). */
+function insetPoly(poly: Pt[], d: number): Pt[] {
+  if (d <= 0) return poly;
+  const c: Pt = [poly.reduce((a, p) => a + p[0], 0) / poly.length, poly.reduce((a, p) => a + p[1], 0) / poly.length];
+  const lines = poly.map((p0, i) => {
+    const p1 = poly[(i + 1) % poly.length];
+    const [nx, nz] = edgeNormal(p0, p1, c);
+    return { px: p0[0] - nx * d, pz: p0[1] - nz * d, dx: p1[0] - p0[0], dz: p1[1] - p0[1] };
+  });
+  return poly.map((_, i) => {
+    const a = lines[(i + poly.length - 1) % poly.length];
+    const b = lines[i];
+    const den = a.dx * b.dz - a.dz * b.dx;
+    if (Math.abs(den) < 1e-9) return [b.px, b.pz] as Pt;
+    const t = ((b.px - a.px) * b.dz - (b.pz - a.pz) * b.dx) / den;
+    return [a.px + a.dx * t, a.pz + a.dz * t] as Pt;
+  });
+}
+
+/** Faceted slab over a convex plan: vertical walls with hard chamfers (45 degree bevels) top and bottom. */
+function facetedPrism(poly: Pt[], yBot: number, yTop: number, bevelBot: number, bevelTop: number) {
+  const ring = (p: Pt[], y: number): V3[] => p.map(([x, z]) => [x, y, z]);
+  const rings: V3[][] = [];
+  if (bevelBot > 0) rings.push(ring(insetPoly(poly, bevelBot), yBot));
+  rings.push(ring(poly, yBot + bevelBot));
+  rings.push(ring(poly, yTop - bevelTop));
+  if (bevelTop > 0) rings.push(ring(insetPoly(poly, bevelTop), yTop));
+  return convexSolid(rings);
+}
+
+/** Octagonal prism along z, centred on the origin. */
+function octPrism(hw: number, hh: number, cx: number, cy: number, length: number) {
+  const o = octPts(hw, hh, cx, cy);
+  return convexSolid([-length / 2, length / 2].map((z) => o.map(([x, y]) => [x, y, z] as V3)));
+}
+
+/** Octagonal frame (outer octagon with a smaller octagonal hole), extruded `depth` along +z from z = 0. */
+function octFrame(hw: number, hh: number, cx: number, cy: number, border: number, depth: number) {
+  const shape = new THREE.Shape(octPts(hw, hh, cx, cy).map(([x, y]) => new THREE.Vector2(x, y)));
+  const k = Math.max(0.1, border * 0.42);
+  shape.holes.push(new THREE.Path(octPts(hw - border, hh - border, Math.max(0.05, cx - k), Math.max(0.05, cy - k)).map(([x, y]) => new THREE.Vector2(x, y))));
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 1 });
+}
+
+/** Outer half extents and chamfer legs of the corridor hull for a corridor of the given clear width. */
+function corridorDims(width: number, grow = 0) {
+  const P = CORRIDOR_PROFILE;
+  return {
+    hw: (width + (P.outerWidth - P.clearWidth)) / 2 + grow,
+    hh: P.outerHeight / 2 + grow,
+    cx: P.chamferX + grow * 0.41,
+    cy: P.chamferY + grow * 0.41,
+  };
+}
+
 function circlePoly(cx: number, cz: number, r: number, n = 40): Pt[] {
   const pts: Pt[] = [];
   for (let i = 0; i < n; i++) {
@@ -343,12 +446,17 @@ function planPolygon(room: Room): Pt[] {
   if (room.shape === 'wedge') {
     const n = (room.nose ?? w) / 2;
     const zt = o.maxZ - (room.noseLength ?? d);
-    if (zt <= o.minZ + 0.01) {
+    const rc = (room.chamfer ?? 0) * 1.5;
+    if (rc > 0) {
       return [
-        [o.minX, o.minZ],
-        [o.maxX, o.minZ],
+        [o.minX + rc, o.minZ],
+        [o.maxX - rc, o.minZ],
+        [o.maxX, o.minZ + rc],
+        [o.maxX, zt],
         [x + n, o.maxZ],
         [x - n, o.maxZ],
+        [o.minX, zt],
+        [o.minX, o.minZ + rc],
       ];
     }
     return [
@@ -424,7 +532,7 @@ function blockedBy(level: number, x: number, z: number, margin: number, layout: 
   }
   for (const d of layout.docks) {
     if (d.level !== level) continue;
-    if (Math.hypot(d.x - x, d.z - z) < 2.5) return true;
+    if (Math.hypot(d.x - x, d.z - z) < 3.2) return true;
   }
   return false;
 }
@@ -432,7 +540,7 @@ function blockedBy(level: number, x: number, z: number, margin: number, layout: 
 const WINDOW_COLORS = [0xe9edf3, 0xe9edf3, 0xe9edf3, 0xd5dbe4, 0x9aa4b2, 0x39414f].map((c) => new THREE.Color(c));
 
 function windowRows(room: Room): number[] {
-  if (room.id === 'bridge') return [1.9, 6.3];
+  if (room.id === 'bridge') return [1.5, 2.9];
   if (room.height >= 8) {
     const rows: number[] = [];
     for (let y = 1.7; y < room.height - 1; y += 3.1) rows.push(y);
@@ -565,74 +673,120 @@ function buildBoxLike(ctx: Ctx) {
 }
 
 function buildWedge(ctx: Ctx) {
-  const { room, base, wallTop, yBot } = ctx;
+  const { room, base, wallTop, yBot, cx } = ctx;
   const o = room.outer;
+  const ch = room.chamfer ?? 1;
   const hullTop = wallTop + HULL_TOP;
-  addHull(ctx, extrudePlan(ctx.poly, yBot, hullTop, 0.3));
+  addHull(ctx, facetedPrism(ctx.poly, yBot, hullTop, ch, ch));
 
   const poly = ctx.poly;
   const c: Pt = [poly.reduce((a, p) => a + p[0], 0) / poly.length, poly.reduce((a, p) => a + p[1], 0) / poly.length];
-  const n = poly.length;
+  const n = (room.nose ?? ctx.w) / 2;
+  const zt = o.maxZ - (room.noseLength ?? ctx.d);
+  const rc = ch * 1.5;
+  const frontR: Pt = [cx + n, o.maxZ];
+  const frontL: Pt = [cx - n, o.maxZ];
 
-  // tall view screens wrap the tapered nose: one band per storey
-  const facets: [Pt, Pt][] = [[poly[n - 4], poly[n - 3]], [poly[n - 3], poly[n - 2]], [poly[n - 2], poly[n - 1]]];
-  for (const [p0, p1] of facets) {
+  // wide view screens: two across the flat front face, one long band on each angled nose facet
+  const screenBand = (p0: Pt, p1: Pt, split: number) => {
     const [nx, nz] = edgeNormal(p0, p1, c);
     const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-    if (len < 1) continue;
     const mx = (p0[0] + p1[0]) / 2;
     const mz = (p0[1] + p1[1]) / 2;
-    const ry = Math.atan2(nx, nz);
-    const frame = new THREE.Mesh(new THREE.PlaneGeometry(len - 0.3, 7.2), mats.plain);
-    frame.position.set(mx + nx * 0.34, base + 4.9, mz + nz * 0.34);
-    frame.rotation.y = ry;
-    ctx.g.add(frame);
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(len - 0.7, 6.8), mats.viewport);
-    screen.position.set(mx + nx * 0.36, base + 4.9, mz + nz * 0.36);
-    screen.rotation.y = ry;
-    ctx.g.add(screen);
-    const bars: Inst[] = [];
-    const cols = Math.max(1, Math.round(len / 1.6));
     const tx = (p1[0] - p0[0]) / len;
     const tz = (p1[1] - p0[1]) / len;
+    const ry = Math.atan2(nx, nz);
+    const yc = base + 2.9;
+    const place = (m: THREE.Mesh, off: number) => {
+      m.position.set(mx + nx * off, yc, mz + nz * off);
+      m.rotation.y = ry;
+      ctx.g.add(m);
+    };
+    place(new THREE.Mesh(new THREE.PlaneGeometry(len - 0.5, 2.8), mats.plain), 0.04);
+    place(new THREE.Mesh(new THREE.PlaneGeometry(len - 0.9, 2.4), mats.viewport), 0.07);
+    const bars: Inst[] = [];
+    const cols = split * 3;
     for (let i = 1; i < cols; i++) {
-      const t = (i / cols - 0.5) * (len - 0.7);
-      bars.push({ x: mx + tx * t + nx * 0.4, y: base + 4.9, z: mz + tz * t + nz * 0.4, sx: 0.1, sy: 6.8, sz: 0.08, ry });
+      const t = (i / cols - 0.5) * (len - 0.9);
+      const heavy = i % 3 === 0;
+      bars.push({ x: mx + tx * t + nx * 0.1, y: yc, z: mz + tz * t + nz * 0.1, sx: heavy ? 0.22 : 0.07, sy: 2.4, sz: 0.08, ry });
     }
-    bars.push({ x: mx + nx * 0.4, y: base + 4.5, z: mz + nz * 0.4, sx: len - 0.7, sy: 0.3, sz: 0.1, ry });
+    bars.push({ x: mx + nx * 0.1, y: yc - 0.35, z: mz + nz * 0.1, sx: len - 0.9, sy: 0.09, sz: 0.08, ry });
     ctx.g.add(instanced(UNIT_BOX, mats.plain, bars));
-  }
+    // grille strip under the screens, deep red lintel above
+    const grille: Inst[] = [];
+    for (let k = 0; k < 3; k++) grille.push({ x: mx + nx * 0.05, y: base + 1.0 + k * 0.17, z: mz + nz * 0.05, sx: len - 1.4, sy: 0.07, sz: 0.06, ry });
+    ctx.g.add(instanced(UNIT_BOX, mats.seam, grille));
+    ctx.g.add(instanced(UNIT_BOX, ctx.accent, [{ x: mx + nx * 0.06, y: yc + 1.6, z: mz + nz * 0.06, sx: len - 1.6, sy: 0.12, sz: 0.06, ry }]));
+  };
+  screenBand(frontR, frontL, 2);
+  screenBand([o.maxX, zt], frontR, 1);
+  screenBand(frontL, [o.minX, zt], 1);
 
-  // flank lettering on the straight sides
-  for (const [p0, p1] of [[poly[1], poly[2]], [poly[n - 1], poly[0]]] as [Pt, Pt][]) {
+  // flank lettering above the window rows, on the straight sides
+  for (const [p0, p1] of [[[o.maxX, o.minZ + rc], [o.maxX, zt]], [[o.minX, zt], [o.minX, o.minZ + rc]]] as [Pt, Pt][]) {
     const [nx, nz] = edgeNormal(p0, p1, c);
-    const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-    nameDecal(ctx.g, (p0[0] + p1[0]) / 2 + nx * 0.3, base + 3.3, (p0[1] + p1[1]) / 2 + nz * 0.3, nx, nz, len - 1.0);
+    nameDecal(ctx.g, (p0[0] + p1[0]) / 2, base + 4.2, (p0[1] + p1[1]) / 2, nx, nz, 7);
   }
 
-  buildArms(ctx, o);
+  buildSuperstructure(ctx, hullTop);
 }
 
-/** Thin forward-pointing booms with sensor heads, mounted on the sides of the hull. */
-function buildArms(ctx: Ctx, o: Rect) {
-  for (const a of ctx.room.appendages ?? []) {
-    const sgn = a.side === 'E' ? 1 : -1;
-    const p0 = new THREE.Vector3((sgn > 0 ? o.maxX : o.minX) + sgn * 0.3, ctx.base + a.y, o.minZ + a.z);
-    const p1 = new THREE.Vector3(p0.x + sgn * a.splay, p0.y, p0.z + a.length);
-    const len = p0.distanceTo(p1);
-    const arm = new THREE.Group();
-    arm.position.copy(p0);
-    arm.lookAt(p1);
-    arm.add(mesh(cylZ(0.2, 0.28, len, 10), mats.mid, 0, 0, len / 2));
-    const fairing = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.7, 2.6), mats.light);
-    fairing.position.set(-sgn * 0.2, 0, 1.0);
-    arm.add(fairing);
-    for (const f of [0.35, 0.7]) arm.add(mesh(cylZ(0.2, 0.2, 0.3, 10), mats.plain, 0, 0, len * f));
-    arm.add(mesh(cylZ(0.5, 0.5, 1.6, 16), mats.dark, 0, 0, len + 0.4));
-    arm.add(mesh(cylZ(0.0, 0.5, 0.9, 16), mats.light, 0, 0, len + 1.65));
-    arm.add(mesh(new THREE.SphereGeometry(0.17, 10, 8), mats.lens, 0, 0, len + 2.12));
-    arm.add(mesh(new THREE.BoxGeometry(2.2, 0.08, 0.5), mats.plain, 0, 0, len - 0.2));
-    ctx.g.add(arm);
+/** Tiered faceted centre section on the roof: two stepped octagonal decks, a cap block and a few slim masts. */
+function buildSuperstructure(ctx: Ctx, hullTop: number) {
+  const { room, cx } = ctx;
+  const o = room.outer;
+  const zc = (o.minZ + o.maxZ) / 2 - 0.5;
+  const oct = (hx: number, hz: number, k: number): Pt[] => octPts(hx, hz, k, k).map(([x, z]) => [cx + x, zc + z] as Pt);
+
+  const t1: Pt[] = oct(3.9, 6.6, 2.4);
+  const t2: Pt[] = oct(2.5, 4.5, 1.6);
+  const t3: Pt[] = oct(1.2, 1.9, 0.6);
+  const y1 = hullTop + 1.9;
+  const y2 = y1 + 1.5;
+  const y3 = y2 + 0.8;
+
+  addHull(ctx, facetedPrism(t1, hullTop - 0.1, y1, 0, 0.6), mats.light);
+  addHull(ctx, facetedPrism(t2, y1 - 0.1, y2, 0, 0.5), mats.mid);
+  addHull(ctx, facetedPrism(t3, y2 - 0.1, y3, 0, 0.3), mats.dark);
+
+  const rand = ctx.rand;
+  const row = (poly: Pt[], y: number, pitch: number) => {
+    const items: Inst[] = [];
+    for (const p of facadePoints(poly, false, pitch, 0.5)) {
+      items.push({
+        x: p.x + p.nx * 0.04,
+        y,
+        z: p.z + p.nz * 0.04,
+        sx: 0.95,
+        sy: 0.42,
+        sz: 0.1,
+        ry: Math.atan2(p.nx, p.nz),
+        color: WINDOW_COLORS[Math.floor(rand() * WINDOW_COLORS.length)],
+      });
+    }
+    if (items.length) ctx.g.add(instanced(UNIT_BOX, mats.window, items));
+  };
+  row(t1, hullTop + 0.7, 1.5);
+  row(t2, y1 + 0.55, 1.4);
+
+  // deep red trim where each tier meets the one below, and a skylight ring on the upper deck
+  for (const [poly, y] of [[t1, hullTop + 0.02], [t2, y1 + 0.02]] as [Pt[], number][]) {
+    const items: Inst[] = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p0 = poly[i];
+      const p1 = poly[(i + 1) % poly.length];
+      items.push({ x: (p0[0] + p1[0]) / 2, y, z: (p0[1] + p1[1]) / 2, sx: 0.14, sy: 0.14, sz: Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + 0.2, ry: Math.atan2(p1[0] - p0[0], p1[1] - p0[1]) });
+    }
+    ctx.g.add(instanced(UNIT_BOX, ctx.accent, items));
+  }
+  const ringGeo = octFrame(1.9, 3.6, 1.0, 1.0, 0.12, 0.04);
+  ringGeo.rotateX(-Math.PI / 2);
+  ctx.g.add(mesh(ringGeo, ctx.accent, cx, y2 - 0.02, zc));
+
+  for (const [dx, dz, h] of [[0, 0.6, 1.6], [-0.55, -0.6, 1.1], [0.55, -0.6, 1.3]] as [number, number, number][]) {
+    ctx.g.add(mesh(new THREE.CylinderGeometry(0.05, 0.08, h, 8), mats.plain, cx + dx, y3 + h / 2, zc + dz));
+    ctx.g.add(mesh(new THREE.SphereGeometry(0.1, 8, 6), mats.lens, cx + dx, y3 + h + 0.05, zc + dz));
   }
 }
 
@@ -962,22 +1116,28 @@ function buildHoldDetail(ctx: Ctx) {
 /* ---------------------------------------------------------- struts and ports */
 
 function strut(group: THREE.Group, name: string, axis: 'x' | 'z', cx: number, cy: number, cz: number, length: number, width: number, opts: { ribs?: boolean; cap?: boolean; hazardEnd?: 1 | -1 } = {}) {
-  const rx = width / 2;
   const g = new THREE.Group();
   g.name = name;
   g.position.set(cx, cy, cz);
   if (axis === 'x') g.rotation.y = Math.PI / 2;
 
-  const tubeGeo = cylZ(1, 1, 1, 32);
-  scaleUV(tubeGeo, 2 * Math.PI * rx, length);
-  const tube = new THREE.Mesh(tubeGeo, mats.mid);
-  tube.scale.set(rx, STRUT_RY, length);
+  const body = corridorDims(width);
+  const tube = new THREE.Mesh(octPrism(body.hw, body.hh, body.cx, body.cy, length), mats.mid);
   g.add(tube);
 
-  const unit = cylZ(1, 1, 1, 32);
+  const cache = new Map<string, THREE.BufferGeometry>();
+  const frameGeo = (grow: number, thick: number) => {
+    const key = `${grow}/${thick}`;
+    let geo = cache.get(key);
+    if (!geo) {
+      const d = corridorDims(width, grow);
+      geo = octPrism(d.hw, d.hh, d.cx, d.cy, thick);
+      cache.set(key, geo);
+    }
+    return geo;
+  };
   const ring = (at: number, thick: number, grow: number, mat: THREE.Material = mats.plain) => {
-    const m = new THREE.Mesh(unit, mat);
-    m.scale.set(rx + grow, STRUT_RY + grow * 0.85, thick);
+    const m = new THREE.Mesh(frameGeo(grow, thick), mat);
     m.position.z = at;
     g.add(m);
   };
@@ -991,13 +1151,16 @@ function strut(group: THREE.Group, name: string, axis: 'x' | 'z', cx: number, cy
   if (opts.ribs !== false && length > 7) {
     const n = Math.floor(length / 4);
     for (let i = 1; i < n; i++) ring(-length / 2 + (length * i) / n, 0.28, 0.1);
+    // panel seams between the ribs
+    for (let i = 0; i < n; i++) ring(-length / 2 + (length * (i + 0.5)) / n, 0.05, 0.03, mats.seam);
+  } else if (length > 3.5) {
+    ring(0, 0.05, 0.03, mats.seam);
   }
-  if (opts.cap) {
-    const cap = new THREE.Mesh(unit, mats.plain);
-    cap.scale.set(rx, STRUT_RY, 0.3);
-    cap.position.z = length / 2 + 0.1;
-    g.add(cap);
-  }
+  if (opts.cap) ring(length / 2 + 0.1, 0.3, 0, mats.plain);
+
+  // long seams run down every facet edge of the hull
+  const edge: Inst[] = octPts(body.hw + 0.02, body.hh + 0.02, body.cx, body.cy).map(([x, y]) => ({ x, y, z: 0, sx: 0.08, sy: 0.08, sz: length - 0.4 }));
+  g.add(instanced(UNIT_BOX, mats.seam, edge));
 
   const ports: Inst[] = [];
   const step = 2.0;
@@ -1005,10 +1168,10 @@ function strut(group: THREE.Group, name: string, axis: 'x' | 'z', cx: number, cy
   for (let i = 0; i < n; i++) {
     const p = (i - (n - 1) / 2) * step;
     for (const side of [-1, 1]) {
-      ports.push({ x: side * (rx - 0.03), y: 0.1, z: p, sx: 1, sy: 1, sz: 1, rz: Math.PI / 2, color: WINDOW_COLORS[(i + (side > 0 ? 1 : 0)) % 4] });
+      ports.push({ x: side * (body.hw + 0.01), y: 0.1, z: p, sx: 0.12, sy: 0.55, sz: 1.0, color: WINDOW_COLORS[(i + (side > 0 ? 1 : 0)) % 4] });
     }
   }
-  g.add(instanced(new THREE.CylinderGeometry(0.3, 0.3, 0.14, 14), mats.window, ports));
+  g.add(instanced(UNIT_BOX, mats.window, ports));
   group.add(g);
 }
 
@@ -1069,24 +1232,35 @@ function dockSurface(dock: Dock, layout: ShipLayout) {
   return { x: dock.x + ox * 6 - ox * best, z: dock.z + oz * 6 - oz * best, nx: normal[0], nz: normal[1] };
 }
 
-/** A hatch ring with clamps and a dark recess: reads as an unused portal. */
+/** An octagonal hatch frame (the corridor cross-section) with clamps and a dark recess: reads as an unused portal. */
 function buildPort(dock: Dock, s: { x: number; z: number; nx: number; nz: number }) {
-  const R = dock.width / 2 + 0.1;
+  const d = corridorDims(CORRIDOR_PROFILE.clearWidth, 0.12);
+  const border = 0.3;
   const g = new THREE.Group();
   g.name = `port:${dock.id}`;
   g.userData.module = dock.module;
-  g.position.set(s.x + s.nx * 0.12, floorY(dock.level) + 1.6, s.z + s.nz * 0.12);
+  g.position.set(s.x + s.nx * 0.02, floorY(dock.level) + 1.6, s.z + s.nz * 0.02);
   g.rotation.y = Math.atan2(s.nx, s.nz);
-  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.22, 10, 36), mats.plain));
-  g.add(new THREE.Mesh(new THREE.TorusGeometry(R - 0.28, 0.06, 6, 36), mats.portGlow));
-  g.add(mesh(new THREE.CircleGeometry(R - 0.3, 36), mats.portInner, 0, 0, 0.02));
+  // the frame is a deep collar so it seats on curved hulls too
+  const collar = new THREE.Mesh(octFrame(d.hw, d.hh, d.cx, d.cy, border, 1.1), mats.plain);
+  collar.position.z = -0.9;
+  g.add(collar);
+  const inner = octPts(d.hw - border, d.hh - border, d.cx - 0.12, d.cy - 0.12);
+  const face = new THREE.ShapeGeometry(new THREE.Shape(inner.map(([x, y]) => new THREE.Vector2(x, y))));
+  g.add(mesh(face, mats.portInner, 0, 0, 0.05));
+  const glow = new THREE.Mesh(octFrame(d.hw - border, d.hh - border, d.cx - 0.12, d.cy - 0.12, 0.07, 0.04), mats.portGlow);
+  glow.position.z = 0.06;
+  g.add(glow);
   const clamps: Inst[] = [];
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-    clamps.push({ x: Math.cos(a) * (R + 0.05), y: Math.sin(a) * (R + 0.05), z: 0.1, sx: 0.5, sy: 0.3, sz: 0.3, rz: a });
+  const mid = octPts(d.hw - border / 2, d.hh - border / 2, d.cx, d.cy);
+  for (let i = 0; i < mid.length; i++) {
+    const p0 = mid[i];
+    const p1 = mid[(i + 1) % mid.length];
+    clamps.push({ x: (p0[0] + p1[0]) / 2, y: (p0[1] + p1[1]) / 2, z: 0.2, sx: 0.5, sy: 0.3, sz: 0.3, rz: Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) });
   }
   g.add(instanced(UNIT_BOX, mats.hazard, clamps));
-  for (const a of [0, Math.PI / 2]) g.add(mesh(new THREE.BoxGeometry(2 * (R - 0.4), 0.07, 0.04), mats.portGlow, 0, 0, 0.05).rotateZ(a));
+  g.add(mesh(new THREE.BoxGeometry(2 * (d.hw - border - 0.4), 0.07, 0.04), mats.portGlow, 0, 0, 0.1));
+  g.add(mesh(new THREE.BoxGeometry(0.07, 2 * (d.hh - border - 0.4), 0.04), mats.portGlow, 0, 0, 0.1));
   return g;
 }
 
@@ -1180,7 +1354,10 @@ function buildConnectors(layout: ShipLayout, root: THREE.Group) {
 
   const ghostMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.2, roughness: 0.5, transparent: true, opacity: 0.38, emissive: 0x2c3036, emissiveIntensity: 0.6, depthWrite: false });
   const ringMat = new THREE.MeshBasicMaterial({ color: 0xcfd6df, toneMapped: false });
-  const unit = cylZ(1, 1, 1, 28);
+  const P = CORRIDOR_PROFILE;
+  const unit = octPrism(1, 1, P.chamferX / (P.outerWidth / 2), P.chamferY / (P.outerHeight / 2), 1);
+  const ringGeo = octFrame(1, 1, P.chamferX / (P.outerWidth / 2), P.chamferY / (P.outerHeight / 2), 0.03, 0.12);
+  ringGeo.translate(0, 0, -0.06);
   const out: Connector[] = [];
   const group = new THREE.Group();
   group.name = 'connectors';
@@ -1205,7 +1382,7 @@ function buildConnectors(layout: ShipLayout, root: THREE.Group) {
     const tube = new THREE.Mesh(unit, ghostMat);
     g.add(tube);
     const rings = [0, 1].map(() => {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 32), ringMat);
+      const r = new THREE.Mesh(ringGeo, ringMat);
       g.add(r);
       return r;
     });
@@ -1272,10 +1449,12 @@ export function buildShipExterior(layout: ShipLayout = SHIP_LAYOUT): ShipExterio
         const len = a.distanceTo(b);
         k.group.position.copy(a).add(b).multiplyScalar(0.5);
         k.group.lookAt(b);
-        k.tube.scale.set(k.corridor.width / 2, STRUT_RY, Math.max(0.01, len));
+        const hw = (k.corridor.width + (CORRIDOR_PROFILE.outerWidth - CORRIDOR_PROFILE.clearWidth)) / 2;
+        const hh = CORRIDOR_PROFILE.outerHeight / 2;
+        k.tube.scale.set(hw, hh, Math.max(0.01, len));
         k.rings[0].position.z = -len / 2;
         k.rings[1].position.z = len / 2;
-        for (const r of k.rings) r.scale.set(k.corridor.width / 2 + 0.2, STRUT_RY + 0.2, 1);
+        for (const r of k.rings) r.scale.set(hw + 0.2, hh + 0.2, 1);
       }
     }
     void ghostScale;

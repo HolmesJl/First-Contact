@@ -290,6 +290,18 @@ renderer.setAnimationLoop(frame);
     placeCamera(azimuth, elevation, distance);
     renderer.render(scene, camera);
   },
+  /** Orbit an arbitrary point (world frame) at a given azimuth, elevation and distance. */
+  focus: (x: number, y: number, z: number, azimuth: number, elevation: number, distance: number) => {
+    setSpin(false);
+    tween = null;
+    const az = THREE.MathUtils.degToRad(azimuth);
+    const el = THREE.MathUtils.degToRad(elevation);
+    controls.target.set(x, y, z);
+    camera.position.set(x + distance * Math.cos(el) * Math.sin(az), y + distance * Math.sin(el), z + distance * Math.cos(el) * Math.cos(az));
+    camera.lookAt(controls.target);
+    controls.update();
+    renderer.render(scene, camera);
+  },
   /** Instantly apply an explode amount (0 = assembled) and re-aim the camera at the current preset. */
   setExploded: (amount: number) => {
     explodeAmt.value = String(amount || 1);
