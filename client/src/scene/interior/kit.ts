@@ -114,14 +114,13 @@ export class Batch {
     this.add(new THREE.TorusGeometry(radius, tube, 6, seg), mat, this.m);
   }
 
-  build(into: THREE.Object3D, opts: { shadow?: boolean } = {}) {
+  build(into: THREE.Object3D) {
     for (const [mat, list] of this.lists) {
       const geo = mergeGeometries(list, false);
       if (!geo) continue;
       const mesh = new THREE.Mesh(geo, MAT[mat]);
       mesh.matrixAutoUpdate = false;
       into.add(mesh);
-      void opts;
     }
     this.lists.clear();
   }

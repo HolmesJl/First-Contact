@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { starfield, canvasTexture } from './common';
 import { Batch, MAT, labelSprite, screenMaterial, type MatKey } from './interior/kit';
 import { buildProp, type PodFx, type PropAnim, type PropContext } from './interior/props';
-import { CORRIDOR_PROFILE, SHIP_LAYOUT, type Corridor, type Door, type Rect, type Room } from '../../../shared/shipLayout';
+import { SHIP_LAYOUT, type Corridor, type Door, type Rect, type Room } from '../../../shared/shipLayout';
 import {
   BRIDGE_POLY,
   CABIN_KEYPAD,
@@ -209,14 +209,16 @@ const OCT: Pt[] = [
   [-2.0, 0.8],
 ];
 
-function tubeGeometry(axis: 'x' | 'z', cx: number, t0: number, t1: number) {
+/** `cut0` shapes the t0 end of the tube to a curved wall: it returns the end position for a lateral offset `u`. */
+function tubeGeometry(axis: 'x' | 'z', cx: number, t0: number, t1: number, cut0?: (u: number) => number) {
   const pos: number[] = [];
   const map = (u: number, y: number, t: number): [number, number, number] => (axis === 'z' ? [cx + u, y, t] : [t, y, cx + u]);
+  const end0 = (u: number) => (cut0 ? cut0(u) : t0);
   for (let i = 0; i < OCT.length; i++) {
     const [u0, y0] = OCT[i];
     const [u1, y1] = OCT[(i + 1) % OCT.length];
-    const a = map(u0, y0, t0);
-    const b = map(u1, y1, t0);
+    const a = map(u0, y0, end0(u0));
+    const b = map(u1, y1, end0(u1));
     const c = map(u1, y1, t1);
     const d = map(u0, y0, t1);
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
@@ -431,21 +433,11 @@ export class ShipInterior {
     mesh.position.y = h;
     g.add(mesh);
     if (hole) {
-      // Flush skylight: faint glass with a rim of light.
+      // Flush skylight: a hole in the ceiling with faint glass.
       const glass = new THREE.Mesh(new THREE.PlaneGeometry(hole.maxX - hole.minX, hole.maxZ - hole.minZ), MAT.glass);
       glass.rotation.x = Math.PI / 2;
       glass.position.set((hole.minX + hole.maxX) / 2, h - 0.01, (hole.minZ + hole.maxZ) / 2);
       g.add(glass);
-      const b = new Batch();
-      const cx = (hole.minX + hole.maxX) / 2;
-      const cz = (hole.minZ + hole.maxZ) / 2;
-      const w = hole.maxX - hole.minX;
-      const d = hole.maxZ - hole.minZ;
-      b.box(w + 0.3, 0.06, 0.1, cx, h - 0.1, hole.minZ - 0.05, 'glowWhite');
-      b.box(w + 0.3, 0.06, 0.1, cx, h - 0.1, hole.maxZ + 0.05, 'glowWhite');
-      b.box(0.1, 0.06, d, hole.minX - 0.05, h - 0.1, cz, 'glowWhite');
-      b.box(0.1, 0.06, d, hole.maxX + 0.05, h - 0.1, cz, 'glowWhite');
-      b.build(g);
     }
   }
 
@@ -484,7 +476,6 @@ export class ShipInterior {
 
   /** Per-room details that are not tied to a single prop: floor strips, windows, signage. */
   private roomExtras(room: Room, b: Batch, v: SpaceView) {
-    const o = room.outer;
     if (room.id === 'bay') {
       // Floor strips and the stern window (glass, mullions, sill light).
       for (let x = -8; x <= 8; x += 4) b.box(0.1, 0.03, 9, x, 0.01, 1.5, 'glowCyan');
@@ -496,10 +487,8 @@ export class ShipInterior {
       b.box(20.4, 0.06, 0.1, 0, 0.62, 7.1, 'glowCyan');
     }
     if (room.id === 'commons') {
-      const c = v.center;
       b.ring(2.1, 0.04, -38.2, 0.012, 1.6, 'glowCyan', 48);
       for (const [x, z, w, d] of [[-38.2, -3.6, 0.12, 3.4], [-38.2, 5.2, 0.12, 2.4]] as const) b.box(w, 0.025, d, x, 0.01, z, 'glowCyan');
-      void c;
     }
     if (room.id === 'bridge') this.bridgeScreens(v, b);
     if (room.id === 'fore-node' || room.id === 'aft-node') {
@@ -511,7 +500,6 @@ export class ShipInterior {
       for (const s of [-1, 1]) b.box(0.25, 0.25, 10, -38.2 + s * 5.85, 0, -65.2, 'dark');
     }
     if (room.id === 'greenhouse') b.ring(7.3, 0.05, v.center.x, 0.012, v.center.z, 'glowGreen', 64);
-    void o;
   }
 
   private bridgeScreens(v: SpaceView, b: Batch) {
@@ -539,11 +527,7 @@ export class ShipInterior {
         m.rotation.y = Math.atan2(inx, inz);
         v.group.add(m);
       }
-      const mx = (p[0] + q[0]) / 2 + inx * (WALL_T / 2 + 0.03);
-      const mz = (p[1] + q[1]) / 2 + inz * (WALL_T / 2 + 0.03);
       b.beam(p[0] + dx * 0.2 + inx * 0.22, 1.4, p[1] + dz * 0.2 + inz * 0.22, q[0] - dx * 0.2 + inx * 0.22, 1.4, q[1] - dz * 0.2 + inz * 0.22, 0.07, 'glowCyan');
-      void mx;
-      void mz;
     }
   }
 
@@ -552,13 +536,12 @@ export class ShipInterior {
   private buildCorridor(c: Corridor) {
     const center = rectCenter(c.outer);
     const v = this.space(c.id, center);
-    let t0 = c.axis === 'z' ? c.outer.minZ : c.outer.minX;
-    let t1 = c.axis === 'z' ? c.outer.maxZ : c.outer.maxX;
-    // The Captain's cabin is round, so its strut runs a little way into the room to meet the wall.
-    if (c.id === 'c-cabin') t0 -= 0.55;
-    // The greenhouse strut stops where its opening meets the drum wall instead of poking across the room.
-    if (c.id === 'c-greenhouse') t0 = -66.9;
-    this.tube(v, c.axis, c.axis === 'z' ? center.x : center.z, t0, t1);
+    const t0 = c.axis === 'z' ? c.outer.minZ : c.outer.minX;
+    const t1 = c.axis === 'z' ? c.outer.maxZ : c.outer.maxX;
+    // Struts that meet a round room end on its curved wall (the greenhouse strut is authored to run on into the drum).
+    const round = c.id === 'c-cabin' ? ROUND_ROOMS.cabin : c.id === 'c-greenhouse' ? ROUND_ROOMS.greenhouse : null;
+    const cut0 = round ? (u: number) => round.x + Math.sqrt(Math.max(0, round.r ** 2 - (center.z + u - round.z) ** 2)) : undefined;
+    this.tube(v, c.axis, c.axis === 'z' ? center.x : center.z, t0, t1, cut0);
   }
 
   private buildPassThrough() {
@@ -571,16 +554,18 @@ export class ShipInterior {
     b.build(v.group);
   }
 
-  private tube(v: SpaceView, axis: 'x' | 'z', cx: number, t0: number, t1: number) {
-    const shell = new THREE.Mesh(tubeGeometry(axis, cx, t0, t1), MAT.shell.clone());
+  private tube(v: SpaceView, axis: 'x' | 'z', cx: number, t0: number, t1: number, cut0?: (u: number) => number) {
+    const shell = new THREE.Mesh(tubeGeometry(axis, cx, t0, t1, cut0), MAT.shell.clone());
     shell.name = `${v.id}:tube`;
     v.group.add(shell);
     this.occluders.push({ mesh: shell, mat: shell.material as THREE.MeshLambertMaterial, space: v.id, fade: 1, target: 1 });
     this.occluderMeshes.push(shell);
 
-    const len = t1 - t0;
-    const mid = (t0 + t1) / 2;
-    const floorPts: Pt[] = axis === 'z' ? [[cx - 1.2, t0], [cx + 1.2, t0], [cx + 1.2, t1], [cx - 1.2, t1]] : [[t0, cx - 1.2], [t1, cx - 1.2], [t1, cx + 1.2], [t0, cx + 1.2]];
+    const start = cut0 ? Math.max(cut0(-2), cut0(2)) + 0.5 : t0;
+    const len = t1 - start;
+    const mid = (start + t1) / 2;
+    const e0 = (u: number) => (cut0 ? cut0(u) : t0);
+    const floorPts: Pt[] = axis === 'z' ? [[cx - 1.2, t0], [cx + 1.2, t0], [cx + 1.2, t1], [cx - 1.2, t1]] : [[e0(-1.2), cx - 1.2], [t1, cx - 1.2], [t1, cx + 1.2], [e0(1.2), cx + 1.2]];
     const floor = new THREE.Mesh(floorGeometry(floorPts), MAT.floor);
     floor.position.y = 0.012;
     v.group.add(floor);
@@ -591,9 +576,9 @@ export class ShipInterior {
     const b = new Batch();
     const place = (t: number, y: number, w: number, h: number, d: number, mat: MatKey) => (axis === 'z' ? b.box(w, h, d, cx, y, t, mat) : b.box(d, h, w, t, y, cx, mat));
     place(mid, 3.12, 0.35, 0.05, len - 0.6, 'glowWhite');
-    for (let t = t0 + 1.5; t < t1 - 1; t += 2) place(t, 0.013, 0.14, 0.02, 0.9, 'glowCyan');
+    for (let t = start + 1.5; t < t1 - 1; t += 2) place(t, 0.013, 0.14, 0.02, 0.9, 'glowCyan');
     const geo = ribGeometry();
-    for (let t = t0 + 2; t < t1 - 0.8; t += 4) {
+    for (let t = start + 1.6; t < t1 - 0.8; t += 4) {
       const m = new THREE.Matrix4();
       if (axis === 'z') m.makeTranslation(cx, 0, t);
       else m.makeTranslation(t, 0, cx).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2));
