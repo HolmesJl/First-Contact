@@ -6,8 +6,11 @@
  * +x = starboard, +z = bow, y up, level 0 floor at y = 0. Metres.
  * `outer` rects are wall centre lines (for rendering); `walk` rects are the walkable interiors.
  *
- * Revision 3: the bridge is longer and narrower with a tapered nose and two sensor arms; roofs are flat or
- * low-profile so nothing blocks a module placed on the level above or below.
+ * Revision 4: the bridge is a faceted one-storey hull (taller walls, chamfered edges, flat front face, raised tiered
+ * centre section) and corridors have a chamfered-rectangle cross-section. The bridge is exempt from the roof-clearance
+ * rule: it blocks building above and below. The sensor arms are gone; nothing extends forward of the bridge body.
+ *
+ * Revision 3: roofs are flat or low-profile so nothing blocks a module placed on the level above or below.
  *
  * Revision 2 (exterior silhouette pass): rooms carry a `shape` and a `height`, the hangar and
  * engine swapped places (hangar aft of the Commons with a pass-through, engine detached further
@@ -76,32 +79,20 @@ export type Facing = 'N' | 'S' | 'E' | 'W';
 
 /**
  * Plan form of a module's hull.
- * box: rectangle; wedge: trapezoid with a narrower nose (+z end); cylinder: round walls;
+ * box: rectangle; wedge: faceted hull with a flat-fronted tapered nose (+z end) and chamfered edges; cylinder: round walls;
  * spheroid: egg-shaped pod; drum: horizontal cylinder along z; hangar: tall block with a pass-through trench.
  */
 export type ModuleShape = 'box' | 'wedge' | 'cylinder' | 'spheroid' | 'drum' | 'hangar';
 
-/** Something mounted on the side of a module, outside its footprint (the bridge's sensor arms). */
-export interface Appendage {
-  kind: 'sensor-arm';
-  side: 'W' | 'E';
-  /** Root position: metres forward of the module's rear (min z) edge. */
-  z: number;
-  /** Root height above the module floor. */
-  y: number;
-  /** Boom length, pointing forward (+z). */
-  length: number;
-  /** Sideways drift over the boom length, away from the hull (positive = outward). */
-  splay: number;
-}
-
 /**
  * Roof form. `apex` is metres above the room's floor. Flat if absent.
  * dome: glass dome; vault: barrel vault along x; hip: pyramid roof; shed: single slope rising toward the stern;
- * Only the dome and the bridge's upper storey rise meaningfully above a module's wall height; the rest are
- * low-profile so a corridor or module on the level above or below is never blocked.
+ * tiered: stepped faceted superstructure on the roof centre (the bridge).
+ * Only the dome, the tiered bridge superstructure and the greenhouse/hangar heights rise meaningfully above a
+ * module's wall height; the rest are low-profile so a corridor or module on the level above or below is never
+ * blocked. The bridge is exempt (see `blocksAbove` / `blocksBelow`).
  */
-export type Ceiling = { kind: 'dome' | 'vault' | 'hip' | 'shed'; apex: number };
+export type Ceiling = { kind: 'dome' | 'vault' | 'hip' | 'shed' | 'tiered'; apex: number };
 
 /** A tunnel through a module that a strut continues along (the hangar's pass-through). */
 export interface PassThrough {
@@ -121,13 +112,18 @@ export interface Room {
   shape: ModuleShape;
   /** Wall height in metres (floor to wall top, the tallest flat part of the hull). */
   height: number;
-  /** Decks stacked inside the module (the bridge has an upper deck later). */
+  /** Decks stacked inside the module. */
   storeys?: number;
+  /** Size in metres of the hull edge chamfers (`wedge`): top and bottom bevels; rear plan corners are cut 1.5x this. */
+  chamfer?: number;
+  /** No module or corridor may be built on the level above (its roof is tiered and tall). For the build terminal. */
+  blocksAbove?: boolean;
+  /** No module or corridor may be built on the level below. For the build terminal. */
+  blocksBelow?: boolean;
   /** Nose width in metres for `wedge` (the rear is the full outer width). */
   nose?: number;
   /** Length of the tapered nose for `wedge`; the hull is straight-sided behind it. */
   noseLength?: number;
-  appendages?: Appendage[];
   ceiling?: Ceiling;
   passThrough?: PassThrough;
   /** False for modules that are hull only (the NPC dorm shows a status panel instead). */
@@ -236,6 +232,18 @@ export interface ShipLayout {
 export const DECK_PITCH = 5.0;
 export const WALL_HEIGHT = 3.2;
 export const STRUT_WIDTH = 4.0;
+
+/**
+ * Corridor cross-section: an elongated octagon (chamfered rectangle). `clearWidth` is the walkable interior width
+ * (= STRUT_WIDTH); the outer hull adds wall thickness. Chamfer legs are measured along each face.
+ */
+export const CORRIDOR_PROFILE = {
+  clearWidth: STRUT_WIDTH,
+  outerWidth: 4.6,
+  outerHeight: 3.9,
+  chamferX: 1.0,
+  chamferY: 0.9,
+} as const;
 export const floorY = (level: Level) => level * DECK_PITCH;
 
 const R = (minX: number, maxX: number, minZ: number, maxZ: number): Rect => ({ minX, maxX, minZ, maxZ });
@@ -286,17 +294,17 @@ export const SHIP_LAYOUT: ShipLayout = {
     }),
     mod('bridge', 'room', 0, {
       id: 'bridge',
-      outer: R(-43.2, -33.2, 25.3, 43.3),
-      walk: R(-42.3, -34.1, 26.2, 34.4),
+      outer: R(-44.2, -32.2, 25.3, 43.3),
+      walk: R(-43.3, -33.1, 26.2, 36),
       shape: 'wedge',
-      nose: 2.4,
-      noseLength: 9,
-      height: 9,
-      storeys: 2,
-      appendages: [
-        { kind: 'sensor-arm', side: 'W', z: 4, y: 7, length: 26, splay: 3 },
-        { kind: 'sensor-arm', side: 'E', z: 4, y: 7, length: 26, splay: 3 },
-      ],
+      nose: 8,
+      noseLength: 7,
+      chamfer: 1,
+      height: 5.5,
+      storeys: 1,
+      ceiling: { kind: 'tiered', apex: 10 },
+      blocksAbove: true,
+      blocksBelow: true,
     }),
     mod('ops', 'room', 0, {
       id: 'ops',
@@ -436,7 +444,7 @@ export const SHIP_LAYOUT: ShipLayout = {
   docks: [
     { id: 'spine', kind: 'spine', module: 'engine', level: 0, x: -38.2, z: -71.2, facing: 'N', width: 6, occupant: null },
     { id: 'prow', kind: 'prow', module: 'bridge', level: 0, x: -38.2, z: 43.3, facing: 'S', width: 2.4, occupant: null },
-    { id: 'wing-sensor', kind: 'wing', module: 'bridge', level: 0, x: -43.2, z: 28.5, facing: 'W', width: 3, occupant: null },
+    { id: 'wing-bridge', kind: 'wing', module: 'bridge', level: 0, x: -44.2, z: 30, facing: 'W', width: 3, occupant: null },
     { id: 'wing-ops', kind: 'wing', module: 'ops', level: 0, x: -17.2, z: 21, facing: 'E', width: 3, occupant: null },
     { id: 'ext-bay', kind: 'wing', module: 'bay', level: 0, x: 10.2, z: 0.5, facing: 'E', width: 3, occupant: null },
     { id: 'ring-resid', kind: 'ring', module: 'quarters', level: 0, x: -58.2, z: 6, facing: 'W', width: 3, occupant: 'c-dorm' },
