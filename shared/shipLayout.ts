@@ -6,6 +6,10 @@
  * +x = starboard, +z = bow, y up, level 0 floor at y = 0. Metres.
  * `outer` rects are wall centre lines (for rendering); `walk` rects are the walkable interiors.
  *
+ * Revision 5 (interior pass): the NPC dorm's `dorm-grow` dock is gone (single-connection rule), `bunks-dorm` and
+ * `dorm-in` are sealed doors, and the dorm and the Captain's cabin carry `maxPorts: 1`. Stations, props, spawns,
+ * berths and the walkable-area derivation live in shipInterior.ts.
+ *
  * Revision 4: the bridge is a faceted one-storey hull (taller walls, chamfered edges, flat front face, raised tiered
  * centre section) and corridors have a chamfered-rectangle cross-section. The bridge is exempt from the roof-clearance
  * rule: it blocks building above and below. The sensor arms are gone; nothing extends forward of the bridge body.
@@ -158,6 +162,8 @@ export interface Door {
   z: number;
   width: number;
   locked?: 'captain' | 'crew';
+  /** Not passable: a bulkhead with a panel on it (the NPC dorm). Interior only. */
+  sealed?: boolean;
 }
 
 export interface Lift {
@@ -218,6 +224,8 @@ export interface ShipModule {
   stations: Station[];
   spawns: Spawn[];
   berths: Berth[];
+  /** Small leaf modules have a single connection and no free faces (NPC dorm, Captain's cabin). */
+  maxPorts?: number;
 }
 
 export interface ShipLayout {
@@ -228,6 +236,9 @@ export interface ShipLayout {
   lifts: Lift[];
   docks: Dock[];
 }
+
+/** Modules that have a single connection point and no other ports. */
+export const SINGLE_PORT_MODULES: ModuleId[] = ['npc-dorm', 'cabin'];
 
 export const DECK_PITCH = 5.0;
 export const WALL_HEIGHT = 3.2;
@@ -269,7 +280,7 @@ function mod(
 }
 
 export const SHIP_LAYOUT: ShipLayout = {
-  version: 3,
+  version: 4,
   modules: [
     mod('commons', 'hub', 0, {
       id: 'commons',
@@ -426,8 +437,8 @@ export const SHIP_LAYOUT: ShipLayout = {
     { id: 'science-in', level: 0, a: 'c-science', b: 'science', axis: 'z', x: -47.2, z: -17.2, width: 3.0 },
     { id: 'commons-quarters', level: 0, a: 'commons', b: 'c-quarters', axis: 'z', x: -46.2, z: 3.5, width: 2.8 },
     { id: 'bunks-in', level: 0, a: 'c-quarters', b: 'bunks', axis: 'z', x: -50.2, z: 3.5, width: 3.0 },
-    { id: 'bunks-dorm', level: 0, a: 'bunks', b: 'c-dorm', axis: 'z', x: -58.2, z: 6, width: 3.0 },
-    { id: 'dorm-in', level: 0, a: 'c-dorm', b: 'npc-dorm', axis: 'z', x: -62.2, z: 6, width: 3.0 },
+    { id: 'bunks-dorm', level: 0, a: 'bunks', b: 'c-dorm', axis: 'z', x: -58.2, z: 6, width: 3.0, sealed: true },
+    { id: 'dorm-in', level: 0, a: 'c-dorm', b: 'npc-dorm', axis: 'z', x: -62.2, z: 6, width: 3.0, sealed: true },
     { id: 'commons-greenhouse', level: 0, a: 'commons', b: 'c-greenhouse', axis: 'z', x: -46.2, z: -3.5, width: 2.8 },
     { id: 'greenhouse-in', level: 0, a: 'c-greenhouse', b: 'greenhouse', axis: 'z', x: -62.2, z: -3.5, width: 3.0 },
     { id: 'commons-medical', level: 0, a: 'commons', b: 'c-medical', axis: 'z', x: -30.2, z: 3.5, width: 2.8 },
@@ -448,10 +459,11 @@ export const SHIP_LAYOUT: ShipLayout = {
     { id: 'wing-ops', kind: 'wing', module: 'ops', level: 0, x: -17.2, z: 21, facing: 'E', width: 3, occupant: null },
     { id: 'ext-bay', kind: 'wing', module: 'bay', level: 0, x: 10.2, z: 0.5, facing: 'E', width: 3, occupant: null },
     { id: 'ring-resid', kind: 'ring', module: 'quarters', level: 0, x: -58.2, z: 6, facing: 'W', width: 3, occupant: 'c-dorm' },
-    { id: 'dorm-grow', kind: 'ring', module: 'npc-dorm', level: 0, x: -70.2, z: 6, facing: 'W', width: 3, occupant: null },
     { id: 'ring-agri', kind: 'ring', module: 'greenhouse', level: 0, x: -79.2, z: -9.5, facing: 'W', width: 3, occupant: null },
     { id: 'ring-ind', kind: 'ring', module: 'aft-node', level: 0, x: -35.2, z: -17.2, facing: 'E', width: 3, occupant: null },
     { id: 'hold-ext', kind: 'wing', module: 'hold', level: 0, x: -20.2, z: -13, facing: 'N', width: 3, occupant: null },
     { id: 'bay-hull', kind: 'bay', module: 'hangar', level: -2, x: -30.2, z: -41.5, facing: 'E', width: 3, occupant: null },
   ],
 };
+
+for (const m of SHIP_LAYOUT.modules) if (SINGLE_PORT_MODULES.includes(m.id)) m.maxPorts = 1;
