@@ -1,0 +1,496 @@
+{
+ "generated": "2026-10-08",
+ "vertexBudget": 9000,
+ "skins": {
+  "male": [
+   {
+    "id": "caucasian",
+    "label": "Light",
+    "file": "skins/male-caucasian.webp"
+   },
+   {
+    "id": "asian",
+    "label": "Medium",
+    "file": "skins/male-asian.webp"
+   },
+   {
+    "id": "african",
+    "label": "Dark",
+    "file": "skins/male-african.webp"
+   }
+  ],
+  "female": [
+   {
+    "id": "caucasian",
+    "label": "Light",
+    "file": "skins/female-caucasian.webp"
+   },
+   {
+    "id": "caucasian2",
+    "label": "Light, freckled",
+    "file": "skins/female-caucasian2.webp"
+   },
+   {
+    "id": "asian",
+    "label": "Medium",
+    "file": "skins/female-asian.webp"
+   },
+   {
+    "id": "african",
+    "label": "Dark",
+    "file": "skins/female-african.webp"
+   }
+  ]
+ },
+ "hair": {
+  "short02": "hair/short02.webp",
+  "short04": "hair/short04.webp",
+  "afro01": "hair/afro01.webp",
+  "long01": "hair/long01.webp",
+  "bob02": "hair/bob02.webp",
+  "ponytail01": "hair/ponytail01.webp"
+ },
+ "presets": [
+  {
+   "id": "male-a",
+   "sex": "male",
+   "label": "Male A (athletic)",
+   "file": "male-a.glb",
+   "brows": "eyebrow003",
+   "hair": [
+    "short02",
+    "short04",
+    "afro01"
+   ],
+   "vertices": {
+    "Body": 9816,
+    "Brows": 124,
+    "Eyes": 96,
+    "Hair_afro01": 2196,
+    "Hair_short02": 1794,
+    "Hair_short04": 983,
+    "Lashes": 250
+   },
+   "bodyMorphTargets": 28,
+   "clips": {
+    "idle": {
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "raw_idle": {
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "walk": {
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.15,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "raw_walk": {
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.15,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "jog": {
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 3.329,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_jog": {
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 3.329,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "sprint": {
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 4.328,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_sprint": {
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 4.328,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    }
+   },
+   "bytes": 786252
+  },
+  {
+   "id": "male-b",
+   "sex": "male",
+   "label": "Male B (lean)",
+   "file": "male-b.glb",
+   "brows": "eyebrow007",
+   "hair": [
+    "short02",
+    "short04",
+    "afro01"
+   ],
+   "vertices": {
+    "Body": 9825,
+    "Brows": 124,
+    "Eyes": 96,
+    "Hair_afro01": 2196,
+    "Hair_short02": 1794,
+    "Hair_short04": 983,
+    "Lashes": 250
+   },
+   "bodyMorphTargets": 28,
+   "clips": {
+    "idle": {
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "raw_idle": {
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "walk": {
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.022,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "raw_walk": {
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.022,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "jog": {
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 2.96,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_jog": {
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 2.96,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "sprint": {
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 3.848,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_sprint": {
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 3.848,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    }
+   },
+   "bytes": 786400
+  },
+  {
+   "id": "female-a",
+   "sex": "female",
+   "label": "Female A (athletic)",
+   "file": "female-a.glb",
+   "brows": "eyebrow009",
+   "hair": [
+    "long01",
+    "bob02",
+    "ponytail01"
+   ],
+   "vertices": {
+    "Body": 9817,
+    "Brows": 124,
+    "Eyes": 96,
+    "Hair_bob02": 1688,
+    "Hair_long01": 3312,
+    "Hair_ponytail01": 3902,
+    "Lashes": 250
+   },
+   "bodyMorphTargets": 28,
+   "clips": {
+    "idle": {
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.003,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "raw_idle": {
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.003,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "walk": {
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.878,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "raw_walk": {
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.878,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "jog": {
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 3.038,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_jog": {
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 3.038,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "sprint": {
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 3.906,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_sprint": {
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 3.906,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    }
+   },
+   "bytes": 857100
+  },
+  {
+   "id": "female-b",
+   "sex": "female",
+   "label": "Female B (curvy)",
+   "file": "female-b.glb",
+   "brows": "eyebrow002",
+   "hair": [
+    "long01",
+    "bob02",
+    "ponytail01"
+   ],
+   "vertices": {
+    "Body": 9807,
+    "Brows": 124,
+    "Eyes": 96,
+    "Hair_bob02": 1688,
+    "Hair_long01": 3312,
+    "Hair_ponytail01": 3902,
+    "Lashes": 250
+   },
+   "bodyMorphTargets": 28,
+   "clips": {
+    "idle": {
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.003,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "raw_idle": {
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.003,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "walk": {
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.83,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "raw_walk": {
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.83,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "jog": {
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 2.869,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_jog": {
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 2.869,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "sprint": {
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 3.688,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_sprint": {
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 3.688,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    }
+   },
+   "bytes": 857220
+  }
+ ],
+ "eye": {
+  "file": "eyes/eyes.webp",
+  "irisCenters": [
+   [
+    0.705,
+    0.2975
+   ],
+   [
+    0.29,
+    0.7075
+   ]
+  ],
+  "irisRadius": 0.118
+ },
+ "brows": {
+  "eyebrow003": "brows/eyebrow003.webp",
+  "eyebrow007": "brows/eyebrow007.webp",
+  "eyebrow009": "brows/eyebrow009.webp",
+  "eyebrow002": "brows/eyebrow002.webp"
+ },
+ "lashes": "brows/eyelashes01.webp"
+}
