@@ -218,7 +218,7 @@ export class LabScene implements View {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       const k = e.key.toLowerCase();
       if (down) {
-        if (k === 'c' && !e.repeat && this.mode === 'walk') this.walkMode = !this.walkMode;
+        if (k === 'c' && !e.repeat && !e.ctrlKey && !e.metaKey && this.mode === 'walk') this.walkMode = !this.walkMode;
         this.keys.add(k);
       } else this.keys.delete(k);
       if (this.mode === 'walk' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();

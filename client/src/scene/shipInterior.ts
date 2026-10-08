@@ -28,7 +28,7 @@ type Pt = [number, number];
 const WALL_T = 0.4;
 const FADE_ALPHA = 0.1;
 const VISIBLE_DEPTH = 3;
-const LIGHT_SLOTS = 5;
+const LIGHT_SLOTS = 3;
 
 interface Opening {
   /** Coordinate the opening spans ('x' for a door in a wall that runs along x) and its centre. */
@@ -44,7 +44,7 @@ interface Occluder {
   mesh: THREE.Mesh;
   /** Hidden while the occluder is faded (tube ribs and lights). */
   details?: THREE.Object3D;
-  mat: THREE.MeshStandardMaterial;
+  mat: THREE.MeshLambertMaterial;
   space: string;
   fade: number;
   target: number;
@@ -64,19 +64,19 @@ interface LightSpec {
 }
 
 const LIGHTS: Record<string, LightSpec> = {
-  bay: { color: 0x46d9ff, y: 3.4, intensity: 16 },
-  medical: { color: 0xc8fff0, y: 3.4, intensity: 14 },
-  commons: { color: 0xfff0d8, y: 4.0, intensity: 16 },
-  bunks: { color: 0xffe2c0, y: 3.5, intensity: 9 },
-  cabin: { color: 0xffd9a8, y: 3.8, intensity: 9 },
-  bridge: { color: 0x7ab8ff, y: 4.2, intensity: 15 },
-  ops: { color: 0xffa890, y: 4.4, intensity: 14 },
-  hold: { color: 0xffd08a, y: 4.0, intensity: 14 },
-  science: { color: 0xa9c0ff, y: 3.5, intensity: 14 },
-  greenhouse: { color: 0xe4ffd0, y: 5.2, intensity: 22 },
-  engine: { color: 0xffa060, y: 5.0, intensity: 14 },
-  'fore-node': { color: 0xdbe6ff, y: 3.0, intensity: 6 },
-  'aft-node': { color: 0xdbe6ff, y: 3.0, intensity: 6 },
+  bay: { color: 0x46d9ff, y: 3.4, intensity: 20 },
+  medical: { color: 0xc8fff0, y: 3.4, intensity: 18 },
+  commons: { color: 0xfff0d8, y: 4.0, intensity: 20 },
+  bunks: { color: 0xffe2c0, y: 3.5, intensity: 11 },
+  cabin: { color: 0xffd9a8, y: 3.8, intensity: 11 },
+  bridge: { color: 0x7ab8ff, y: 4.2, intensity: 19 },
+  ops: { color: 0xffa890, y: 4.4, intensity: 18 },
+  hold: { color: 0xffd08a, y: 4.0, intensity: 18 },
+  science: { color: 0xa9c0ff, y: 3.5, intensity: 18 },
+  greenhouse: { color: 0xe4ffd0, y: 5.2, intensity: 28 },
+  engine: { color: 0xffa060, y: 5.0, intensity: 18 },
+  'fore-node': { color: 0xdbe6ff, y: 3.0, intensity: 8 },
+  'aft-node': { color: 0xdbe6ff, y: 3.0, intensity: 8 },
 };
 
 const SIGN_EXTRA: Record<string, string> = { 'fore-node': 'Bridge · Ops · Cabin', 'aft-node': 'Science · Engine' };
@@ -575,7 +575,7 @@ export class ShipInterior {
     const shell = new THREE.Mesh(tubeGeometry(axis, cx, t0, t1), MAT.shell.clone());
     shell.name = `${v.id}:tube`;
     v.group.add(shell);
-    this.occluders.push({ mesh: shell, mat: shell.material as THREE.MeshStandardMaterial, space: v.id, fade: 1, target: 1 });
+    this.occluders.push({ mesh: shell, mat: shell.material as THREE.MeshLambertMaterial, space: v.id, fade: 1, target: 1 });
     this.occluderMeshes.push(shell);
 
     const len = t1 - t0;

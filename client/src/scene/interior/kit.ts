@@ -4,8 +4,9 @@ import { canvasTexture } from '../common';
 
 /** Greybox materials: greys and steel, cyan for interactables, deep red for sealed or locked things. */
 
-const std = (color: number, o: THREE.MeshStandardMaterialParameters = {}) =>
-  new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.15, ...o });
+/** Lambert keeps the greybox cheap on integrated GPUs; roughness and metalness are accepted and ignored. */
+type StdOpts = THREE.MeshLambertMaterialParameters & { roughness?: number; metalness?: number };
+const std = (color: number, { roughness: _r, metalness: _m, ...o }: StdOpts = {}) => new THREE.MeshLambertMaterial({ color, ...o });
 const glow = (hex: number, k = 1.6) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(k), toneMapped: false });
 
 export const floorTexture = (() => {
@@ -31,7 +32,7 @@ export const MAT = {
   wall: std(0x8691a5, { roughness: 0.9, metalness: 0.05 }),
   ceiling: std(0x59637a, { side: THREE.FrontSide, roughness: 0.9 }),
   shell: std(0x717d92, { side: THREE.DoubleSide, roughness: 0.85 }),
-  floor: new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.6, metalness: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+  floor: new THREE.MeshLambertMaterial({ map: floorTexture(), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   frame: std(0xb4bfd1, { metalness: 0.3, roughness: 0.55 }),
   rib: std(0x9aa6bb, { metalness: 0.3, roughness: 0.6 }),
   metal: std(0x8793a8, { metalness: 0.25, roughness: 0.6 }),
@@ -56,8 +57,8 @@ export const MAT = {
   glowRed: glow(0xff2a3a, 1.2),
   glowWhite: glow(0xdfeaff, 1.05),
   glowGreen: glow(0x7dff9b, 1.1),
-  glass: new THREE.MeshStandardMaterial({ color: 0xbfefff, transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }),
-  glassDome: new THREE.MeshStandardMaterial({ color: 0xa8e8ff, transparent: true, opacity: 0.1, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false }),
+  glass: new THREE.MeshLambertMaterial({ color: 0xbfefff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }),
+  glassDome: new THREE.MeshLambertMaterial({ color: 0xa8e8ff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }),
   fluidGreen: new THREE.MeshBasicMaterial({ color: 0x4cff9a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
 } satisfies Record<string, THREE.Material>;
 
