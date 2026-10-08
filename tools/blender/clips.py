@@ -27,6 +27,8 @@ STYLES = {
 
 CLIP_SETS = {
     "male": {
+        # Male 1's Stand, Sway and Walk takes carry a ~13 deg left/right clavicle asymmetry (see retarget_export.py).
+        "symmetric_shoulders": True,
         "reference": {"file": "Male1_bvh/Male1_A1_Stand.bvh", "frame": 90},
         "clips": {
             "idle": {"file": "Male1_bvh/Male1_A2_Sway.bvh", "frames": (24, 143)},

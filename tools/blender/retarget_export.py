@@ -74,16 +74,56 @@ def rot_z(theta):
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
-class Source:
-    """A BVH clip with world rotations and hips position converted to Blender axes (metres)."""
+def mean_quat(mats):
+    qs = [quat(R) for R in mats]
+    acc = np.zeros(4)
+    for q in qs:
+        v = np.array([q.w, q.x, q.y, q.z])
+        acc += v if v @ np.array([qs[0].w, qs[0].x, qs[0].y, qs[0].z]) >= 0 else -v
+    return Quaternion(acc / np.linalg.norm(acc))
 
-    def __init__(self, path):
+
+def symmetrize_shoulders(bvh, a, b):
+    """Removes a constant left/right difference in how the clavicles sit over frames [a, b).
+
+    Local clavicle rotations (relative to the chest) of a mirror-symmetric posture satisfy R_right = M R_left M,
+    where M reflects across the body's sagittal plane. Some performers' standing and walking takes are not
+    symmetric (ACCAD Male 1: right shoulder joint about 13 deg further rotated than the left in Stand, Sway
+    and Walk, level in the Run take), and the reference-pose method then imprints that as a hunched, twisted
+    shoulder. Both sides are moved onto the mirrored average of the take; the arms keep their captured
+    world orientation. Returns {joint: world rotations (frames, 3, 3) in BVH axes}.
+    """
+    il, ir = bvh.index["LeftShoulder"], bvh.index["RightShoulder"]
+    lat = bvh.offset[bvh.index["LeftUpLeg"]] - bvh.offset[bvh.index["RightUpLeg"]]
+    n = lat / np.linalg.norm(lat)
+    M = np.eye(3) - 2 * np.outer(n, n)
+    Ll, Lr = bvh.local[:, il], bvh.local[:, ir]
+    ql, qr = mean_quat(Ll[a:b]), mean_quat(Lr[a:b])
+    mirrored = quat(M @ np3(qr.to_matrix()) @ M)
+    S = ql.slerp(mirrored, 0.5)
+    Sm = np3(S.to_matrix())
+    Cl = np3((S @ ql.inverted()).to_matrix())
+    Cr = np3((quat(M @ Sm @ M) @ qr.inverted()).to_matrix())
+    parent_world = bvh.world_rot[:, bvh.parent[il]]
+    return {"LeftShoulder": parent_world @ (Cl @ Ll), "RightShoulder": parent_world @ (Cr @ Lr)}
+
+
+class Source:
+    """A BVH clip with world rotations and hips position converted to Blender axes (metres).
+
+    `symmetric_shoulders=(a, b)` applies symmetrize_shoulders over that frame range.
+    """
+
+    def __init__(self, path, symmetric_shoulders=None):
         self.bvh = Bvh(path)
         b = self.bvh
         if abs(b.dt - 1 / FPS) > 1e-3:
             raise ValueError(f"{path}: expected 30 fps, got dt={b.dt}")
         self.n = b.frames
-        self.rot = {n: np.einsum("ij,fjk,lk->fil", B2BL, b.world_rot[:, i], B2BL) for i, n in enumerate(b.names)}
+        world = {n: b.world_rot[:, i] for i, n in enumerate(b.names)}
+        if symmetric_shoulders:
+            world.update(symmetrize_shoulders(b, *symmetric_shoulders))
+        self.rot = {n: np.einsum("ij,fjk,lk->fil", B2BL, world[n], B2BL) for n in b.names}
         self.hips = (B2BL @ (b.pos("Hips") * 0.01).T).T
 
 
@@ -171,8 +211,8 @@ def apply_style(world, style):
 
 def build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style=None):
     path = os.path.join(ACCAD_DIR, spec["file"])
-    src = Source(path)
     a, b = spec["frames"]
+    src = Source(path, (a, b) if spec.get("symmetric_shoulders") else None)
     speed = spec.get("speed", 1.0)
     n = max(4, int(round((b - a) / speed)))
     step = (b - a) / n
@@ -264,8 +304,8 @@ def run(preset_id, out_glb):
     tail = {b.name: np.array(b.matrix_local @ Vector((0, b.length, 0))) for b in bones}
     parent = {b.name: (b.parent.name if b.parent else None) for b in bones}
 
-    ref = Source(os.path.join(ACCAD_DIR, clipset["reference"]["file"]))
     rf = clipset["reference"]["frame"]
+    ref = Source(os.path.join(ACCAD_DIR, clipset["reference"]["file"]), (rf, rf + 1) if clipset.get("symmetric_shoulders") else None)
     ref_rot = {n: ref.rot[n][rf] for n in ref.bvh.names}
     ref_fwd = hips_forward(ref.bvh)
     theta_ref = -math.pi / 2 - heading(ref_rot["Hips"], ref_fwd)
@@ -292,6 +332,7 @@ def run(preset_id, out_glb):
     meta = {"scale": round(float(r), 4)}
     jobs = []
     for name, spec in clipset["clips"].items():
+        spec = {**spec, "symmetric_shoulders": clipset.get("symmetric_shoulders", False)}
         jobs.append((name, spec, STYLES[preset["sex"]].get(name)))
         jobs.append(("raw_" + name, spec, None))
     for name, spec, style in jobs:
