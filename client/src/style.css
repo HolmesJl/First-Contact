@@ -470,6 +470,32 @@ kbd {
   color: var(--muted);
 }
 
+.pointer-lock-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(70, 217, 255, 0.12);
+  border: 1px solid rgba(70, 217, 255, 0.35);
+  font-size: 12px;
+  color: #9fe9ff;
+  white-space: nowrap;
+  pointer-events: none !important;
+  animation: pointer-hint-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pointer-hint-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .controls-hint {
   position: absolute;
   left: 50%;

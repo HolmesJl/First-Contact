@@ -135,6 +135,7 @@ async function startLab() {
     onMove: (x, z, rot, moving) => net?.send({ t: 'move', x, z, rot, moving }),
     onSpace: (space) => hud?.setSpace(space),
     onStatus: (status) => hud?.setStatus(status),
+    onPointerLock: (locked) => hud?.setPointerLockHint(!locked),
   });
   view = lab;
   if (import.meta.env.DEV) (window as unknown as { __fc: unknown }).__fc = { lab };
@@ -164,6 +165,7 @@ async function startLab() {
 function enterWalk(me: PlayerState) {
   lab!.enterWalk(me);
   hud?.showControls(true);
+  hud?.setPointerLockHint(true);
   if (matchMedia('(pointer: coarse)').matches) joystick((x, y) => lab?.setJoystick(x, y));
 }
 
