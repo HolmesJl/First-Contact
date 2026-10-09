@@ -75,7 +75,7 @@ def vertex_count_after_masks(obj):
 
 # ---------------------------------------------------------------------------------- shoulder relief
 
-def sculpt_shoulders(body, rig):
+def sculpt_shoulders(body, rig, lift=0.0):
     """Adds the bony landmarks MakeHuman's base mesh leaves out: clavicle ridge, infraclavicular hollow,
     acromion corner and a squarer trapezius line. Offsets are applied to the mesh and to every shape key.
     """
@@ -115,6 +115,16 @@ def sculpt_shoulders(body, rig):
             offsets[i] += Vector((sign * 0.008, 0, 0.016)) * acro * max(up, abs(n.x) * 0.5)
             trap = g(seg_dist(p, neck, b + Vector((0, 0, 0.02))), 0.028)
             offsets[i] += Vector((0, 0, 0.012)) * trap * up
+    if lift:
+        # Square the shoulder line: raise the trapezius / clavicle / acromion band, tapering toward the neck and
+        # down the arm, so the neck-to-shoulder drop is smaller.
+        zmax = max(c.z for c in coords)
+        sm = lambda e0, e1, x: (lambda t: t * t * (3 - 2 * t))(max(0.0, min(1.0, (x - e0) / (e1 - e0))))
+        for i, p in enumerate(coords):
+            ax = abs(p.x) / zmax
+            f = sm(0.03, 0.08, ax) * (1 - sm(0.20, 0.27, ax))
+            gz = sm(0.745, 0.80, p.z / zmax) * (1 - sm(0.90, 0.96, p.z / zmax))
+            offsets[i] += Vector((0, 0, lift * f * gz))
     for v, o in zip(me.vertices, offsets):
         v.co += o
     if me.shape_keys:
@@ -160,7 +170,7 @@ SHOULDER_Z = (0.74, HEAD_CUT)
 SHOULDER_X = 0.25
 
 
-def decimate_body(body, rig, budget, sharp_shoulders=False):
+def decimate_body(body, rig, budget, sharp_shoulders=False, shoulder_lift=0.0):
     """Returns a new body object with at most ~budget vertices; keeps face and hands denser."""
     bpy.context.view_layer.objects.active = body
     body.select_set(True)
@@ -177,7 +187,7 @@ def decimate_body(body, rig, budget, sharp_shoulders=False):
         work.modifiers.remove(m)
 
     if sharp_shoulders:
-        sculpt_shoulders(src, rig)
+        sculpt_shoulders(src, rig, shoulder_lift)
         for v, sv in zip(work.data.vertices, src.data.vertices):
             v.co = sv.co
     zmax = max(v.co.z for v in src.data.vertices)
@@ -378,6 +388,214 @@ def bake_underwear_mask(body, sex, path):
     bpy.data.images.remove(out)
 
 
+# ---------------------------------------------------------------------------------- detail normal map
+
+NORMAL_RES = 1024
+NORMAL_GAIN = 2.6  # the baked relief is exaggerated: it has to read at game distance under soft lighting
+
+
+def muscle_height(pts, nrm, rig, H, strength):
+    """Anatomical surface relief (metres, positive = out) at object-space points; `strength` scales groups.
+
+    MakeHuman's muscle targets give the broad shapes but not the readable definition: pectoral edges, rectus
+    abdominis blocks, deltoid and arm heads, scapulae, quadriceps and calves. These are analytic bumps and
+    grooves placed from bone positions and body-height fractions, baked into a tangent-space normal map.
+    """
+    import numpy as np
+
+    x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
+    ax = np.abs(x)
+    s = H / 1.8
+    front = np.clip(-nrm[:, 1], 0, 1)
+    back = np.clip(nrm[:, 1], 0, 1)
+    G = lambda d, sig: np.exp(-((d / sig) ** 2))
+    box = lambda d, half, soft: 1 / (1 + np.exp((np.abs(d) - half) / soft))
+    h = np.zeros(len(pts))
+    mm = 0.001 * s
+
+    # pectorals, sternum, deltoid/pec groove
+    st = strength
+    pec = np.exp(-(((ax - 0.062 * H) / (0.058 * H)) ** 2 + ((z - 0.738 * H) / (0.036 * H)) ** 2) ** 1.5)
+    h += st["pec"] * 6.5 * mm * pec * front
+    h -= st["pec"] * 2.0 * mm * G(ax, 0.006 * H) * box(z - 0.74 * H, 0.04 * H, 0.006 * H) * front
+    h -= st["pec"] * 2.5 * mm * G(ax - 0.112 * H, 0.007 * H) * box(z - 0.74 * H, 0.045 * H, 0.008 * H) * front
+
+    # abdominals: three rows of rectus blocks, linea alba, serratus
+    for zc in (0.672, 0.643, 0.614):
+        for sx in (-1, 1):
+            blk = box(x - sx * 0.0195 * H, 0.0145 * H, 0.006 * H) * box(z - zc * H, 0.0098 * H, 0.0045 * H)
+            h += st["abs"] * 4.2 * mm * blk * front
+    h -= st["abs"] * 2.2 * mm * G(ax, 0.0028 * H) * box(z - 0.645 * H, 0.06 * H, 0.006 * H) * front
+    for zc in (0.712, 0.69, 0.668):
+        e = np.exp(-(((ax - 0.087 * H) / (0.016 * H)) ** 2 + ((z - zc * H) / (0.0075 * H)) ** 2))
+        h += st["abs"] * 2.0 * mm * e * np.clip(np.abs(nrm[:, 0]) + front * 0.5, 0, 1)
+
+    # shoulder cap, arms
+    for side in ("l", "r"):
+        sgn = 1.0 if side == "l" else -1.0
+        side_mask = (x * sgn > 0).astype(float)
+        ua, ub = np.array(rig.data.bones[f"upperarm_{side}"].head_local), np.array(rig.data.bones[f"upperarm_{side}"].tail_local)
+        fa, fb = np.array(rig.data.bones[f"lowerarm_{side}"].head_local), np.array(rig.data.bones[f"lowerarm_{side}"].tail_local)
+        d = np.linalg.norm(pts - (ua + np.array([0.0, 0.0, 0.01 * s])), axis=1)
+        h += st["delt"] * 4.5 * mm * G(d, 0.05 * s) * side_mask
+        for (a, b, kind) in ((ua, ub, "up"), (fa, fb, "fore")):
+            ab = b - a
+            t = ((pts - a) @ ab) / (ab @ ab)
+            closest = a + np.outer(np.clip(t, 0, 1), ab)
+            rad = pts - closest
+            rl = np.linalg.norm(rad, axis=1) + 1e-9
+            cf = -rad[:, 1] / rl
+            inside = box(t - 0.5, 0.5, 0.03) / 1.0 * (1 / (1 + np.exp((rl - 0.09 * s) / (0.008 * s)))) * (1 / (1 + np.exp(-(x * sgn - 0.05 * H) / (0.008 * H))))
+            if kind == "up":
+                bi = G(t - 0.52, 0.2) * np.clip((cf - 0.15) / 0.5, 0, 1)
+                tri = G(t - 0.5, 0.24) * np.clip((-cf - 0.15) / 0.5, 0, 1)
+                sulcus = G(t - 0.5, 0.3) * G(cf, 0.18)
+                h += (st["arm"] * (4.2 * bi + 3.6 * tri) - st["arm"] * 2.0 * sulcus) * mm * inside
+            else:
+                bra = G(t - 0.22, 0.22) * np.clip((cf - 0.1) / 0.6, 0, 1)
+                ext = G(t - 0.35, 0.3) * np.clip((-cf - 0.1) / 0.6, 0, 1)
+                h += st["arm"] * (3.0 * bra + 2.4 * ext) * mm * inside
+
+    # back: spine groove, scapulae, trapezius edge
+    h -= st["back"] * 2.2 * mm * G(ax, 0.005 * H) * box(z - 0.69 * H, 0.11 * H, 0.01 * H) * back
+    for sx in (-1, 1):
+        e = np.exp(-(((x - sx * 0.065 * H) / (0.042 * H)) ** 2 + ((z - 0.752 * H) / (0.046 * H)) ** 2) ** 1.4)
+        h += st["back"] * 4.0 * mm * e * back
+        e2 = np.exp(-(((x - sx * 0.05 * H) / (0.03 * H)) ** 2 + ((z - 0.69 * H) / (0.05 * H)) ** 2))
+        h += st["back"] * 2.2 * mm * e2 * back
+
+    # legs: quadriceps (front) and calves (back)
+    for side in ("l", "r"):
+        sgn = 1.0 if side == "l" else -1.0
+        for (bn, kind) in ((f"thigh_{side}", "thigh"), (f"calf_{side}", "calf")):
+            a = np.array(rig.data.bones[bn].head_local)
+            b = np.array(rig.data.bones[bn].tail_local)
+            ab = b - a
+            t = ((pts - a) @ ab) / (ab @ ab)
+            closest = a + np.outer(np.clip(t, 0, 1), ab)
+            rad = pts - closest
+            rl = np.linalg.norm(rad, axis=1) + 1e-9
+            cf = -rad[:, 1] / rl
+            cl = (rad[:, 0] * sgn) / rl
+            inside = box(t - 0.5, 0.5, 0.03) * (1 / (1 + np.exp((rl - 0.11 * s) / (0.008 * s)))) * (1 / (1 + np.exp(-(x * sgn) / (0.006 * H))))
+            if kind == "thigh":
+                vl = G(t - 0.5, 0.25) * G(cl - 0.55, 0.3) * np.clip(cf + 0.3, 0, 1)
+                vm = G(t - 0.7, 0.18) * G(cl + 0.55, 0.3) * np.clip(cf + 0.3, 0, 1)
+                rf = G(t - 0.45, 0.28) * G(cl, 0.25) * np.clip(cf, 0, 1)
+                h += st["legs"] * (3.0 * vl + 2.8 * vm + 2.2 * rf) * mm * inside
+            else:
+                g1 = G(t - 0.25, 0.17) * G(cl - 0.45, 0.28) * np.clip(-cf + 0.1, 0, 1)
+                g2 = G(t - 0.25, 0.17) * G(cl + 0.45, 0.28) * np.clip(-cf + 0.1, 0, 1)
+                h += st["legs"] * 3.2 * (g1 + g2) * mm * inside
+    return h
+
+
+MUSCLE_STRENGTH = {
+    "male": {"pec": 1.0, "abs": 1.0, "delt": 1.0, "arm": 1.0, "back": 1.0, "legs": 1.0},
+    "female": {"pec": 0.0, "abs": 0.4, "delt": 0.4, "arm": 0.35, "back": 0.3, "legs": 0.4},
+}
+
+
+def bake_detail_normal(body, rig, sex, path):
+    """Rasterises a tangent-space normal map (glTF/OpenGL convention) of the anatomical relief for `body`."""
+    import numpy as np
+
+    me = body.data
+    me.calc_loop_triangles()
+    res = NORMAL_RES
+    uv = me.uv_layers.active.data
+    cn = np.array([list(n.vector) for n in me.corner_normals])
+    co = np.array([list(v.co) for v in me.vertices])
+    H = co[:, 2].max()
+    pos = np.zeros((res, res, 3))
+    nor = np.zeros((res, res, 3))
+    tan = np.zeros((res, res, 3))
+    bit = np.zeros((res, res, 3))
+    cov = np.zeros((res, res), dtype=bool)
+    for tri in me.loop_triangles:
+        uvs = np.array([[uv[l].uv.x, uv[l].uv.y] for l in tri.loops])
+        p = co[list(tri.vertices)]
+        n = cn[list(tri.loops)]
+        e1, e2 = p[1] - p[0], p[2] - p[0]
+        du1, du2 = uvs[1] - uvs[0], uvs[2] - uvs[0]
+        det = du1[0] * du2[1] - du2[0] * du1[1]
+        if abs(det) < 1e-12:
+            continue
+        T = (e1 * du2[1] - e2 * du1[1]) / det
+        B = (e2 * du1[0] - e1 * du2[0]) / det
+        T /= np.linalg.norm(T) + 1e-12
+        B /= np.linalg.norm(B) + 1e-12
+        pts = np.stack([uvs[:, 0] * (res - 1), (1 - uvs[:, 1]) * (res - 1)], axis=1)
+        x0, y0 = np.floor(pts.min(axis=0)).astype(int)
+        x1, y1 = np.ceil(pts.max(axis=0)).astype(int)
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, res - 1), min(y1, res - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+        d = (pts[1][1] - pts[2][1]) * (pts[0][0] - pts[2][0]) + (pts[2][0] - pts[1][0]) * (pts[0][1] - pts[2][1])
+        if abs(d) < 1e-9:
+            continue
+        w0 = ((pts[1][1] - pts[2][1]) * (gx - pts[2][0]) + (pts[2][0] - pts[1][0]) * (gy - pts[2][1])) / d
+        w1 = ((pts[2][1] - pts[0][1]) * (gx - pts[2][0]) + (pts[0][0] - pts[2][0]) * (gy - pts[2][1])) / d
+        w2 = 1 - w0 - w1
+        inside = (w0 >= -0.03) & (w1 >= -0.03) & (w2 >= -0.03)
+        sl = (slice(y0, y1 + 1), slice(x0, x1 + 1))
+        pos[sl][inside] = (w0[..., None] * p[0] + w1[..., None] * p[1] + w2[..., None] * p[2])[inside]
+        nor[sl][inside] = (w0[..., None] * n[0] + w1[..., None] * n[1] + w2[..., None] * n[2])[inside]
+        tan[sl][inside] = T
+        bit[sl][inside] = B
+        cov[sl] |= inside
+
+    idx = np.argwhere(cov)
+    P = pos[cov]
+    N = nor[cov]
+    N /= np.linalg.norm(N, axis=1, keepdims=True) + 1e-9
+    T = tan[cov]
+    B = bit[cov]
+    st = MUSCLE_STRENGTH[sex]
+    eps = 0.002
+    grad = np.zeros_like(P)
+    for k in range(3):
+        d = np.zeros(3)
+        d[k] = eps
+        grad[:, k] = (muscle_height(P + d, N, rig, H, st) - muscle_height(P - d, N, rig, H, st)) / (2 * eps)
+    grad -= (grad * N).sum(axis=1, keepdims=True) * N
+    Np = N - NORMAL_GAIN * grad
+    Np /= np.linalg.norm(Np, axis=1, keepdims=True)
+    # Gram-Schmidt the tangent frame against the smooth normal
+    T = T - (T * N).sum(axis=1, keepdims=True) * N
+    T /= np.linalg.norm(T, axis=1, keepdims=True) + 1e-9
+    B = np.cross(N, T) * np.sign((np.cross(T, B) * N).sum(axis=1, keepdims=True) + 1e-12)
+    ts = np.stack([(Np * T).sum(axis=1), (Np * B).sum(axis=1), (Np * N).sum(axis=1)], axis=1)
+    img = np.zeros((res, res, 3))
+    img[..., 2] = 1.0
+    img[cov] = ts
+    # pad the islands so mip-mapping does not pull in empty texels
+    filled = cov.copy()
+    for _ in range(6):
+        grown = filled.copy()
+        acc = np.zeros_like(img)
+        cnt = np.zeros((res, res))
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            sh = np.roll(np.roll(filled, dy, axis=0), dx, axis=1)
+            val = np.roll(np.roll(img, dy, axis=0), dx, axis=1)
+            acc += val * sh[..., None]
+            cnt += sh
+        new = (~filled) & (cnt > 0)
+        img[new] = acc[new] / cnt[new][:, None]
+        grown |= new
+        filled = grown
+    rgba = np.ones((res, res, 4), dtype=np.float32)
+    rgba[..., :3] = (img[::-1] * 0.5 + 0.5).astype(np.float32)
+    out = bpy.data.images.new("normal", res, res, alpha=False)
+    out.colorspace_settings.name = "Non-Color"
+    out.pixels = rgba.ravel()
+    out.filepath_raw = path
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+
+
 # ---------------------------------------------------------------------------------- main
 
 def build(preset_id, out_dir):
@@ -435,7 +653,7 @@ def build(preset_id, out_dir):
 
     ExportService.bake_modifiers_remove_helpers(body, bake_masks=True, bake_subdiv=False, remove_helpers=True, also_proxy=False)
     log("basemesh without helpers", len(body.data.vertices))
-    body = decimate_body(body, rig, BODY_VERTEX_BUDGET, preset.get("sharpShoulders", False))
+    body = decimate_body(body, rig, BODY_VERTEX_BUDGET, preset.get("sharpShoulders", False), preset.get("shoulderLift", 0.0))
 
     keep = set(KEEP_SHAPES) | {"Basis"}
     for o in [body] + [o for k, o in objs.items() if not k.startswith("Hair_")]:
@@ -477,6 +695,7 @@ def build(preset_id, out_dir):
         counts[key] = len(o.data.vertices)
     body.data.name = "Body"
     bake_underwear_mask(body, preset["sex"], os.path.join(out_dir, f"{preset_id}.underwear.png"))
+    bake_detail_normal(body, rig, preset["sex"], os.path.join(out_dir, f"{preset_id}.normal.png"))
 
     # drop helper bones' mesh groups that are not on the rig; keep only deform bones
     rig.name = "Armature"

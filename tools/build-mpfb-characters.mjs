@@ -55,7 +55,7 @@ if (!skipBlender) {
 }
 
 fs.rmSync(OUT, { recursive: true, force: true });
-for (const d of ['skins', 'hair', 'eyes', 'brows']) fs.mkdirSync(path.join(OUT, d), { recursive: true });
+for (const d of ['skins', 'normals', 'hair', 'eyes', 'brows']) fs.mkdirSync(path.join(OUT, d), { recursive: true });
 
 const webp = (img, q = 80) => img.webp({ quality: q, effort: 5 }).toBuffer();
 const write = (rel, buf) => {
@@ -127,7 +127,7 @@ async function eyeTexture(file) {
   return webp(sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }), 85);
 }
 
-const manifest = { generated: new Date().toISOString().slice(0, 10), vertexBudget: cfg.vertexBudget, skins: {}, hair: {}, presets: [], eye: { file: '', irisCenters: [[0.705, 0.2975], [0.29, 0.7075]], irisRadius: 0.118 } };
+const manifest = { normals: {}, generated: new Date().toISOString().slice(0, 10), vertexBudget: cfg.vertexBudget, skins: {}, hair: {}, presets: [], eye: { file: '', irisCenters: [[0.705, 0.2975], [0.29, 0.7075]], irisRadius: 0.118 } };
 
 for (const sex of ['male', 'female']) {
   const first = Object.keys(cfg.presets).find((k) => cfg.presets[k].sex === sex);
@@ -139,6 +139,12 @@ for (const sex of ['male', 'female']) {
     const file = write(`skins/${sex}-${id}.webp`, await skinTexture(path.join(dir, png), mask, sex));
     manifest.skins[sex].push({ id, label, file });
   }
+}
+
+manifest.normals = {};
+for (const sex of ['male', 'female']) {
+  const first = Object.keys(cfg.presets).find((k) => cfg.presets[k].sex === sex);
+  manifest.normals[sex] = write(`normals/${sex}.webp`, await webp(sharp(path.join(WORK, `${first}.normal.png`)).removeAlpha(), 92));
 }
 
 manifest.eye.file = write('eyes/eyes.webp', await eyeTexture(path.join(MPFB_DATA, 'eyes/materials/brown_eye.png')));

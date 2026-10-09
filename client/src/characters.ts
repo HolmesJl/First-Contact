@@ -24,8 +24,8 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b111c);
-scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x2c2430, 0.75));
-const key = new THREE.DirectionalLight(0xfff1e2, 2.9);
+scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x2c2430, 0.6));
+const key = new THREE.DirectionalLight(0xfff1e2, 2.5);
 key.position.set(-4.5, 9, 4.5);
 scene.add(key);
 const fill = new THREE.DirectionalLight(0x9cc4ff, 0.6);
@@ -129,7 +129,7 @@ layout.forEach((slot, i) => {
 // ------------------------------------------------------------------ state + UI
 
 let motion: mpfb.Motion = (params.get('motion') as mpfb.Motion) ?? 'idle';
-let expression: mpfb.Expression = (params.get('expr') as mpfb.Expression) ?? 'smiling';
+let expression: mpfb.Expression = (params.get('expr') as mpfb.Expression) ?? 'neutral';
 const FACE_MAP: Record<mpfb.Expression, Appearance['face']> = { neutral: 'serious', smiling: 'smiling', serious: 'serious', angry: 'angry', flirty: 'flirty' };
 
 let styled = params.get('gait') !== 'raw';

@@ -35,6 +35,7 @@ export interface PresetInfo {
 export interface Manifest {
   vertexBudget: number;
   skins: Record<'male' | 'female', { id: string; label: string; file: string }[]>;
+  normals: Record<'male' | 'female', string>;
   hair: Record<string, string>;
   brows: Record<string, string>;
   lashes: string;
@@ -93,17 +94,18 @@ export async function loadMpfb(resolve: UrlFor, manifestUrl: string): Promise<Ma
   urlFor = resolve;
   manifest = (await (await fetch(manifestUrl)).json()) as Manifest;
   await Promise.all(manifest.presets.map(async (p) => gltfs.set(p.id, await loader.loadAsync(urlFor(p.file)))));
+  await Promise.all(Object.values(manifest.normals).map((f) => texture(f, true)));
   const files = [manifest.eye.file, manifest.lashes, ...Object.values(manifest.hair), ...Object.values(manifest.brows), ...Object.values(manifest.skins).flatMap((s) => s.map((x) => x.file))];
-  await Promise.all(files.map(texture));
+  await Promise.all(files.map((f) => texture(f)));
   return manifest;
 }
 
-async function texture(rel: string) {
+async function texture(rel: string, linear = false) {
   let t = textures.get(rel);
   if (!t) {
     t = await texLoader.loadAsync(urlFor(rel));
     t.flipY = false;
-    t.colorSpace = THREE.SRGBColorSpace;
+    t.colorSpace = linear ? THREE.NoColorSpace : THREE.SRGBColorSpace;
     t.anisotropy = 8;
     textures.set(rel, t);
   }
@@ -213,7 +215,7 @@ export function applyLook(rig: MpfbRig) {
   const m = manifest!;
   const { info, look, meshes } = rig;
   const skins = m.skins[info.sex];
-  const skin = new THREE.MeshStandardMaterial({ map: tex(skins[look.skin % skins.length].file), color: look.skinTint, roughness: 0.5, metalness: 0 });
+  const skin = new THREE.MeshPhysicalMaterial({ map: tex(skins[look.skin % skins.length].file), normalMap: tex(m.normals[info.sex]), normalScale: new THREE.Vector2(1.2, 1.2), color: look.skinTint, roughness: 0.45, metalness: 0, specularIntensity: 0.5 });
   meshes.Body.material = skin;
   const eyes = new THREE.MeshStandardMaterial({ map: eyeTexture(look.eyeColor), roughness: 0.12, metalness: 0 });
   meshes.Eyes.material = eyes;

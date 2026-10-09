@@ -10,6 +10,7 @@ ACCAD_DIR = os.environ.get("ACCAD_DIR", os.path.normpath(os.path.join(os.path.di
 #   adduct: degrees each leg is rotated toward (+) or away from (-) the midline: narrower or wider base
 #   sway:   multiplier on the pelvis' lateral sway and vertical bob
 #   head_up: degrees the gaze is raised (mocap performers look at the floor)
+#   retract / elevate / extend: degrees the clavicles are drawn back and up and the spine straightened
 STYLES = {
     "female": {
         "walk": {"amp": {"pelvis": 1.9, "spine_01": 1.2, "spine_03": 0.55, "neck_01": 0.7, "upperarm_l": 0.7, "upperarm_r": 0.7, "lowerarm_l": 0.8, "lowerarm_r": 0.8, "thigh_l": 0.92, "thigh_r": 0.92}, "adduct": 3.5, "sway": 1.5, "head_up": 7},
@@ -18,10 +19,10 @@ STYLES = {
         "idle": {"amp": {"pelvis": 1.0}, "adduct": 0.0, "sway": 1.0, "head_up": 14},
     },
     "male": {
-        "walk": {"amp": {"pelvis": 0.85, "spine_03": 1.3, "spine_02": 1.2, "head": 0.8, "upperarm_l": 1.25, "upperarm_r": 1.25, "thigh_l": 1.05, "thigh_r": 1.05}, "adduct": -3.0, "sway": 0.8, "head_up": 7},
-        "jog": {"amp": {"pelvis": 0.9, "spine_03": 1.2, "upperarm_l": 1.15, "upperarm_r": 1.15}, "adduct": -2.0, "sway": 0.9, "head_up": 5},
-        "sprint": {"amp": {"pelvis": 0.9, "spine_03": 1.15, "upperarm_l": 1.1, "upperarm_r": 1.1}, "adduct": -1.5, "sway": 0.9, "head_up": 5},
-        "idle": {"amp": {"pelvis": 1.0}, "adduct": -2.0, "sway": 1.0, "head_up": 10},
+        "walk": {"amp": {"pelvis": 0.85, "spine_03": 1.3, "spine_02": 1.2, "head": 0.8, "upperarm_l": 1.25, "upperarm_r": 1.25, "thigh_l": 1.05, "thigh_r": 1.05}, "adduct": -3.0, "sway": 0.8, "head_up": 7, "retract": 12, "elevate": 10, "extend": 5, "neck_back": 14},
+        "jog": {"amp": {"pelvis": 0.9, "spine_03": 1.2, "upperarm_l": 1.15, "upperarm_r": 1.15}, "adduct": -2.0, "sway": 0.9, "head_up": 5, "retract": 10, "elevate": 8, "extend": 4, "neck_back": 12},
+        "sprint": {"amp": {"pelvis": 0.9, "spine_03": 1.15, "upperarm_l": 1.1, "upperarm_r": 1.1}, "adduct": -1.5, "sway": 0.9, "head_up": 5, "retract": 10, "elevate": 8, "extend": 4, "neck_back": 12},
+        "idle": {"amp": {"pelvis": 1.0}, "adduct": -2.0, "sway": 1.0, "head_up": 10, "retract": 12, "elevate": 10, "extend": 5, "neck_back": 14},
     },
 }
 

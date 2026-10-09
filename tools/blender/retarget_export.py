@@ -199,6 +199,28 @@ def apply_style(world, style):
             c, s = math.cos(-pitch * share), math.sin(-pitch * share)
             Rx = np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
             out[bone] = np.einsum("ij,fjk->fik", Rx, out[bone])
+    # Posture: draw the shoulder girdle back and up, lift the chest (the performers stand and walk slightly
+    # slumped, which reads as rolled-forward shoulders on a broad-chested character).
+    retract = math.radians(style.get("retract", 0.0))
+    elevate = math.radians(style.get("elevate", 0.0))
+    for side, sign in (("l", 1.0), ("r", -1.0)):
+        bone = f"clavicle_{side}"
+        if bone in out and (retract or elevate):
+            cz, sz = math.cos(retract * sign), math.sin(retract * sign)
+            Rz_back = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+            ce, se = math.cos(-elevate * sign), math.sin(-elevate * sign)
+            Ry_up = np.array([[ce, 0, se], [0, 1, 0], [-se, 0, ce]])
+            out[bone] = np.einsum("ij,jk,fkl->fil", Rz_back, Ry_up, out[bone])
+    extend = math.radians(style.get("extend", 0.0))
+    if extend:
+        for bone, share in (("spine_01", 0.2), ("spine_02", 0.4), ("spine_03", 0.4)):
+            c, s_ = math.cos(-extend * share), math.sin(-extend * share)
+            Rx = np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]])
+            out[bone] = np.einsum("ij,fjk->fik", Rx, out[bone])
+    neck_back = math.radians(style.get("neck_back", 0.0))
+    if neck_back:
+        c, s_ = math.cos(-neck_back), math.sin(-neck_back)
+        out["neck_01"] = np.einsum("ij,fjk->fik", np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]]), out["neck_01"])
     a = math.radians(style.get("adduct", 0.0))
     if a:
         for side, sign in (("l", 1.0), ("r", -1.0)):
@@ -269,6 +291,19 @@ def build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style=None
     pelvis[:, 1] = (hips[:, 1] - hips[:, 1].mean()) * r
     pelvis[:, 2] = (hips[:, 2].mean() + (hips[:, 2] - hips[:, 2].mean()) * sway) * r
     return W, pelvis, n, ground_speed
+
+
+def posture_metrics(W, pelvis, n, parent, rest, head):
+    """Side-view posture in cm over the clip: shoulder joint ahead of (+) or behind (-) the hip joint, shoulder
+    height above the hip, shoulder width, head ahead of the hip."""
+    rows = []
+    for f in range(n):
+        p = lambda b: fk_head(f, b, W, parent, rest, head, pelvis[f])
+        sh = (p("upperarm_l") + p("upperarm_r")) / 2
+        hip = (p("thigh_l") + p("thigh_r")) / 2
+        rows.append([hip[1] - sh[1], sh[2] - hip[2], abs(p("upperarm_l")[0] - p("upperarm_r")[0]), hip[1] - p("head")[1]])
+    m = np.mean(rows, axis=0) * 100
+    return {"shoulderAheadOfHipCm": round(float(m[0]), 1), "shoulderAboveHipCm": round(float(m[1]), 1), "shoulderWidthCm": round(float(m[2]), 1), "headAheadOfHipCm": round(float(m[3]), 1)}
 
 
 def foot_slide(W, pelvis, n, parent, rest, head, ground_speed, ball_rest_z):
@@ -343,9 +378,10 @@ def run(preset_id, out_glb):
         pelvis[:, 2] += ball_rest_z - np.percentile(lows, 30 if name.endswith("idle") else 4)
         pelvis[:, 0] += head["pelvis"][0]
         pelvis[:, 1] += head["pelvis"][1]
+        posture = posture_metrics(W, pelvis, n, parent, rest, head)
         slide = foot_slide(W, pelvis, n, parent, rest, head, gs, ball_rest_z)
         clips[name] = (W, pelvis, n)
-        meta[name] = {"footSlideCmS": round(slide[0] * 100, 1), "contactFrames": slide[1], "frames": n, "duration": round(n / FPS, 3), "groundSpeed": round(gs, 3), "source": spec["file"], "takeFrames": list(spec["frames"])}
+        meta[name] = {"posture": posture, "footSlideCmS": round(slide[0] * 100, 1), "contactFrames": slide[1], "frames": n, "duration": round(n / FPS, 3), "groundSpeed": round(gs, 3), "source": spec["file"], "takeFrames": list(spec["frames"])}
 
     rig.animation_data_create()
     for tb in TARGET_BONES:
