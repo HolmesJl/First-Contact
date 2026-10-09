@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>First Contact · Expression sheet (dev)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #04060c; overflow: hidden; font-family: Inter, system-ui, sans-serif; }
+      canvas { display: block; }
+      .labels { position: fixed; inset: 0; pointer-events: none; }
+      .labels div { position: absolute; transform: translateX(-50%); color: #cfe3ff; font: 600 15px Inter, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 3px #000; }
+      .labels div.new { color: #ffd98a; }
+      .labels div.old { color: #9fb4d6; }
+      .labels div.sex { transform: none; color: #5ee7ff; font-size: 18px; letter-spacing: .24em; }
+    </style>
+  </head>
+  <body>
+    <div class="labels" id="labels"></div>
+    <script type="module" src="/src/expressions.ts"></script>
+  </body>
+</html>

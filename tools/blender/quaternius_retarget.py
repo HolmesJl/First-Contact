@@ -23,9 +23,9 @@ src = os.path.normpath(os.path.join(HERE, f"../../client/public/models/body-{sex
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=src, guess_original_bind_pose=False)
 
-KEEP_HAIR = "HairShort" if sex == "male" else "HairLong"
+KEEP_HAIR = "HairParted" if sex == "male" else "HairLong"
 for o in list(bpy.data.objects):
-    if o.type == "MESH" and (o.name in {"Beard", "Icosphere", "HairBuns"} or (o.name.startswith("Hair") and o.name != KEEP_HAIR)):
+    if o.type == "MESH" and (o.name in {"Beard", "Icosphere"} or (o.name.startswith("Hair") and o.name != KEEP_HAIR)):
         bpy.data.objects.remove(o, do_unlink=True)
 arm = bpy.data.objects["Armature"]
 arm.data.bones["Head"].name = "head"

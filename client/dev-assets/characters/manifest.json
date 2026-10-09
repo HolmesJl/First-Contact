@@ -11,7 +11,7 @@
     "Body": 7281,
     "Brows": 650,
     "Eyes": 556,
-    "HairShort": 757
+    "HairParted": 757
    },
    "clips": {
     "idle": {
@@ -159,7 +159,7 @@
      ]
     }
    },
-   "bytes": 694784
+   "bytes": 694788
   },
   "female": {
    "file": "female.glb",

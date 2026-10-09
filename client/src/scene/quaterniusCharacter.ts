@@ -94,7 +94,7 @@ export function buildCharacter(sex: Sex, hairColor: string): Rig {
 }
 
 export function setHairColor(rig: Pick<Rig, 'meshes'>, hex: string) {
-  const hair = rig.meshes.HairShort ?? rig.meshes.HairLong;
+  const hair = rig.meshes.HairParted ?? rig.meshes.HairLong;
   if (hair) (hair.material as THREE.MeshStandardMaterial).color.set(hex);
   if (rig.meshes.Brows) (rig.meshes.Brows.material as THREE.MeshStandardMaterial).color.set(hex).multiplyScalar(0.7);
 }

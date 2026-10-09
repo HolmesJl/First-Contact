@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import * as characters from './scene/character';
-import { FACES, type Appearance, type Face } from '../../shared/protocol';
+import { EYE_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, type Appearance, type Face } from '../../shared/protocol';
 
 const params = new URLSearchParams(location.search);
 const view = params.get('view') ?? 'close';
@@ -31,15 +31,15 @@ const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStan
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-const HAIR = ['#3b2417', '#c0521f', '#1c1a1f', '#d8b56d'];
-const EYES = ['#3a78c9', '#3f8a4f', '#5a3a1e', '#8a6a2f'];
+const HAIR = ['Dark brown', 'Copper', 'Black', 'Blonde'].map((n) => HAIR_COLORS.find((c) => c.name === n)!.hex);
+const EYES = ['Blue', 'Green', 'Brown', 'Hazel'].map((n) => EYE_COLORS.find((c) => c.name === n)!.hex);
 const FACIAL = ['beard', 'stubble', 'none', 'beard'] as const;
 
 function appearance(sex: 'male' | 'female', face: Face, i: number): Appearance {
   return {
     sex,
     face,
-    hairLength: i % 2 === 0 ? 'short' : 'long',
+    hairStyle: HAIR_STYLES[sex][i % HAIR_STYLES[sex].length].id,
     facialHair: sex === 'male' ? FACIAL[i] : 'none',
     hairColor: HAIR[i],
     eyeColor: EYES[i],
