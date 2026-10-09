@@ -2,13 +2,16 @@
   "name": "@first-contact/tools",
   "private": true,
   "type": "module",
-  "description": "Offline asset pipeline. Not needed to run the game; the built models are committed under client/public/models.",
+  "description": "Offline asset pipeline. Not needed to run the game; the built models are committed under client/public/models (build:characters) and client/dev-assets/characters (build:clips).",
   "scripts": {
-    "build:characters": "node build-characters.mjs"
+    "build:characters": "node build-characters.mjs",
+    "build:clips": "node build-character-clips.mjs"
   },
   "dependencies": {
     "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.3.0",
     "sharp": "^0.34.0"
   }
 }

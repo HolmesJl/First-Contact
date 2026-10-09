@@ -2,11 +2,14 @@ import {
   EYE_COLORS,
   FACES,
   HAIR_COLORS,
+  HAIR_STYLES,
   JOBS,
   JOB_CAPS,
   JOB_INFO,
   MAX_CREW,
   NAME_PATTERN,
+  defaultHairStyle,
+  hairStyleAvailable,
   jobCheck,
   type Appearance,
   type Character,
@@ -268,7 +271,7 @@ export function banner(msg: string, action?: { label: string; run(): void }) {
 
 // ---------------------------------------------------------------- creator
 
-const FACE_LABELS: Record<(typeof FACES)[number], string> = { smiling: 'Smiling', serious: 'Serious', angry: 'Angry', flirty: 'Flirty' };
+const FACE_LABELS: Record<(typeof FACES)[number], string> = { neutral: 'Neutral', smiling: 'Smiling', serious: 'Serious', angry: 'Angry', flirty: 'Flirty', calm: 'Calm', determined: 'Determined', smirk: 'Smirk' };
 
 export class CreatorPanel {
   readonly el = h('div', 'creator panel');
@@ -284,17 +287,17 @@ export class CreatorPanel {
   ) {
     this.draft = {
       sex: 'male',
-      face: 'smiling',
-      hairLength: 'short',
+      face: 'neutral',
+      hairStyle: defaultHairStyle('male'),
       facialHair: 'none',
-      hairColor: HAIR_COLORS[2].hex,
-      eyeColor: EYE_COLORS[3].hex,
+      hairColor: HAIR_COLORS.find((c) => c.name === 'Brown')!.hex,
+      eyeColor: EYE_COLORS.find((c) => c.name === 'Blue')!.hex,
       job: defaultJob,
       firstName: '',
       lastName: '',
     };
-    const seg = (key: string, opts: [string, string][]) =>
-      `<div class="seg" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const seg = (key: string, opts: [string, string][], wrap = false) =>
+      `<div class="seg${wrap ? ' wrap' : ''}" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
     const swatches = (key: string, list: readonly { name: string; hex: string }[]) =>
       `<div class="swatches" data-key="${key}">${list.map((c) => `<button type="button" data-v="${c.hex}" title="${c.name}" style="--c:${c.hex}"></button>`).join('')}</div>`;
 
@@ -306,8 +309,8 @@ export class CreatorPanel {
       </header>
       <div class="scroll">
         <div class="field"><label>Body</label>${seg('sex', [['male', 'Male'], ['female', 'Female']])}</div>
-        <div class="field"><label>Face</label>${seg('face', FACES.map((f) => [f, FACE_LABELS[f]]))}</div>
-        <div class="field"><label>Hair</label>${seg('hairLength', [['short', 'Short'], ['long', 'Long']])}</div>
+        <div class="field"><label>Face</label>${seg('face', FACES.map((f) => [f, FACE_LABELS[f]]), true)}</div>
+        <div class="field"><label>Hair</label>${seg('hairStyle', [])}</div>
         <div class="field" data-only="male"><label>Facial hair</label>${seg('facialHair', [['none', 'None'], ['stubble', 'Stubble'], ['beard', 'Full beard']])}</div>
         <div class="field"><label>Hair color <span class="val" data-val="hairColor"></span></label>${swatches('hairColor', HAIR_COLORS)}</div>
         <div class="field"><label>Eye color <span class="val" data-val="eyeColor"></span></label>${swatches('eyeColor', EYE_COLORS)}</div>
@@ -331,6 +334,7 @@ export class CreatorPanel {
       if (b.disabled) return;
       (this.draft as unknown as Record<string, string>)[key] = b.dataset.v!;
       if (this.draft.sex === 'female') this.draft.facialHair = 'none';
+      if (!hairStyleAvailable(this.draft.sex, this.draft.hairStyle)) this.draft.hairStyle = defaultHairStyle(this.draft.sex);
       this.error.textContent = '';
       this.sync();
       if (key !== 'job') this.handlers.onChange(this.appearance());
@@ -350,8 +354,8 @@ export class CreatorPanel {
   }
 
   appearance(): Appearance {
-    const { sex, face, hairLength, facialHair, hairColor, eyeColor } = this.draft;
-    return { sex, face, hairLength, facialHair, hairColor, eyeColor };
+    const { sex, face, hairStyle, facialHair, hairColor, eyeColor } = this.draft;
+    return { sex, face, hairStyle, facialHair, hairColor, eyeColor };
   }
 
   setTakenJobs(taken: Job[]) {
@@ -365,6 +369,9 @@ export class CreatorPanel {
 
   private sync() {
     const d = this.draft as unknown as Record<string, string>;
+    this.el.querySelector<HTMLElement>('[data-key=hairStyle]')!.innerHTML = HAIR_STYLES[this.draft.sex]
+      .map((h) => `<button type="button" data-v="${h.id}">${h.name}</button>`)
+      .join('');
     this.el.querySelectorAll<HTMLElement>('[data-key]').forEach((group) => {
       const v = d[group.dataset.key!];
       group.querySelectorAll<HTMLButtonElement>('button[data-v]').forEach((b) => b.classList.toggle('active', b.dataset.v === v));

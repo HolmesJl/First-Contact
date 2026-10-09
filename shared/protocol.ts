@@ -40,16 +40,29 @@ export const JOB_INFO: Record<Job, { color: string; role: string; blurb: string 
 };
 
 export const SEXES = ['male', 'female'] as const;
-export const FACES = ['smiling', 'serious', 'angry', 'flirty'] as const;
-export const HAIR_LENGTHS = ['short', 'long'] as const;
+export const FACES = ['neutral', 'smiling', 'serious', 'angry', 'flirty', 'calm', 'determined', 'smirk'] as const;
+/** Hairstyles that ship with the Quaternius base characters and fit the heads, per sex (first entry is the default). */
+export const HAIR_STYLES = {
+  male: [
+    { id: 'parted', name: 'Parted' },
+    { id: 'buzzed', name: 'Buzzed' },
+  ],
+  female: [
+    { id: 'buzzed', name: 'Buzzed' },
+    { id: 'buns', name: 'Buns' },
+    { id: 'long', name: 'Long' },
+  ],
+} as const;
 export const FACIAL_HAIR = ['none', 'stubble', 'beard'] as const;
 
 export const HAIR_COLORS = [
   { name: 'Black', hex: '#1c1a1f' },
   { name: 'Dark brown', hex: '#3b2417' },
+  { name: 'Chestnut', hex: '#52341f' },
   { name: 'Brown', hex: '#6e4526' },
   { name: 'Auburn', hex: '#8e3b1f' },
   { name: 'Copper', hex: '#c0521f' },
+  { name: 'Dark blonde', hex: '#a88652' },
   { name: 'Blonde', hex: '#d8b56d' },
   { name: 'Platinum', hex: '#e9e2d0' },
   { name: 'Silver', hex: '#9aa3ad' },
@@ -58,24 +71,29 @@ export const HAIR_COLORS = [
 ] as const;
 
 export const EYE_COLORS = [
+  { name: 'Dark brown', hex: '#2f1d12' },
   { name: 'Brown', hex: '#5a3a1e' },
+  { name: 'Light brown', hex: '#7c5733' },
   { name: 'Hazel', hex: '#8a6a2f' },
-  { name: 'Green', hex: '#3f8a4f' },
-  { name: 'Blue', hex: '#3a78c9' },
-  { name: 'Grey', hex: '#8b98a5' },
   { name: 'Amber', hex: '#d08a1d' },
+  { name: 'Olive', hex: '#66783a' },
+  { name: 'Green', hex: '#3f8a4f' },
+  { name: 'Blue-grey', hex: '#6a8aa3' },
+  { name: 'Grey', hex: '#8b98a5' },
+  { name: 'Light blue', hex: '#7aaedb' },
+  { name: 'Blue', hex: '#3a78c9' },
   { name: 'Violet', hex: '#7a4fd1' },
 ] as const;
 
 export type Sex = (typeof SEXES)[number];
 export type Face = (typeof FACES)[number];
-export type HairLength = (typeof HAIR_LENGTHS)[number];
+export type HairStyle = (typeof HAIR_STYLES)[Sex][number]['id'];
 export type FacialHair = (typeof FACIAL_HAIR)[number];
 
 export interface Appearance {
   sex: Sex;
   face: Face;
-  hairLength: HairLength;
+  hairStyle: HairStyle;
   facialHair: FacialHair;
   hairColor: string;
   eyeColor: string;
@@ -116,6 +134,19 @@ export type ServerMsg =
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 
+export const defaultHairStyle = (sex: Sex): HairStyle => HAIR_STYLES[sex][0].id;
+
+export const hairStyleAvailable = (sex: Sex, style: unknown) => HAIR_STYLES[sex].some((h) => h.id === style);
+
+/** Characters saved before hairstyles had ids carry a `hairLength` of short or long. */
+export function upgradeLegacyCharacter(c: Record<string, unknown>) {
+  if (c.hairStyle === undefined && 'hairLength' in c) {
+    const sex = c.sex === 'female' ? 'female' : 'male';
+    c.hairStyle = sex === 'female' && c.hairLength === 'long' ? 'long' : defaultHairStyle(sex);
+    delete c.hairLength;
+  }
+}
+
 /** Returns a reason the job can't be taken, or null if it's available. */
 export function jobCheck(takenJobs: Job[], job: Job): string | null {
   if (!JOBS.includes(job)) return 'Unknown job.';
@@ -134,7 +165,7 @@ export function validateCharacter(c: unknown): string | null {
   const ch = c as Record<string, unknown>;
   if (!SEXES.includes(ch.sex as Sex)) return 'Pick male or female.';
   if (!FACES.includes(ch.face as Face)) return 'Pick a face.';
-  if (!HAIR_LENGTHS.includes(ch.hairLength as HairLength)) return 'Pick a hair length.';
+  if (!hairStyleAvailable(ch.sex as Sex, ch.hairStyle)) return 'Pick a hairstyle.';
   if (!FACIAL_HAIR.includes(ch.facialHair as FacialHair)) return 'Pick facial hair.';
   if (ch.sex === 'female' && ch.facialHair !== 'none') return 'Facial hair is only available for men.';
   if (!HAIR_COLORS.some((h) => h.hex === ch.hairColor)) return 'Pick a hair color.';
