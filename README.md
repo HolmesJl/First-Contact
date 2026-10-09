@@ -100,7 +100,9 @@ client/     Vite + TypeScript + Three.js
   src/scene/ship.ts       the First Contact ship model
   src/scene/lab.ts        clone lab, tubes, players, movement, camera
   src/scene/character.ts  rigged glTF characters: appearance, procedural expressions, animation
-  public/models/          built character assets (see Credits)
+  public/models/          built character assets: bodies, motion-capture clips (clips-<sex>.glb, motion.json), uniform textures (see Credits)
+  src/scene/characterMotion.ts   gait selection, clip playback rate, crossfades
+  src/scene/uniform.ts    uniform material and per-job accent recolouring (DEFAULT_ACCENT / UNIFORM_ACCENT_BY_JOB)
   gallery.html            dev-only expression gallery: /gallery.html?view=close or ?view=game
   expressions.html        dev-only contact sheet of every face (selectable and prototype) on both heads
   characters.html         dev-only gallery of the Quaternius characters with retargeted mocap: /characters.html
@@ -115,7 +117,7 @@ The server is authoritative for membership, job assignment, character data, and 
 
 ## Characters
 
-Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, with idle, walk and jog clips crossfaded by speed. The base meshes have no facial rig, so the expressions are procedural morph targets (not texture variants). They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
+Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, wearing a painted crew uniform (sleeve bands, shoulder patches and collar in the colour of their job). Motion is gendered motion capture (idle, walk, jog, sprint) chosen from the ground speed and played at the rate that makes the feet track the ground, with crossfades between gaits; remote players derive their gait from the speed between position snapshots. The base meshes have no facial rig, so the expressions are procedural morph targets (not texture variants). They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
 
 - **Neutral (default):** no morphs.
 - **Smiling:** raised mouth corners and cheeks, lifted brows.
@@ -123,7 +125,7 @@ Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one
 - **Angry:** a frown, brows pulled down and in, narrowed eyes.
 - **Flirty:** a soft one-sided smirk, half-lowered lids, one raised brow, and the occasional wink.
 
-Everyone blinks. More faces are only sets of morph weights: `/expressions.html` shows the candidates (calm, determined, worried, tired, surprised, smirk) next to the selectable ones; add one to `FACES` in `shared/protocol.ts` and `EXPRESSIONS` in `scene/character.ts` to ship it. Hair, beard, and eyes are tinted per character; "no facial hair" swaps to a clean-shaven skin texture.
+Everyone blinks. More faces are only sets of morph weights: `/expressions.html` shows the candidates not yet selectable (worried, tired, surprised) next to the eight selectable ones (neutral, smiling, serious, angry, flirty, calm, determined, smirk); add one to `FACES` in `shared/protocol.ts` and `EXPRESSIONS` in `scene/character.ts` to ship it. Hair, beard, and eyes are tinted per character; "no facial hair" swaps to a clean-shaven skin texture.
 
 ### Hairstyles
 
@@ -131,13 +133,13 @@ Only styles from the Quaternius pack that sit properly on that sex's head are of
 
 ### Motion-capture gallery (dev only)
 
-`/characters.html` (run `npm run dev -w client`) shows the Quaternius male and female playing motion-capture clips (idle, walk, jog, sprint) from the ACCAD Open Motion Project, in a painted crew uniform or bare, with a toggle between gendered gait styling and the raw performer motion. The game itself still plays the stock Quaternius clips; this is the pipeline and review page for moving to mocap.
+`/characters.html` (run `npm run dev -w client`) shows the Quaternius male and female playing motion-capture clips (idle, walk, jog, sprint) from the ACCAD Open Motion Project, in a painted crew uniform or bare, with a toggle between gendered gait styling and the raw performer motion. The game plays the same styled clips (without the raw performer versions).
 
 How the clips are made (`tools/blender/`, run headless):
 
 - `retarget_export.py` retargets the BVH takes in `clips.py` onto the Quaternius skeleton. For each mapped bone the world rotation change from a neutral standing frame of the performer is applied on top of the target bone's own rest orientation (`W_target = Rz * dW_src * Q_bone * W_rest`), so rest-pose offsets are preserved instead of copying absolute rotations. Clavicles keep the Quaternius rest orientation (no `Q_bone`), the ACCAD data has no finger motion so a relaxed hand is added, and loops are cut on gait cycles and cross-faded closed. `clips.py` also holds the gendered gait styling.
 - `quaternius_retarget.py` imports `client/public/models/body-<sex>.glb` **with `guess_original_bind_pose=False`**. Blender's default re-derives a bind pose from the inverse bind matrices that does not match the mesh (about 6 cm off at the shoulders and wrists for these characters), which shows up as collapsed shoulders and sheared arms.
-- `tools/build-character-clips.mjs` paints the uniform (`tools/uniform-painter.mjs`), compresses the GLBs and writes `client/dev-assets/characters/`.
+- `tools/build-character-clips.mjs` paints the uniform (`tools/uniform-painter.mjs`), compresses the GLBs and writes `client/dev-assets/characters/` (gallery) and `client/public/models` (game).
 
 To regenerate the clips:
 
@@ -146,7 +148,7 @@ tools/blender/setup.sh                     # once: portable Blender 4.2 and the 
 cd tools && npm install && npm run build:clips
 ```
 
-The pipeline takes about 20 s. To change a clip, edit `tools/blender/clips.py` (take and frame range; `python3 tools/blender/find_loops.py` suggests loop points) and rebuild.
+The pipeline takes about 20 s and writes the game's `clips-<sex>.glb`, `motion.json` and `uniform/` textures into `client/public/models` as well as the gallery assets. To change a clip, edit `tools/blender/clips.py` (take and frame range; `python3 tools/blender/find_loops.py` suggests loop points) and rebuild.
 
 To rebuild the game's character assets (only needed when changing the pipeline):
 
@@ -157,6 +159,6 @@ cd tools && npm install && npm run build:characters
 ## Credits
 
 - Character bodies, hair, beard and eyes: **[Universal Base Characters](https://quaternius.com/packs/universalbasecharacters.html)** by [Quaternius](https://quaternius.com), CC0 1.0.
-- Animations: **[Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)** by Quaternius, CC0 1.0.
+- Motion: **[ACCAD Open Motion Project](https://accad.osu.edu/research/motion-lab/mocap-system-and-data)** motion capture (Female 1 and Male 1), CC BY 3.0. Motion capture data from ACCAD, The Ohio State University.
 
-The license text ships in `client/public/models/LICENSE-quaternius.txt`. The gallery assets in `client/dev-assets/characters` add motion from the ACCAD Open Motion Project, CC BY 3.0 (credit: "Motion capture data from ACCAD, The Ohio State University"); see `client/dev-assets/characters/LICENSES.txt`. CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the clips were trimmed.
+The license text ships in `client/public/models/LICENSE-quaternius.txt`. The ACCAD clips were cut into loops, retimed and retargeted to the Quaternius skeleton (`client/public/models/LICENSE-accad.txt`). CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the stock clips were replaced by the retargeted mocap.

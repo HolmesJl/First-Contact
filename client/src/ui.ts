@@ -239,7 +239,7 @@ export class CreatorPanel {
 
   constructor(
     defaultJob: Job,
-    private handlers: { onChange(a: Appearance): void; onCreate(c: Character): void },
+    private handlers: { onChange(a: Appearance & { job: Job }): void; onCreate(c: Character): void },
   ) {
     this.draft = {
       sex: 'male',
@@ -293,7 +293,7 @@ export class CreatorPanel {
       if (!hairStyleAvailable(this.draft.sex, this.draft.hairStyle)) this.draft.hairStyle = defaultHairStyle(this.draft.sex);
       this.error.textContent = '';
       this.sync();
-      if (key !== 'job') this.handlers.onChange(this.appearance());
+      this.handlers.onChange(this.appearance());
     });
     for (const [id, key] of [['fn', 'firstName'], ['ln', 'lastName']] as const) {
       const input = this.el.querySelector<HTMLInputElement>(`#${id}`)!;
@@ -309,9 +309,9 @@ export class CreatorPanel {
     this.handlers.onChange(this.appearance());
   }
 
-  appearance(): Appearance {
-    const { sex, face, hairStyle, facialHair, hairColor, eyeColor } = this.draft;
-    return { sex, face, hairStyle, facialHair, hairColor, eyeColor };
+  appearance(): Appearance & { job: Job } {
+    const { sex, face, hairStyle, facialHair, hairColor, eyeColor, job } = this.draft;
+    return { sex, face, hairStyle, facialHair, hairColor, eyeColor, job };
   }
 
   setTakenJobs(taken: Job[]) {

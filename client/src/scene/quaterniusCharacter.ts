@@ -41,11 +41,12 @@ const gltfs = new Map<Sex, GLTF>();
 const textures = new Map<string, THREE.Texture>();
 let manifest: Manifest;
 let urlFor: (rel: string) => string;
+const publicUrl = (rel: string) => `${import.meta.env.BASE_URL}models/${rel}`;
 
 async function tex(rel: string, linear: boolean) {
   let t = textures.get(rel);
   if (!t) {
-    t = await new THREE.TextureLoader().loadAsync(urlFor(rel));
+    t = await new THREE.TextureLoader().loadAsync(publicUrl(rel));
     t.flipY = false;
     t.colorSpace = linear ? THREE.NoColorSpace : THREE.SRGBColorSpace;
     t.anisotropy = 8;

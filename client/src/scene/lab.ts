@@ -4,7 +4,7 @@ import { canvasTexture, makeComposer, starfield, type View } from './common';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { buildShip } from './ship';
 import { HOLO_TABLE, TUBE_COUNT, TUBE_X, TUBE_Y, TUBE_Z, clampToLab } from '../../../shared/lab';
-import { JOB_INFO, type Appearance, type PlayerState, type SnapEntry } from '../../../shared/protocol';
+import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
 const WALK_SPEED = 2.2;
 const RUN_SPEED = 4.8;
@@ -49,8 +49,8 @@ export class LabScene implements View {
   private selfId: string;
   private mode: 'creator' | 'walk' = 'creator';
   private creatorTube = 0;
-  private preview: Appearance | null = null;
-  private local = { x: 0, z: 0, rot: 0, moving: false, running: false };
+  private preview: (Appearance & { job?: Job }) | null = null;
+  private local = { x: 0, z: 0, rot: 0, moving: false, running: false, speed: 0 };
   private sendTimer = 0;
   private lastSent = '';
 
@@ -308,7 +308,7 @@ export class LabScene implements View {
       this.removePlayer(p.id);
       return;
     }
-    const app: Appearance | null = p.character ?? (isSelf && this.mode === 'creator' ? this.preview : null);
+    const app: (Appearance & { job?: Job }) | null = p.character ?? (isSelf && this.mode === 'creator' ? this.preview : null);
     const key = `${inTube ? 'tube' : 'walk'}:${JSON.stringify(app)}:${p.connected}`;
     const existing = this.entities.get(p.id);
     if (existing && existing.key === key) {
@@ -383,7 +383,10 @@ export class LabScene implements View {
       if (id === this.selfId) continue;
       const e = this.entities.get(id);
       if (!e || e.inTube) continue;
-      e.speed = Math.hypot(x - e.tx, z - e.tz) * 15;
+      // Ground speed from the step between snapshots (15 Hz). Duplicate snapshots (no new position yet) say nothing about speed.
+      const step = Math.hypot(x - e.tx, z - e.tz) * 15;
+      if (!moving) e.speed = 0;
+      else if (step > 0.05) e.speed = e.speed > 0 ? e.speed * 0.6 + step * 0.4 : step;
       e.tx = x;
       e.tz = z;
       e.trot = rot;
@@ -402,13 +405,13 @@ export class LabScene implements View {
     this.camLook.copy(look);
   }
 
-  setPreview(app: Appearance, self: PlayerState) {
+  setPreview(app: Appearance & { job?: Job }, self: PlayerState) {
     this.preview = app;
     this.syncPlayer(self);
   }
 
   enterWalk(self: PlayerState) {
-    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, running: false };
+    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, running: false, speed: 0 };
     this.mode = 'walk';
     this.camYaw = 0;
     this.syncPlayer(self);
@@ -515,14 +518,14 @@ export class LabScene implements View {
       if (isSelf) {
         r.root.position.set(this.local.x, 0, this.local.z);
         r.root.rotation.y = lerpAngle(r.root.rotation.y, this.local.rot, 1 - Math.exp(-14 * dt));
-        animateRig(r, dt, this.local.moving, this.local.running ? 2 : 1);
+        animateRig(r, dt, this.local.moving, this.local.speed);
       } else {
         const k = 1 - Math.exp(-12 * dt);
         r.root.position.x += (e.tx - r.root.position.x) * k;
         r.root.position.z += (e.tz - r.root.position.z) * k;
         r.root.rotation.y = lerpAngle(r.root.rotation.y, e.trot, k);
         const lag = Math.hypot(e.tx - r.root.position.x, e.tz - r.root.position.z);
-        animateRig(r, dt, e.moving || lag > 0.05, e.speed / WALK_SPEED);
+        animateRig(r, dt, e.moving || lag > 0.05, e.speed);
       }
       if (e.spawnFx > 0) {
         e.spawnFx = Math.max(0, e.spawnFx - dt * 0.9);
@@ -563,6 +566,7 @@ export class LabScene implements View {
     }
     this.local.moving = moving;
     this.local.running = running;
+    this.local.speed = moving ? Math.min(1, len) * (running ? RUN_SPEED : WALK_SPEED) : 0;
 
     this.sendTimer += dt;
     if (this.sendTimer >= SEND_INTERVAL) {
