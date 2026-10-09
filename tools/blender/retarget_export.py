@@ -1,7 +1,6 @@
 """
-Retargets ACCAD motion capture (BVH, CC BY 3.0) onto a generated MPFB character and exports a GLB.
-
-  blender -b <preset>.blend --python tools/blender/retarget_export.py -- <preset-id> <out.glb>
+Retargets ACCAD motion capture (BVH, CC BY 3.0) onto the Quaternius game characters. Called by
+quaternius_retarget.py, which imports the body, runs `run()` and exports the GLB.
 
 Method (details in docs/character-spike.md): the source's own rest pose (a T-pose with a different bone
 frame convention) is replaced by a neutral standing frame of the same performer. For every mapped bone
@@ -27,7 +26,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from bvh import Bvh  # noqa: E402
 from clips import ACCAD_DIR, CLIP_SETS, STYLES  # noqa: E402
-from presets import PRESETS  # noqa: E402
 
 FPS = 30.0
 
@@ -38,14 +36,20 @@ MAP = [
 ]
 for _side, _s in (("Left", "l"), ("Right", "r")):
     MAP += [
-        (f"{_side}Shoulder", f"clavicle_{_s}", f"{_side}Arm"), (f"{_side}Arm", f"upperarm_{_s}", f"{_side}ForeArm"),
+        (f"{_side}Shoulder", f"clavicle_{_s}", None), (f"{_side}Arm", f"upperarm_{_s}", f"{_side}ForeArm"),
         (f"{_side}ForeArm", f"lowerarm_{_s}", f"{_side}Hand"), (f"{_side}Hand", f"hand_{_s}", "END"),
         (f"{_side}UpLeg", f"thigh_{_s}", f"{_side}Leg"), (f"{_side}Leg", f"calf_{_s}", f"{_side}Foot"),
         (f"{_side}Foot", f"foot_{_s}", f"{_side}ToeBase"), (f"{_side}ToeBase", f"ball_{_s}", "END"),
     ]
 TARGET_BONES = [m[1] for m in MAP]
 
-# BVH (x left, y up, z forward) -> Blender/MPFB (x left, y back, z up)
+# The ACCAD data has no finger motion and the Quaternius bind pose has open, flat hands. A relaxed hand is added as
+# a constant pose: degrees of curl for the three joints of each finger, about the world Y axis of the T-pose.
+FINGER_CURL = {
+    "index": (14, 22, 16), "middle": (18, 28, 20), "ring": (22, 32, 22), "pinky": (26, 34, 24), "thumb": (8, 10, 8),
+}
+
+# BVH (x left, y up, z forward) -> Blender (x left, y back, z up)
 B2BL = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)
 
 
@@ -282,12 +286,6 @@ def build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style=None
     if style:
         closed = apply_style(closed, style)
     W = {tb: np.einsum("fij,jk,kl->fil", closed[tb], q_bone[tb], rest[tb]) for _, tb, _ in MAP}
-    damp = style.get("clav_damp", 0.0) if style else 0.0
-    if damp:
-        # Skinning meshes built for subtle clavicle motion collapse at the shoulder under the performer's full
-        # shoulder girdle motion; pull the clavicles part-way back to their bind orientation (arms keep theirs).
-        for tb in ("clavicle_l", "clavicle_r"):
-            W[tb] = np.array([slerp(W[tb][f], rest[tb], damp) for f in range(len(W[tb]))])
     hips = close(hips, False)
     ground_speed = float(np.linalg.norm(((at(src.hips, b) - at(src.hips, a)))[:2]) * r / (n / FPS))
 
@@ -333,9 +331,7 @@ def foot_slide(W, pelvis, n, parent, rest, head, ground_speed, ball_rest_z):
     return (float(np.mean(speeds)) if speeds else 0.0, len(speeds))
 
 
-def run(preset_id, out_glb):
-    # Presets are MPFB characters; "quaternius-male|female" are the original game characters (same skeleton family).
-    sex = PRESETS[preset_id]["sex"] if preset_id in PRESETS else preset_id.split("-")[-1]
+def run(sex, out_glb):
     rig = bpy.data.objects["Armature"]
     clipset = CLIP_SETS[sex]
     bpy.context.view_layer.objects.active = rig
@@ -372,41 +368,11 @@ def run(preset_id, out_glb):
 
     clips = {}
     meta = {"scale": round(float(r), 4)}
-    calib = {}
-    if preset_id not in PRESETS:
-        # Other skeletons bring their own rest posture (the Quaternius bind pose leans forward more than the MPFB one),
-        # because the reference-pose method keeps the rest posture. Straighten the spine and neck until the idle
-        # side-view posture matches the MPFB character of the same sex, and apply that to every styled clip.
-        idle_spec = {**clipset["clips"]["idle"], "symmetric_shoulders": clipset.get("symmetric_shoulders", False)}
-        base = dict(STYLES[sex]["idle"])
-        t_sh, t_head = (-0.4, 0.2) if sex == "male" else (3.0, 2.2)
-        ext = ret = nb = 0.0
-        clamp = lambda v, lo, hi: max(lo, min(hi, v))
-
-        def measure():
-            st = {**base, "extend": base.get("extend", 0) + ext, "retract": base.get("retract", 0) + ret, "neck_back": base.get("neck_back", 0) + nb}
-            Wc, pc, nc, _gs = build_clip(idle_spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, st)
-            return posture_metrics(Wc, pc, nc, parent, rest, head)
-
-        # Prefer straightening the spine (up to 12 deg); only then draw the clavicles back (up to 8 deg more), so the
-        # shoulder girdle is not twisted far from the skinning's bind pose.
-        for _ in range(6):
-            ext = clamp(ext + 0.8 * (measure()["shoulderAheadOfHipCm"] - t_sh), 0.0, 12.0)
-        for _ in range(6):
-            ret = clamp(ret + 0.5 * (measure()["shoulderAheadOfHipCm"] - t_sh) / 0.28, 0.0, 8.0)
-        for _ in range(6):
-            pm = measure()
-            nb = clamp(nb + 0.5 * ((pm["headAheadOfHipCm"] - pm["shoulderAheadOfHipCm"]) - (t_head - t_sh)) / 0.17, -14.0, 16.0)
-        calib = {"extend": ext, "retract": ret, "neck_back": nb, "clav_damp": 0.6}
-        print("[spike] posture calibration", {k: round(v, 2) for k, v in calib.items()})
     jobs = []
     for name, spec in clipset["clips"].items():
         spec = {**spec, "symmetric_shoulders": clipset.get("symmetric_shoulders", False)}
-        style = STYLES[sex].get(name)
-        if style and calib:
-            style = {**style, **{k: style.get(k, 0) + v for k, v in calib.items() if k != "clav_damp"}, "elevate": 0.0, "clav_damp": calib["clav_damp"]}
-        jobs.append((name, spec, style))
-        jobs.append(("raw_" + name, spec, {"clav_damp": calib["clav_damp"]} if calib else None))
+        jobs.append((name, spec, STYLES[sex].get(name)))
+        jobs.append(("raw_" + name, spec, None))
     for name, spec, style in jobs:
         W, pelvis, n, gs = build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style)
         lows = []
@@ -419,6 +385,17 @@ def run(preset_id, out_glb):
         slide = foot_slide(W, pelvis, n, parent, rest, head, gs, ball_rest_z)
         clips[name] = (W, pelvis, n)
         meta[name] = {"posture": posture, "footSlideCmS": round(slide[0] * 100, 1), "contactFrames": slide[1], "frames": n, "duration": round(n / FPS, 3), "groundSpeed": round(gs, 3), "source": spec["file"], "takeFrames": list(spec["frames"])}
+
+    finger_basis = {}
+    for side, sign in (("l", 1.0), ("r", -1.0)):
+        for finger, curls in FINGER_CURL.items():
+            for k, deg in enumerate(curls, start=1):
+                name = f"{finger}_0{k}_{side}"
+                if name not in rest:
+                    continue
+                c, s_ = math.cos(math.radians(deg) * sign), math.sin(math.radians(deg) * sign)
+                Rw = np.array([[c, 0, s_], [0, 1, 0], [-s_, 0, c]])
+                finger_basis[name] = np3_to_q(np.linalg.inv(rest[name]) @ Rw @ rest[name])
 
     rig.animation_data_create()
     for tb in TARGET_BONES:
@@ -437,13 +414,20 @@ def run(preset_id, out_glb):
             pb = rig.pose.bones["pelvis"]
             pb.location = Vector(np.linalg.inv(rest["pelvis"]) @ (pelvis[f] - head["pelvis"]))
             pb.keyframe_insert("location", frame=f + 1)
+        for fname, q in finger_basis.items():
+            pb = rig.pose.bones[fname]
+            pb.rotation_mode = "QUATERNION"
+            pb.rotation_quaternion = q
+            for frame in (1, n):
+                pb.keyframe_insert("rotation_quaternion", frame=frame)
         track = rig.animation_data.nla_tracks.new()
         track.name = name
         strip = track.strips.new(name, 1, act)
         strip.name = name
         rig.animation_data.action = None
-    for tb in TARGET_BONES:
+    for tb in TARGET_BONES + list(finger_basis):
         pb = rig.pose.bones[tb]
+        pb.rotation_mode = "QUATERNION"
         pb.rotation_quaternion = (1, 0, 0, 0)
         pb.location = (0, 0, 0)
     bpy.context.scene.render.fps = int(FPS)

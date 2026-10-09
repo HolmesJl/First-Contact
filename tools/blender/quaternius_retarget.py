@@ -21,7 +21,7 @@ sex, out = sys.argv[sys.argv.index("--") + 1:][:2]
 src = os.path.normpath(os.path.join(HERE, f"../../client/public/models/body-{sex}.glb"))
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
-bpy.ops.import_scene.gltf(filepath=src)
+bpy.ops.import_scene.gltf(filepath=src, guess_original_bind_pose=False)
 
 KEEP_HAIR = "HairShort" if sex == "male" else "HairLong"
 for o in list(bpy.data.objects):
@@ -29,4 +29,4 @@ for o in list(bpy.data.objects):
         bpy.data.objects.remove(o, do_unlink=True)
 arm = bpy.data.objects["Armature"]
 arm.data.bones["Head"].name = "head"
-retarget_export.run(f"quaternius-{sex}", out)
+retarget_export.run(sex, out)

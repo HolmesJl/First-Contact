@@ -3,9 +3,8 @@
  * and a matching tangent-space normal map (seams, zipper, pocket flaps, belt, cuffs, boot soles).
  *
  * Works on any glTF whose `Body` mesh has POSITION, NORMAL, TEXCOORD_0, JOINTS_0 / WEIGHTS_0 and a UE-style
- * skeleton (pelvis, neck_01, head, upperarm_l, lowerarm_l, hand_l, thigh_l, calf_l, foot_l, ...), which covers
- * both the MPFB `game_engine` rig and the Quaternius rig. Everything is derived from joint positions and
- * skin weights, so the same code dresses both character sets.
+ * skeleton (pelvis, neck_01, head, upperarm_l, lowerarm_l, hand_l, thigh_l, calf_l, foot_l, ...), which is the
+ * Quaternius rig. Everything is derived from joint positions and skin weights, so the same code dresses both sexes.
  */
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
@@ -27,7 +26,8 @@ const hash = (x, y) => {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 };
 
-export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46], meshName = 'Body' }) {
+/** `chestLift`: raises the chest pocket and name tag (fraction of body height), so they clear a bust. */
+export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46], meshName = 'Body', chestLift = 0 }) {
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const doc = await io.read(glbPath);
   const node = doc.getRoot().listNodes().find((n) => n.getMesh()?.getName() === meshName);
@@ -240,15 +240,15 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
       return { edge: line(outside, d), inside: 1 - smooth(-0.0006, 0.0006, outside), fill };
     };
     if (frontish > 0 && bodyBand > 0.5 && u * sx > 0 && sx === leftSign) {
-      const pk = flapBox(0.052, 0.745, 0.024, 0.017, 0.0016);
+      const pk = flapBox(0.052, 0.745 + chestLift, 0.024, 0.017, 0.0016);
       col = col.map((c) => c * (1 - 0.3 * pk.edge * frontish));
       h += 0.0008 * pk.edge * frontish;
-      const flap = line(v - (0.745 + 0.0045), 0.0016) * pk.inside;
+      const flap = line(v - (0.745 + chestLift + 0.0045), 0.0016) * pk.inside;
       h += 0.0009 * flap * frontish;
       col = col.map((c) => c * (1 - 0.18 * pk.inside * frontish));
     }
     if (frontish > 0 && bodyBand > 0.5 && sx !== leftSign) {
-      const tag = flapBox(0.048, 0.752, 0.021, 0.0075, 0.0012);
+      const tag = flapBox(0.048, 0.752 + chestLift, 0.021, 0.0075, 0.0012);
       col = col.map((c) => c + (230 - c) * tag.inside * frontish * 0.9);
       h += 0.0005 * tag.edge * frontish;
     }
