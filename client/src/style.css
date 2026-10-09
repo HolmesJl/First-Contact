@@ -485,6 +485,74 @@ kbd {
   pointer-events: none !important;
 }
 
+.move-status {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none !important;
+  transition: opacity 0.4s;
+}
+
+.move-status.full {
+  opacity: 0.55;
+}
+
+.move-status .gait {
+  font: 700 11px var(--display);
+  letter-spacing: 0.16em;
+  color: #c3d0e6;
+  min-width: 52px;
+  text-align: right;
+}
+
+.move-status .stamina {
+  width: 150px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.move-status .stamina i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #36c6ff, #7cf0c9);
+}
+
+.move-status.empty .stamina i {
+  background: #ff6b6b;
+}
+
+.room-banner {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  padding: 9px 26px;
+  border-radius: 999px;
+  background: rgba(4, 10, 20, 0.7);
+  border: 1px solid rgba(94, 231, 255, 0.35);
+  font: 700 15px var(--display);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #e6f4ff;
+  opacity: 0;
+  transition: opacity 0.5s, transform 0.5s;
+  pointer-events: none !important;
+}
+
+.room-banner.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .nameplate {
   font: 600 13px var(--body);
   padding: 4px 10px;

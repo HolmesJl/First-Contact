@@ -16,6 +16,8 @@ import {
   type Job,
   type PlayerState,
 } from '../../shared/protocol';
+import type { Gait } from '../../shared/movement';
+import type { Space } from '../../shared/shipInterior';
 
 const ui = document.getElementById('ui')!;
 
@@ -139,6 +141,14 @@ export class Hud {
   readonly el = h('div', 'hud');
   private crew: HTMLElement;
   private hint = h('div', 'controls-hint');
+  private status = h('div', 'move-status');
+  private roomBanner = h('div', 'room-banner');
+  private bar: HTMLElement | null = null;
+  private gaitLabel: HTMLElement | null = null;
+  private loc: HTMLElement | null = null;
+  private lastStatus = '';
+  private lastRoom = '';
+  private roomTimer = 0;
 
   constructor(
     private code: string,
@@ -148,7 +158,7 @@ export class Hud {
     const link = inviteLink(code);
     this.el.innerHTML = `
       <div class="panel ship-card">
-        <div class="ship-name">FIRST CONTACT <span class="loc">· Lunar orbit · Clone lab</span></div>
+        <div class="ship-name">FIRST CONTACT <span class="loc">· Lunar orbit · Hibernation &amp; Cloning Bay</span></div>
         <div class="invite">
           <div><div class="label">Invite code</div><div class="code-big">${esc(code)}</div></div>
           <button class="btn small" data-act="copy">Copy invite link</button>
@@ -165,13 +175,45 @@ export class Hud {
         prompt('Copy this invite link:', link);
       }
     });
-    this.hint.innerHTML = `<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · drag to look · scroll to zoom`;
+    this.hint.innerHTML = `<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · drag to look · scroll to zoom`;
     this.hint.hidden = true;
-    ui.append(this.el, this.hint);
+    this.status.hidden = true;
+    this.status.innerHTML = `<span class="gait">JOG</span><div class="stamina"><i></i></div>`;
+    this.bar = this.status.querySelector('.stamina i');
+    this.gaitLabel = this.status.querySelector('.gait');
+    this.loc = this.el.querySelector('.loc');
+    ui.append(this.el, this.hint, this.status, this.roomBanner);
   }
 
   showControls(show: boolean) {
     this.hint.hidden = !show;
+    this.status.hidden = !show;
+  }
+
+  /** The local player moved into a room or corridor: update the location line and flash the room name. */
+  setSpace(space: Space) {
+    if (this.loc) this.loc.textContent = `· ${space.name}`;
+    if (space.kind !== 'room' || space.name === this.lastRoom) {
+      if (space.kind === 'room') this.lastRoom = space.name;
+      return;
+    }
+    this.lastRoom = space.name;
+    this.roomBanner.textContent = space.name;
+    this.roomBanner.classList.remove('show');
+    void this.roomBanner.offsetWidth;
+    this.roomBanner.classList.add('show');
+    clearTimeout(this.roomTimer);
+    this.roomTimer = window.setTimeout(() => this.roomBanner.classList.remove('show'), 2600);
+  }
+
+  setStatus(s: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }) {
+    const sig = `${s.gait}|${Math.round(s.stamina * 100)}|${s.exhausted}`;
+    if (sig === this.lastStatus) return;
+    this.lastStatus = sig;
+    if (this.bar) this.bar.style.width = `${Math.round(s.stamina * 100)}%`;
+    this.status.classList.toggle('empty', s.exhausted);
+    this.status.classList.toggle('full', s.stamina >= 0.995);
+    if (this.gaitLabel) this.gaitLabel.textContent = s.gait.toUpperCase();
   }
 
   render(players: Map<string, PlayerState>) {
@@ -193,6 +235,8 @@ export class Hud {
   destroy() {
     this.el.remove();
     this.hint.remove();
+    this.status.remove();
+    this.roomBanner.remove();
   }
 }
 

@@ -8,7 +8,8 @@ This repo is the **first playable slice**:
 - **Crew rules, enforced on the server.** Max 6 players, exactly one Captain. Job caps: Captain 1, Engineer 3, Military 3, Doctor 2, Botanist 4. If five characters exist and none is the Captain, the last berth is reserved for the Captain.
 - **Intro.** A short, skippable cinematic: launch from Earth, then rendezvous with the ship in lunar orbit.
 - **Character creation in the clone lab.** You start as an unformed figure in a horizontal cloning tube. Pick body (male/female), face (neutral, smiling, serious, angry, flirty), a hairstyle (male: parted, buzzed; female: buzzed, buns, long), facial hair for men (none, stubble, full beard), hair color (12), eye color (12), starting job (respecting caps), and a first and last name. The preview updates live in the tube.
-- **Spawn and walk.** After you click Create, your clone steps out next to the tube in underwear with a floating `Job Firstname Lastname` nameplate. Everyone in the lab sees each other move in real time.
+- **Spawn and walk.** After you click Create, your clone steps out next to the tube in underwear with a floating `Job Firstname Lastname` nameplate. Everyone sees each other move in real time.
+- **The seed ship, walkable.** The whole hub-and-spoke ship is one continuous level-0 greybox: the Commons, bunk room, Captain's cabin, medical lab, hibernation and cloning bay, greenhouse, hold, science lab, operations, bridge, fore and aft nodes, octagonal corridors and the engine room. See [The ship interior](#the-ship-interior).
 - **Persistence.** Ships and characters are saved to `server/data/ships.json`. Reload the tab, or come back later with the invite link, and you rejoin as the same character.
 
 ## Run it
@@ -76,8 +77,11 @@ This doesn't work on carrier-grade NAT (common on mobile or satellite internet).
 
 ### Controls
 
-- `W` `A` `S` `D` or arrow keys to move, `Shift` to run
-- Drag to orbit the camera, scroll to zoom
+- `W` `A` `S` `D` or arrow keys to move. You **jog** by default (3.5 m/s)
+- `C` toggles **walk** (2.2 m/s) and jog
+- Hold `Shift` to **sprint** (4.8 m/s). It is a burst: the stamina bar under the character drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little
+- Drag to orbit the camera, scroll to zoom. Walls and corridor hulls between the camera and your character fade out so the interior stays readable
+- The HUD shows the room you are in and flashes its name when you enter
 - `Space`, `Enter`, or `Esc` skips the intro
 - On touch devices, an on-screen joystick appears after you create your character
 
@@ -93,12 +97,19 @@ Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save 
 ## Layout
 
 ```
-shared/     protocol types, job caps and validation, clone lab layout (used by client and server)
+shared/     protocol types, job caps and validation, ship layout and interior data, movement rules (used by client and server)
+  shipLayout.ts           exterior data: modules, shapes, heights, corridors, doors, docks, lift
+  shipInterior.ts         interior data derived from it: walk shapes, props, stations, spawns, berths, `clampToShip`
+  shipInterior.check.ts   `npm run check:layout`: overlaps, blocked doors and ports, reachability from the pods
+  movement.ts             walk/jog/sprint speeds, the stamina rule, and the server's per-player movement budget
+  lab.ts                  the bay's pod constants and `spawnFor` (the bay is the world origin)
 server/     Node WebSocket server: ships, membership, character creation, movement relay, JSON persistence
 client/     Vite + TypeScript + Three.js
   src/scene/intro.ts      Earth, Moon, rocket launch and rendezvous cinematic (also the title backdrop)
   src/scene/ship.ts       the First Contact ship model
-  src/scene/lab.ts        clone lab, tubes, players, movement, camera
+  src/scene/lab.ts        the ship scene: players, movement, camera
+  src/scene/shipInterior.ts   builds the interior from the shared data: floors, walls, corridors, ceilings, lights, cutaway
+  src/scene/interior/     greybox materials, batching, label sprites, and prop builders (pods, tanks, consoles, bunks, ...)
   src/scene/character.ts  rigged glTF characters: appearance, procedural expressions, animation
   public/models/          built character assets: bodies, motion-capture clips (clips-<sex>.glb, motion.json), uniform textures (see Credits)
   src/scene/characterMotion.ts   gait selection, clip playback rate, crossfades
@@ -113,7 +124,22 @@ tools/      offline asset pipeline (build-characters.mjs, build-character-clips.
 
 ## Networking model
 
-The server is authoritative for membership, job assignment, character data, and spawn position. Movement is client-predicted: clients send position at 15 Hz, the server clamps it to the lab bounds, and it broadcasts snapshots at about 15 Hz. Remote players are smoothed on the client.
+The server is authoritative for membership, job assignment, character data, and spawn position. Movement is client-predicted: clients send position at 15 Hz, the server limits the step to what the movement rule allows, clamps it with `clampToShip(x, z, level)` (walkable area minus obstacles), and broadcasts snapshots at about 15 Hz. Remote players are smoothed on the client, and their walk, jog or sprint animation is picked from the speed seen between snapshots.
+
+**Movement cap.** Each player has a token-bucket budget on the server (`MoveBudget` in `shared/movement.ts`): jog speed plus 12% tolerance, and a stamina-sized reserve that pays for the sprint burst (about 3 s from a full bar, refilling over about 6 s). A single message can never move a player more than about 1.9 m. A client that claims more simply lags behind where it says it is; honest clients are never clipped.
+
+**Protocol.** Unchanged: `move` is still `{ x, z, rot, moving }`, and `PlayerState.tube` is still the pod index. The server owns the level (always 0 for now, the hangar is sealed), so no `level` field is sent yet. The lift, `spawnId`, `berth` and `useLift` from the layout plan arrive with the lift and bunk assignment slices.
+
+## The ship interior
+
+The interior is generated from two shared data files, so the client and server cannot disagree about where walls are.
+
+- `shared/shipLayout.ts` is the exterior source of truth (module rects, shapes, heights, corridors, doors, docks, lift). This slice removed the NPC dorm's `dorm-grow` dock (single-connection rule), marks the dorm's two doors `sealed`, and adds `maxPorts: 1` for the dorm and the Captain's cabin.
+- `shared/shipInterior.ts` adds, per room: the **walk shapes** (rects, or circles for the round greenhouse and cabin, a plus-and-disc for the nodes, two rects for the bridge's cut rear corners), the **props** (each solid prop is also an obstacle), **stations**, **spawns** (6 pods and 4 clone tanks in the bay), **berths** (0 in the cabin, 1 to 9 in the bunk room) and the NPC dorm panel. `clampToShip(x, z, level)` keeps a point inside the union of walk shapes and door thresholds minus obstacles; `spaceAt` names the room or corridor under a point.
+
+Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, Upload station, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0, trunk, desk with data pad, keypad prop on the locked door; the lock does nothing yet), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
+
+Dev helper: `npm run check:layout` fails on overlapping props, props blocking a door lane or a free port, and any station, spawn, berth or door that cannot be reached from the first pod.
 
 ## Characters
 

@@ -133,8 +133,11 @@ async function startLab() {
   }
   lab = new LabScene(renderer, document.getElementById('app')!, selfId, {
     onMove: (x, z, rot, moving) => net?.send({ t: 'move', x, z, rot, moving }),
+    onSpace: (space) => hud?.setSpace(space),
+    onStatus: (status) => hud?.setStatus(status),
   });
   view = lab;
+  if (import.meta.env.DEV) (window as unknown as { __fc: unknown }).__fc = { lab };
   resize();
   hud = new Hud(shipCode, selfId, hostId);
   hud.render(players);

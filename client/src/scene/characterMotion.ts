@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { JOG_SPEED, SPRINT_SPEED, WALK_SPEED } from '../../../shared/movement';
 import type { Sex } from '../../../shared/protocol';
 
 /**
@@ -12,10 +13,7 @@ import type { Sex } from '../../../shared/protocol';
 export type Gait = 'idle' | 'walk' | 'jog' | 'sprint';
 const MOVING_GAITS = ['walk', 'jog', 'sprint'] as const;
 
-/** Speeds the game moves at (m/s; keep in step with lab.ts, or shared/movement.ts once it exists): the gait boundaries sit halfway between them. */
-export const WALK_SPEED = 2.2;
-export const JOG_SPEED = 3.5;
-export const SPRINT_SPEED = 4.8;
+/** Gait boundaries sit halfway between the game's movement speeds (same rule as gaitFromSpeed). */
 const WALK_JOG = (WALK_SPEED + JOG_SPEED) / 2;
 const JOG_SPRINT = (JOG_SPEED + SPRINT_SPEED) / 2;
 const HYSTERESIS = 0.25;
