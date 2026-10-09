@@ -155,6 +155,7 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
   const colour = new Float32Array(N * 3);
   const height = new Float32Array(N);
   const covered = new Float32Array(N);
+  const accentMask = new Float32Array(N);
 
   for (let o = 0; o < N; o++) {
     if (!cov[o]) continue;
@@ -202,6 +203,7 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
         const stripe = band(up.t - 0.36, 0.17, 0.02) * band(outward - 0.88, 0.05, 0.02);
         const bandRing = band(up.t - 0.72, 0.045, 0.01);
         const acc = clamp(Math.max(patch * 0.94, bandRing), 0, 1);
+        accentMask[o] = Math.max(accentMask[o], acc);
         col = col.map((c, k) => c + (accent[k] - c) * acc);
         col = col.map((c) => c + (236 - c) * stripe * 0.9);
         h += 0.0006 * (patch + bandRing) - 0.0003 * stripe;
@@ -271,6 +273,7 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
     const collarD = y - (neckY - 0.003 * H);
     const collar = band(collarD, 0.006 * H, 0.0015 * H) * (1 - skinW) * (1 - smooth(0.05, 0.08, Math.abs(u)));
     if (collar > 0) {
+      accentMask[o] = Math.max(accentMask[o], collar * 0.9 * 0.85);
       col = col.map((c, k) => c + (accent[k] * 0.85 - c) * collar * 0.9);
       h += 0.0008 * collar;
     }
@@ -338,5 +341,9 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
   };
   const color = await (await pad(out)).webp({ quality: 86, effort: 5 }).toBuffer();
   const normal = await (await pad(nrmOut)).webp({ quality: 92, effort: 5 }).toBuffer();
-  return { color, normal, height: H };
+  // Accent coverage (0..255), so a viewer can swap the accent colour: pixel += mask * (new - accent).
+  const maskBuf = Buffer.alloc(N);
+  for (let o = 0; o < N; o++) maskBuf[o] = Math.round(clamp(accentMask[o] * covered[o]) * 255);
+  const accentImg = await sharp(maskBuf, { raw: { width: RES, height: RES, channels: 1 } }).webp({ lossless: true, effort: 5 }).toBuffer();
+  return { color, normal, accent: accentImg, height: H };
 }

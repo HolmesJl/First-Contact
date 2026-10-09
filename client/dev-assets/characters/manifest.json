@@ -4,8 +4,8 @@
   "male": {
    "file": "male.glb",
    "uniform": {
-    "color": "male-uniform.webp",
-    "normal": "male-uniform-normal.webp"
+    "color": "uniform/male.webp",
+    "normal": "uniform/male-normal.webp"
    },
    "vertices": {
     "Body": 7281,
@@ -164,8 +164,8 @@
   "female": {
    "file": "female.glb",
    "uniform": {
-    "color": "female-uniform.webp",
-    "normal": "female-uniform-normal.webp"
+    "color": "uniform/female.webp",
+    "normal": "uniform/female-normal.webp"
    },
    "vertices": {
     "Body": 7377,

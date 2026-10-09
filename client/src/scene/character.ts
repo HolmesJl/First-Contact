@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { Appearance, Face, Sex } from '../../../shared/protocol';
+import type { Appearance, Face, Job, Sex } from '../../../shared/protocol';
+import { createMotion, loadMotion, setIdleRate, updateMotion, type Motion } from './characterMotion';
+import { accentFor, loadUniforms, uniformMaterial } from './uniform';
 
 /**
- * Characters are Quaternius' CC0 "Universal Base Characters" with clips from the CC0 "Universal
- * Animation Library" (see client/public/models/LICENSE-quaternius.txt and tools/build-characters.mjs).
+ * Characters are Quaternius' CC0 "Universal Base Characters" (client/public/models/LICENSE-quaternius.txt,
+ * tools/build-characters.mjs) wearing a painted crew uniform, moved by retargeted ACCAD motion capture
+ * (characterMotion.ts, CC BY 3.0, client/public/models/LICENSE-accad.txt).
  * The base meshes have no facial rig, so expressions are procedural morph targets placed on the
  * painted face using UV landmarks.
  */
 
-type Clip = 'idle' | 'walk' | 'run';
 type BodyMorph = 'smile' | 'frown' | 'smirk' | 'press' | 'squint' | 'lids' | 'blink' | 'wink' | 'open' | 'wide';
 type BrowMorph = 'browAngry' | 'browRaise' | 'browRaiseL' | 'browWorry' | 'browLower';
 export type ExpressionWeights = Partial<Record<BodyMorph | BrowMorph, number>>;
@@ -48,8 +50,7 @@ export interface Rig {
   root: THREE.Group;
   head: THREE.Object3D;
   mixer: THREE.AnimationMixer;
-  actions: Record<Clip, THREE.AnimationAction>;
-  clip: Clip;
+  motion: Motion;
   face: { mesh: THREE.SkinnedMesh; names: string[] }[];
   expression: ExpressionWeights;
   flirty: boolean;
@@ -68,7 +69,7 @@ interface BodyAsset {
 }
 
 let bodies: Record<Sex, BodyAsset> | null = null;
-let clips: Record<Clip, THREE.AnimationClip> | null = null;
+let ready = false;
 let loading: Promise<void> | null = null;
 
 const hairMats = new Map<string, THREE.MeshStandardMaterial>();
@@ -91,16 +92,17 @@ const MODEL_URL = `${import.meta.env.BASE_URL}models/`;
 export function preloadCharacters() {
   loading ??= (async () => {
     const loader = new GLTFLoader();
-    const [male, female, anims, shavenTex] = await Promise.all([
+    const [male, female, shavenTex] = await Promise.all([
       loader.loadAsync(`${MODEL_URL}body-male.glb`),
       loader.loadAsync(`${MODEL_URL}body-female.glb`),
-      loader.loadAsync(`${MODEL_URL}animations.glb`),
       new THREE.TextureLoader().loadAsync(`${MODEL_URL}skin-male-shaven.jpg`),
+      loadMotion(MODEL_URL),
+      loadUniforms(MODEL_URL),
     ]);
     shavenTex.flipY = false;
     shavenTex.colorSpace = THREE.SRGBColorSpace;
     bodies = { male: prepareBody(male, 'male', shavenTex), female: prepareBody(female, 'female', null) };
-    clips = prepareClips(anims, male);
+    ready = true;
   })();
   return loading;
 }
@@ -130,22 +132,6 @@ function prepareBody(gltf: GLTF, sex: Sex, shavenTex: THREE.Texture | null): Bod
     shaven.map = shavenTex;
   }
   return { gltf, skin, shaven, eyes };
-}
-
-/** Keeps only rotations plus a pelvis track rescaled to our skeleton, so clips don't reshape bodies. */
-function prepareClips(anims: GLTF, body: GLTF): Record<Clip, THREE.AnimationClip> {
-  const animPelvis = anims.scene.getObjectByName('pelvis');
-  const bodyPelvis = body.scene.getObjectByName('pelvis');
-  const ratio = animPelvis && bodyPelvis ? bodyPelvis.position.length() / animPelvis.position.length() : 1;
-  const pick = (name: string) => {
-    const src = anims.animations.find((a) => a.name === name);
-    if (!src) throw new Error(`Missing animation clip ${name}`);
-    const clip = src.clone();
-    clip.tracks = clip.tracks.filter((t) => t.name.endsWith('.quaternion') || t.name === 'pelvis.position');
-    for (const t of clip.tracks) if (t.name === 'pelvis.position') for (let i = 0; i < t.values.length; i++) t.values[i] *= ratio;
-    return clip;
-  };
-  return { idle: pick('Idle_Loop'), walk: pick('Walk_Loop'), run: pick('Jog_Fwd_Loop') };
 }
 
 // ---------------------------------------------------------------- procedural face morphs
@@ -320,8 +306,8 @@ const hairMeshName = (style: string) => `Hair${style[0].toUpperCase()}${style.sl
 // ---------------------------------------------------------------- rigs
 
 /** Builds a character. Pass null for the unformed clone that floats in a tube. */
-export function buildRig(app: Appearance | null): Rig {
-  if (!bodies || !clips) throw new Error('preloadCharacters() must resolve before building rigs');
+export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
+  if (!bodies || !ready) throw new Error('preloadCharacters() must resolve before building rigs');
   const sex: Sex = app?.sex ?? 'male';
   const asset = bodies[sex];
   const model = SkeletonUtils.clone(asset.gltf.scene);
@@ -339,7 +325,7 @@ export function buildRig(app: Appearance | null): Rig {
     }
     switch (m.name) {
       case 'Body':
-        m.material = sex === 'male' && app.facialHair === 'none' && asset.shaven ? asset.shaven : asset.skin;
+        m.material = uniformMaterial(asset.skin, sex, sex === 'male' && app.facialHair === 'none', accentFor(app.job));
         break;
       case 'Eyes':
         m.material = eyeMaterial(asset.eyes, app.eyeColor);
@@ -376,21 +362,13 @@ export function buildRig(app: Appearance | null): Rig {
   root.add(shadow);
 
   const mixer = new THREE.AnimationMixer(model);
-  const actions = {
-    idle: mixer.clipAction(clips.idle),
-    walk: mixer.clipAction(clips.walk),
-    run: mixer.clipAction(clips.run),
-  };
-  const offset = Math.random() * 3;
-  for (const a of Object.values(actions)) a.time = offset;
-  actions.idle.play();
+  const motion = createMotion(mixer, sex);
 
   const rig: Rig = {
     root,
     head: model.getObjectByName('Head') ?? model,
     mixer,
-    actions,
-    clip: 'idle',
+    motion,
     face,
     expression: app ? EXPRESSIONS[app.face] : {},
     flirty: app?.face === 'flirty',
@@ -402,16 +380,6 @@ export function buildRig(app: Appearance | null): Rig {
   };
   applyFace(rig);
   return rig;
-}
-
-function play(rig: Rig, clip: Clip, timeScale = 1) {
-  const next = rig.actions[clip];
-  next.timeScale = timeScale;
-  if (rig.clip === clip) return;
-  const prev = rig.actions[rig.clip];
-  next.reset().play();
-  prev.crossFadeTo(next, 0.25, false);
-  rig.clip = clip;
 }
 
 function applyFace(rig: Rig) {
@@ -453,37 +421,18 @@ function updateFace(rig: Rig, dt: number) {
   applyFace(rig);
 }
 
-const _axis = new THREE.Vector3();
-const _q = new THREE.Quaternion();
-
-/** The library idles look at the floor; tilt the head up so faces read from a raised camera. */
-function liftHead(rig: Rig, angle: number) {
-  const parent = rig.head.parent;
-  if (!parent) return;
-  rig.root.updateWorldMatrix(true, false);
-  parent.updateWorldMatrix(true, false);
-  _axis.set(1, 0, 0).transformDirection(rig.root.matrixWorld);
-  parent.getWorldQuaternion(_q).invert();
-  _axis.applyQuaternion(_q).normalize();
-  rig.head.quaternion.premultiply(_q.setFromAxisAngle(_axis, -angle));
-}
-
-/** Gait picks the clip: the walk loop, or the jog loop (sprint is the jog sped up). */
-export function animateRig(rig: Rig, dt: number, moving: boolean, gait: 'walk' | 'jog' | 'sprint' = 'walk') {
+/** speed: ground speed in m/s (used while moving); it picks idle, walk, jog or sprint and the clip's playback rate. */
+export function animateRig(rig: Rig, dt: number, moving: boolean, speed = 0) {
   rig.time += dt;
-  if (!moving) play(rig, 'idle');
-  else if (gait === 'walk') play(rig, 'walk', 1.15);
-  else if (gait === 'jog') play(rig, 'run', 0.8);
-  else play(rig, 'run', 1.12);
+  updateMotion(rig.motion, dt, moving, speed);
   rig.mixer.update(dt);
-  liftHead(rig, moving ? 0.12 : 0.22);
   updateFace(rig, dt);
 }
 
 /** Relaxed floating pose for figures inside a tube. */
 export function floatRig(rig: Rig, dt: number) {
   rig.time += dt;
-  play(rig, 'idle', 0.45);
+  setIdleRate(rig.motion, 0.45);
   rig.mixer.update(dt);
   updateFace(rig, dt);
 }

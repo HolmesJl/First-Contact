@@ -1,7 +1,7 @@
 /** Movement speeds and the sprint stamina rule, shared by the client (prediction, HUD bar) and the server (cap). */
 
 /** Metres per second. */
-export const WALK_SPEED = 2.2;
+export const WALK_SPEED = 1.5;
 export const JOG_SPEED = 3.5;
 export const SPRINT_SPEED = 4.8;
 

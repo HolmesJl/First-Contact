@@ -1,9 +1,10 @@
 /**
  * Builds the runtime character assets in client/public/models from Quaternius' CC0 packs:
  *   - Universal Base Characters [Standard]  (bodies, eyes, brows, hair, beard)
- *   - Universal Animation Library [Standard] (idle / walk / jog / swim-idle clips)
  *
  *   cd tools && npm install && npm run build:characters
+ *
+ * Motion is not built here: see build-character-clips.mjs (ACCAD clips, uniform textures).
  *
  * Sources are downloaded into tools/.cache (gitignored) from a public GitHub mirror of the
  * free packs. Output is committed, so running this is only needed when changing the pipeline.
@@ -11,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
-import { dedup, mergeDocuments, prune, resample } from '@gltf-transform/functions';
+import { dedup, mergeDocuments, prune } from '@gltf-transform/functions';
 import sharp from 'sharp';
 
 const HERE = import.meta.dirname;
@@ -20,7 +21,6 @@ const OUT = path.resolve(HERE, '../client/public/models');
 
 const MIRROR = 'https://raw.githubusercontent.com/NafisRayan/Animate-Rigged-Humanoid-No-Blender/main/';
 const UBC = 'Universal Base Characters[Standard]/Universal Base Characters[Standard]/';
-const UAL = 'Universal Animation Library[Standard]/Universal Animation Library[Standard]/';
 const BASE = `${UBC}Base Characters/Godot - UE/`;
 const HAIR_DIR = `${UBC}Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)/`;
 
@@ -35,7 +35,6 @@ const SOURCES = {
   'T_Hair_1_BaseColor.png': `${UBC}Hairstyles/Textures/`,
   'T_Hair_2_BaseColor.png': `${UBC}Hairstyles/Textures/`,
   'License_Standard.txt': UBC,
-  'UAL1_Standard.glb': `${UAL}Unreal-Godot/`,
 };
 for (const h of ['Hair_SimpleParted', 'Hair_Buzzed', 'Hair_Long', 'Hair_Beard', 'Hair_Buns', 'Hair_BuzzedFemale']) {
   SOURCES[`${h}.gltf`] = HAIR_DIR;
@@ -56,8 +55,6 @@ const HAIR = {
     ['HairLong', 'Hair_Long.gltf'],
   ],
 };
-
-const KEEP_CLIPS = ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop'];
 
 const io = new NodeIO();
 
@@ -252,40 +249,6 @@ async function buildBody(sex, textures) {
   return out;
 }
 
-async function buildAnimations() {
-  const doc = await io.read(path.join(SRC, 'UAL1_Standard.glb'));
-  const root = doc.getRoot();
-  for (const a of root.listAnimations()) {
-    if (KEEP_CLIPS.includes(a.getName())) continue;
-    // Samplers outlive their animation otherwise, which keeps every keyframe accessor alive.
-    a.listSamplers().forEach((s) => s.dispose());
-    a.listChannels().forEach((c) => c.dispose());
-    a.dispose();
-  }
-  for (const n of root.listNodes()) {
-    n.setMesh(null);
-    n.setSkin(null);
-  }
-  root.listMeshes().forEach((m) => m.dispose());
-  root.listSkins().forEach((s) => s.dispose());
-  root.listMaterials().forEach((m) => m.dispose());
-  root.listTextures().forEach((t) => t.dispose());
-  for (const a of root.listAnimations()) {
-    for (const ch of a.listChannels()) {
-      const bone = ch.getTargetNode()?.getName() ?? '';
-      const keepPosition = bone === 'pelvis' || bone === 'root';
-      if (ch.getTargetPath() === 'scale' || (ch.getTargetPath() === 'translation' && !keepPosition)) {
-        ch.getSampler()?.dispose();
-        ch.dispose();
-      }
-    }
-  }
-  await doc.transform(resample({ tolerance: 1e-3 }), prune({ keepLeaves: true }), dedup());
-  const out = path.join(OUT, 'animations.glb');
-  await io.write(out, doc);
-  return out;
-}
-
 await fetchSources();
 fs.mkdirSync(OUT, { recursive: true });
 const textures = {
@@ -300,6 +263,6 @@ const textures = {
 const shaven = await skinTexture('T_Superhero_Male_Ligh.png', { shave: true });
 fs.writeFileSync(path.join(OUT, 'skin-male-shaven.jpg'), shaven);
 
-const outputs = [await buildBody('male', textures), await buildBody('female', textures), await buildAnimations(), path.join(OUT, 'skin-male-shaven.jpg')];
+const outputs = [await buildBody('male', textures), await buildBody('female', textures), path.join(OUT, 'skin-male-shaven.jpg')];
 fs.copyFileSync(path.join(SRC, 'License_UBC.txt'), path.join(OUT, 'LICENSE-quaternius.txt'));
 for (const f of outputs) console.log(`${path.relative(process.cwd(), f)}  ${(fs.statSync(f).size / 1024).toFixed(0)} KB`);

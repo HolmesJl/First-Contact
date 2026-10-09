@@ -6,7 +6,7 @@ import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, gaitFromSpeed, type Gait } from '../../../shared/movement';
-import { JOB_INFO, type Appearance, type PlayerState, type SnapEntry } from '../../../shared/protocol';
+import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
@@ -23,6 +23,8 @@ interface Entity {
   moving: boolean;
   speed: number;
   lastSnap: number;
+  /** Recent snapshot positions [ms, x, z], for the ground speed estimate. */
+  track: [number, number, number][];
   spawnFx: number;
 }
 
@@ -49,8 +51,8 @@ export class LabScene implements View {
   private selfId: string;
   private mode: 'creator' | 'walk' = 'creator';
   private creatorTube = 0;
-  private preview: Appearance | null = null;
-  private local = { x: 0, z: 0, rot: 0, moving: false, gait: 'jog' as Gait };
+  private preview: (Appearance & { job?: Job }) | null = null;
+  private local = { x: 0, z: 0, rot: 0, moving: false, gait: 'jog' as Gait, speed: 0 };
   private sendTimer = 0;
   private lastSent = '';
 
@@ -91,7 +93,7 @@ export class LabScene implements View {
       this.removePlayer(p.id);
       return;
     }
-    const app: Appearance | null = p.character ?? (isSelf && this.mode === 'creator' ? this.preview : null);
+    const app: (Appearance & { job?: Job }) | null = p.character ?? (isSelf && this.mode === 'creator' ? this.preview : null);
     const key = `${inTube ? 'tube' : 'walk'}:${JSON.stringify(app)}:${p.connected}`;
     const existing = this.entities.get(p.id);
     if (existing && existing.key === key) {
@@ -107,7 +109,7 @@ export class LabScene implements View {
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, spawnFx: 0 };
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0 };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
@@ -166,11 +168,19 @@ export class LabScene implements View {
       if (id === this.selfId) continue;
       const e = this.entities.get(id);
       if (!e || e.inTube) continue;
+      // Ground speed over the last ~0.5 s of snapshots. Per-snapshot steps beat against the senders' 15 Hz timer (a step is
+      // often zero, then double), which would flicker the gait; a longer baseline does not.
       const now = performance.now();
-      const dt = Math.min(0.3, Math.max(0.03, (now - e.lastSnap) / 1000));
-      const v = Math.hypot(x - e.tx, z - e.tz) / dt;
-      e.speed = e.lastSnap && e.moving ? e.speed * 0.5 + v * 0.5 : v;
       e.lastSnap = now;
+      if (!moving) {
+        e.speed = 0;
+        e.track.length = 0;
+      } else {
+        e.track.push([now, x, z]);
+        while (e.track.length > 2 && now - e.track[0][0] > 500) e.track.shift();
+        const [t0, x0, z0] = e.track[0];
+        if (now - t0 >= 200) e.speed = Math.hypot(x - x0, z - z0) / ((now - t0) / 1000);
+      }
       e.tx = x;
       e.tz = z;
       e.trot = rot;
@@ -190,13 +200,13 @@ export class LabScene implements View {
     this.camLook.copy(look);
   }
 
-  setPreview(app: Appearance, self: PlayerState) {
+  setPreview(app: Appearance & { job?: Job }, self: PlayerState) {
     this.preview = app;
     this.syncPlayer(self);
   }
 
   enterWalk(self: PlayerState) {
-    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog' };
+    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog', speed: 0 };
     this.mode = 'walk';
     this.space = null;
     this.camYaw = 0;
@@ -289,14 +299,14 @@ export class LabScene implements View {
       if (isSelf) {
         r.root.position.set(this.local.x, 0, this.local.z);
         r.root.rotation.y = lerpAngle(r.root.rotation.y, this.local.rot, 1 - Math.exp(-14 * dt));
-        animateRig(r, dt, this.local.moving, this.local.gait);
+        animateRig(r, dt, this.local.moving, this.local.speed);
       } else {
         const k = 1 - Math.exp(-12 * dt);
         r.root.position.x += (e.tx - r.root.position.x) * k;
         r.root.position.z += (e.tz - r.root.position.z) * k;
         r.root.rotation.y = lerpAngle(r.root.rotation.y, e.trot, k);
         const lag = Math.hypot(e.tx - r.root.position.x, e.tz - r.root.position.z);
-        animateRig(r, dt, e.moving || lag > 0.05, gaitFromSpeed(e.speed));
+        animateRig(r, dt, e.moving || lag > 0.05, e.speed);
       }
       if (e.spawnFx > 0) {
         e.spawnFx = Math.max(0, e.spawnFx - dt * 0.9);
@@ -325,6 +335,7 @@ export class LabScene implements View {
     const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
     const sprinting = this.stamina.update(dt, moving && this.keys.has('shift'));
     const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
+    const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
     if (moving) {
       const n = Math.min(1, len) / len;
       ix *= n;
@@ -335,7 +346,6 @@ export class LabScene implements View {
       const rz = -Math.sin(this.camYaw);
       const mx = fx * iy + rx * ix;
       const mz = fz * iy + rz * ix;
-      const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
       const p = clampToShip(this.local.x + mx * speed * dt, this.local.z + mz * speed * dt, 0);
       this.local.x = p.x;
       this.local.z = p.z;
@@ -343,6 +353,7 @@ export class LabScene implements View {
     }
     this.local.moving = moving;
     this.local.gait = gait;
+    this.local.speed = moving ? Math.min(1, len) * speed : 0;
 
     const space = spaceAt(this.local.x, this.local.z, 0);
     if (space && space.id !== this.space?.id) {
