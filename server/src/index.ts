@@ -24,6 +24,9 @@ const store = new ShipStore(DATA_FILE);
 /** ship code -> player id -> socket */
 const online = new Map<string, Map<string, WebSocket>>();
 const moving = new Map<string, boolean>();
+/** Last move message time (ms) per player; used to clear stuck `moving` when input stops. */
+const lastMoveMs = new Map<string, number>();
+const MOVE_STALE_MS = 280;
 /** Per-player movement cap (jog speed plus the stamina-limited sprint burst). */
 const budgets = new Map<string, MoveBudget>();
 const dirtyShips = new Set<string>();
@@ -182,7 +185,9 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         me.rot = rot;
-        moving.set(key(ship.code, pid), !!msg.moving);
+        const mk = key(ship.code, pid);
+        moving.set(mk, !!msg.moving);
+        lastMoveMs.set(mk, Date.now());
         dirtyShips.add(ship.code);
         store.save(2000);
         break;
@@ -195,8 +200,10 @@ wss.on('connection', (ws) => {
     const peers = online.get(ship.code);
     if (peers?.get(pid) !== ws) return;
     peers.delete(pid);
-    moving.delete(key(ship.code, pid));
-    budgets.delete(key(ship.code, pid));
+    const mk = key(ship.code, pid);
+    moving.delete(mk);
+    lastMoveMs.delete(mk);
+    budgets.delete(mk);
     const me = ship.members[pid];
     if (me) broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
     console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} disconnected (${peers.size} online)`);
@@ -204,6 +211,12 @@ wss.on('connection', (ws) => {
 });
 
 setInterval(() => {
+  const now = Date.now();
+  for (const [mk, t] of lastMoveMs) {
+    if (!moving.get(mk) || now - t <= MOVE_STALE_MS) continue;
+    moving.set(mk, false);
+    dirtyShips.add(mk.slice(0, mk.indexOf(':')));
+  }
   for (const code of dirtyShips) {
     const ship = store.get(code);
     const peers = online.get(code);

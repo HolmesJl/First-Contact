@@ -20,7 +20,11 @@ const HYSTERESIS = 0.25;
 
 /** Playback speed limits per gait, so a clip is never stretched into something that no longer reads as that gait. */
 const RATE: Record<(typeof MOVING_GAITS)[number], [number, number]> = { walk: [0.55, 1.75], jog: [0.75, 1.3], sprint: [0.85, 1.25] };
-const FADE = 0.25;
+const FADE_MOVE = 0.25;
+/** ~30% longer than gait crossfades so idle blends feel less snappy. */
+const FADE_IDLE = 0.325;
+/** Idle clip playback (~30% slower than 1x). */
+export const IDLE_PLAYBACK = 1 / 1.3;
 
 interface SexMotion {
   clips: Record<Gait, THREE.AnimationClip>;
@@ -87,10 +91,12 @@ export function updateMotion(m: Motion, dt: number, moving: boolean, speed: numb
     // Moving to moving: keep the stride phase so the feet do not jump.
     if (m.gait !== 'idle' && target !== 'idle') next.time = (prev.time / prev.getClip().duration) * next.getClip().duration;
     next.play();
-    prev.crossFadeTo(next, FADE, false);
+    const fade = target === 'idle' || m.gait === 'idle' ? FADE_IDLE : FADE_MOVE;
+    prev.crossFadeTo(next, fade, false);
     m.gait = target;
   }
-  if (m.gait !== 'idle') {
+  if (m.gait === 'idle') m.actions.idle.timeScale = IDLE_PLAYBACK;
+  else {
     const [lo, hi] = RATE[m.gait];
     m.actions[m.gait].timeScale = Math.min(hi, Math.max(lo, m.speed / m.ground[m.gait]));
   }

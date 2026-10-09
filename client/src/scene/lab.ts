@@ -11,6 +11,14 @@ import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry }
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
 
+const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const SHIFT_CODES = new Set(['ShiftLeft', 'ShiftRight']);
+
+function previewPose(tube: number): [number, number, number] {
+  const x = TUBE_X[tube];
+  return [x - 0.12, 0, TUBE_Z + 1.28];
+}
+
 interface Entity {
   id: string;
   key: string;
@@ -66,6 +74,8 @@ export class LabScene implements View {
   private drag: { id: number; x: number; y: number } | null = null;
   private cleanup: (() => void)[] = [];
   private focus = new THREE.Vector3();
+  private previewStage: THREE.Group | null = null;
+  private previewLights: THREE.Light[] = [];
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -88,7 +98,8 @@ export class LabScene implements View {
 
   syncPlayer(p: PlayerState) {
     const isSelf = p.id === this.selfId;
-    let inTube = !p.character;
+    const creatorPreview = isSelf && this.mode === 'creator' && !!this.preview && !p.character;
+    let inTube = !p.character && !creatorPreview;
     if (!p.connected && p.character && !isSelf) {
       this.removePlayer(p.id);
       return;
@@ -119,6 +130,11 @@ export class LabScene implements View {
         e.label.position.set(TUBE_X[p.tube] + 0.0, TUBE_Y + 0.95, TUBE_Z);
         this.scene.add(e.label);
       }
+    } else if (creatorPreview) {
+      const [px, , pz] = previewPose(p.tube);
+      rig.root.position.set(px, 0, pz);
+      rig.root.rotation.y = 0;
+      if (this.previewStage) this.previewStage.position.set(px, 0, pz);
     } else {
       const pos = isSelf && this.mode === 'walk' && !wasInTube ? this.local : p;
       rig.root.position.set(pos.x, 0, pos.z);
@@ -194,10 +210,51 @@ export class LabScene implements View {
     this.mode = 'creator';
     this.interior.setFocus('bay');
     this.creatorTube = tube;
+    this.buildPreviewStage();
     this.syncPlayer(self);
     const [pos, look] = this.creatorCamera();
-    this.camPos.copy(pos).add(new THREE.Vector3(0, 1.5, 4));
+    this.camPos.copy(pos);
     this.camLook.copy(look);
+  }
+
+  private buildPreviewStage() {
+    if (this.previewStage) return;
+    const g = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.42, 0.018, 8, 48),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5fd8ff).multiplyScalar(2.2), transparent: true, opacity: 0.85 }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.02;
+    g.add(ring);
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.35, 2.2, 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x3fbfff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    beam.position.y = 1.1;
+    g.add(beam);
+    this.scene.add(g);
+    this.previewStage = g;
+
+    const key = new THREE.DirectionalLight(0xfff4e8, 1.35);
+    key.position.set(1.2, 3.2, 4.5);
+    const fill = new THREE.DirectionalLight(0xb8dcff, 0.55);
+    fill.position.set(-2.5, 2.4, 2);
+    const rim = new THREE.PointLight(0x6fc8ff, 0.9, 6, 1.4);
+    rim.position.set(0, 1.6, 2.2);
+    for (const l of [key, fill, rim]) {
+      this.scene.add(l);
+      this.previewLights.push(l);
+    }
+  }
+
+  private destroyPreviewStage() {
+    if (this.previewStage) {
+      this.previewStage.removeFromParent();
+      this.previewStage = null;
+    }
+    for (const l of this.previewLights) l.removeFromParent();
+    this.previewLights.length = 0;
   }
 
   setPreview(app: Appearance & { job?: Job }, self: PlayerState) {
@@ -210,14 +267,17 @@ export class LabScene implements View {
     this.mode = 'walk';
     this.space = null;
     this.camYaw = 0;
+    this.destroyPreviewStage();
+    this.clearMovementInput(true);
     this.syncPlayer(self);
   }
 
   private creatorCamera(): [THREE.Vector3, THREE.Vector3] {
-    const x = TUBE_X[this.creatorTube];
+    const [px, , pz] = previewPose(this.creatorTube);
     const narrow = this.camera.aspect < 0.9;
-    if (narrow) return [new THREE.Vector3(x, 2.1, TUBE_Z + 5.2), new THREE.Vector3(x, 0.55, TUBE_Z)];
-    return [new THREE.Vector3(x + 0.3, 1.75, TUBE_Z + 3.4), new THREE.Vector3(x + 1.05, 1.18, TUBE_Z)];
+    const look = new THREE.Vector3(px - 0.04, 1.02, pz);
+    if (narrow) return [new THREE.Vector3(px, 1.65, pz + 4.6), look];
+    return [new THREE.Vector3(px + 0.22, 1.48, pz + 3.35), look];
   }
 
   // ---- input ----
@@ -226,19 +286,28 @@ export class LabScene implements View {
     const onKey = (down: boolean) => (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-      const k = e.key.toLowerCase();
+      const code = e.code;
       if (down) {
-        if (k === 'c' && !e.repeat && !e.ctrlKey && !e.metaKey && this.mode === 'walk') this.walkMode = !this.walkMode;
-        this.keys.add(k);
-      } else this.keys.delete(k);
-      if (this.mode === 'walk' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+        if (code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && this.mode === 'walk') this.walkMode = !this.walkMode;
+        if (MOVE_CODES.has(code) || SHIFT_CODES.has(code)) this.keys.add(code);
+      } else if (MOVE_CODES.has(code) || SHIFT_CODES.has(code)) {
+        this.keys.delete(code);
+        if (this.mode === 'walk' && !this.hasMoveInput()) this.flushMove();
+      }
+      if (this.mode === 'walk' && code.startsWith('Arrow')) e.preventDefault();
     };
     const kd = onKey(true);
     const ku = onKey(false);
-    const blur = () => this.keys.clear();
+    const clear = () => this.clearMovementInput(true);
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
-    window.addEventListener('blur', blur);
+    window.addEventListener('blur', clear);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') clear();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      if (!document.pointerLockElement) clear();
+    });
 
     const canvas = this.renderer.domElement;
     const pd = (e: PointerEvent) => {
@@ -268,7 +337,7 @@ export class LabScene implements View {
     this.cleanup.push(() => {
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
-      window.removeEventListener('blur', blur);
+      window.removeEventListener('blur', clear);
       canvas.removeEventListener('pointerdown', pd);
       canvas.removeEventListener('pointermove', pm);
       canvas.removeEventListener('pointerup', pu);
@@ -280,12 +349,33 @@ export class LabScene implements View {
   setJoystick(x: number, y: number) {
     this.joy.x = x;
     this.joy.y = y;
+    if (this.mode === 'walk' && x === 0 && y === 0 && !this.hasMoveInput()) this.flushMove();
+  }
+
+  private hasMoveInput() {
+    for (const c of MOVE_CODES) if (this.keys.has(c)) return true;
+    return Math.hypot(this.joy.x, this.joy.y) > 0.08;
+  }
+
+  private clearMovementInput(flush: boolean) {
+    this.keys.clear();
+    this.joy.x = 0;
+    this.joy.y = 0;
+    if (flush && this.mode === 'walk') this.flushMove();
+  }
+
+  private flushMove() {
+    this.local.moving = false;
+    this.local.speed = 0;
+    this.lastSent = '';
+    this.hooks.onMove(this.local.x, this.local.z, this.local.rot, false);
   }
 
   // ---- loop ----
 
   update(dt: number) {
     this.time += dt;
+    if (this.mode === 'creator' && this.previewStage) this.previewStage.rotation.y += dt * 0.25;
     if (this.mode === 'walk') this.updateLocal(dt);
 
     for (const e of this.entities.values()) {
@@ -296,6 +386,10 @@ export class LabScene implements View {
         continue;
       }
       const isSelf = e.id === this.selfId;
+      if (isSelf && this.mode === 'creator') {
+        animateRig(r, dt, false, 0);
+        continue;
+      }
       if (isSelf) {
         r.root.position.set(this.local.x, 0, this.local.z);
         r.root.rotation.y = lerpAngle(r.root.rotation.y, this.local.rot, 1 - Math.exp(-14 * dt));
@@ -326,14 +420,14 @@ export class LabScene implements View {
   private updateLocal(dt: number) {
     let ix = this.joy.x;
     let iy = this.joy.y;
-    if (this.keys.has('w') || this.keys.has('arrowup')) iy += 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) iy -= 1;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) ix -= 1;
-    if (this.keys.has('d') || this.keys.has('arrowright')) ix += 1;
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) iy += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) iy -= 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) ix -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) ix += 1;
     const len = Math.hypot(ix, iy);
     const moving = len > 0.1;
     const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
-    const sprinting = this.stamina.update(dt, moving && this.keys.has('shift'));
+    const sprinting = this.stamina.update(dt, moving && [...SHIFT_CODES].some((c) => this.keys.has(c)));
     const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
     const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
     if (moving) {
