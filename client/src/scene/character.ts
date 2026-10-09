@@ -24,17 +24,17 @@ const EXPRESSIONS: Record<Face, ExpressionWeights> = {
   serious: { press: 0.85, squint: 0.3, browAngry: 0.35 },
   angry: { frown: 1, press: 0.45, squint: 0.85, browAngry: 1 },
   flirty: { smirk: 0.75, smile: 0.2, lids: 0.35, browRaiseL: 0.55, squint: 0.1 },
-};
-
-/** Candidates for more faces (not selectable yet): each is only a set of morph weights. */
-export const PROTOTYPE_EXPRESSIONS: Record<string, ExpressionWeights> = {
-  'flirty (before)': { smirk: 1, lids: 0.55, browRaiseL: 1 },
   calm: { smile: 0.45, squint: 0.1, lids: 0.15 },
   determined: { press: 1, frown: 0.25, squint: 0.4, browAngry: 0.55 },
+  smirk: { smirk: 1, squint: 0.15 },
+};
+
+/** Candidates for more faces (not selectable yet): each is only a set of morph weights. Promote one by adding it to FACES and EXPRESSIONS. */
+export const PROTOTYPE_EXPRESSIONS: Record<string, ExpressionWeights> = {
+  'flirty (before)': { smirk: 1, lids: 0.55, browRaiseL: 1 },
   worried: { frown: 0.45, press: 0.2, lids: 0.1, browWorry: 1 },
   tired: { lids: 0.9, frown: 0.25, press: 0.15, browLower: 0.7, browWorry: 0.3 },
   surprised: { browRaise: 1, wide: 1, open: 0.8 },
-  smirk: { smirk: 1, squint: 0.15 },
 };
 
 /** Face landmarks in the body texture's UV space (character's right = low U = -x). */

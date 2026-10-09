@@ -227,7 +227,7 @@ export function banner(msg: string, action?: { label: string; run(): void }) {
 
 // ---------------------------------------------------------------- creator
 
-const FACE_LABELS: Record<(typeof FACES)[number], string> = { neutral: 'Neutral', smiling: 'Smiling', serious: 'Serious', angry: 'Angry', flirty: 'Flirty' };
+const FACE_LABELS: Record<(typeof FACES)[number], string> = { neutral: 'Neutral', smiling: 'Smiling', serious: 'Serious', angry: 'Angry', flirty: 'Flirty', calm: 'Calm', determined: 'Determined', smirk: 'Smirk' };
 
 export class CreatorPanel {
   readonly el = h('div', 'creator panel');
@@ -252,8 +252,8 @@ export class CreatorPanel {
       firstName: '',
       lastName: '',
     };
-    const seg = (key: string, opts: [string, string][]) =>
-      `<div class="seg" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const seg = (key: string, opts: [string, string][], wrap = false) =>
+      `<div class="seg${wrap ? ' wrap' : ''}" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
     const swatches = (key: string, list: readonly { name: string; hex: string }[]) =>
       `<div class="swatches" data-key="${key}">${list.map((c) => `<button type="button" data-v="${c.hex}" title="${c.name}" style="--c:${c.hex}"></button>`).join('')}</div>`;
 
@@ -265,7 +265,7 @@ export class CreatorPanel {
       </header>
       <div class="scroll">
         <div class="field"><label>Body</label>${seg('sex', [['male', 'Male'], ['female', 'Female']])}</div>
-        <div class="field"><label>Face</label>${seg('face', FACES.map((f) => [f, FACE_LABELS[f]]))}</div>
+        <div class="field"><label>Face</label>${seg('face', FACES.map((f) => [f, FACE_LABELS[f]]), true)}</div>
         <div class="field"><label>Hair</label>${seg('hairStyle', [])}</div>
         <div class="field" data-only="male"><label>Facial hair</label>${seg('facialHair', [['none', 'None'], ['stubble', 'Stubble'], ['beard', 'Full beard']])}</div>
         <div class="field"><label>Hair color <span class="val" data-val="hairColor"></span></label>${swatches('hairColor', HAIR_COLORS)}</div>

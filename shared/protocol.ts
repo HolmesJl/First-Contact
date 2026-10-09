@@ -40,7 +40,7 @@ export const JOB_INFO: Record<Job, { color: string; role: string; blurb: string 
 };
 
 export const SEXES = ['male', 'female'] as const;
-export const FACES = ['neutral', 'smiling', 'serious', 'angry', 'flirty'] as const;
+export const FACES = ['neutral', 'smiling', 'serious', 'angry', 'flirty', 'calm', 'determined', 'smirk'] as const;
 /** Hairstyles that ship with the Quaternius base characters and fit the heads, per sex (first entry is the default). */
 export const HAIR_STYLES = {
   male: [
