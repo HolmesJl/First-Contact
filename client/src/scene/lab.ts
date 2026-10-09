@@ -23,6 +23,8 @@ interface Entity {
   moving: boolean;
   speed: number;
   lastSnap: number;
+  /** Recent snapshot positions [ms, x, z], for the ground speed estimate. */
+  track: [number, number, number][];
   spawnFx: number;
 }
 
@@ -107,7 +109,7 @@ export class LabScene implements View {
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, spawnFx: 0 };
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0 };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
@@ -166,11 +168,19 @@ export class LabScene implements View {
       if (id === this.selfId) continue;
       const e = this.entities.get(id);
       if (!e || e.inTube) continue;
+      // Ground speed over the last ~0.5 s of snapshots. Per-snapshot steps beat against the senders' 15 Hz timer (a step is
+      // often zero, then double), which would flicker the gait; a longer baseline does not.
       const now = performance.now();
-      const dt = Math.min(0.3, Math.max(0.03, (now - e.lastSnap) / 1000));
-      const v = Math.hypot(x - e.tx, z - e.tz) / dt;
-      e.speed = e.lastSnap && e.moving ? e.speed * 0.5 + v * 0.5 : v;
       e.lastSnap = now;
+      if (!moving) {
+        e.speed = 0;
+        e.track.length = 0;
+      } else {
+        e.track.push([now, x, z]);
+        while (e.track.length > 2 && now - e.track[0][0] > 500) e.track.shift();
+        const [t0, x0, z0] = e.track[0];
+        if (now - t0 >= 200) e.speed = Math.hypot(x - x0, z - z0) / ((now - t0) / 1000);
+      }
       e.tx = x;
       e.tz = z;
       e.trot = rot;
