@@ -468,12 +468,13 @@ function liftHead(rig: Rig, angle: number) {
   rig.head.quaternion.premultiply(_q.setFromAxisAngle(_axis, -angle));
 }
 
-/** speed: 0 idle, ~1 walking, >1.4 running. */
-export function animateRig(rig: Rig, dt: number, moving: boolean, speed = 1) {
+/** Gait picks the clip: the walk loop, or the jog loop (sprint is the jog sped up). */
+export function animateRig(rig: Rig, dt: number, moving: boolean, gait: 'walk' | 'jog' | 'sprint' = 'walk') {
   rig.time += dt;
   if (!moving) play(rig, 'idle');
-  else if (speed > 1.4) play(rig, 'run', 1.05);
-  else play(rig, 'walk', 1.15);
+  else if (gait === 'walk') play(rig, 'walk', 1.15);
+  else if (gait === 'jog') play(rig, 'run', 0.8);
+  else play(rig, 'run', 1.12);
   rig.mixer.update(dt);
   liftHead(rig, moving ? 0.12 : 0.22);
   updateFace(rig, dt);

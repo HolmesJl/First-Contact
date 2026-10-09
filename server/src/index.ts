@@ -12,7 +12,9 @@ import {
   type ServerMsg,
   type SnapEntry,
 } from '../../shared/protocol';
-import { TUBE_COUNT, clampToLab, spawnFor } from '../../shared/lab';
+import { TUBE_COUNT, spawnFor } from '../../shared/lab';
+import { clampToShip } from '../../shared/shipInterior';
+import { MoveBudget } from '../../shared/movement';
 
 const PORT = Number(process.env.PORT ?? 47322);
 const DATA_FILE = process.env.DATA_FILE ?? path.resolve(import.meta.dirname, '../data/ships.json');
@@ -22,6 +24,8 @@ const store = new ShipStore(DATA_FILE);
 /** ship code -> player id -> socket */
 const online = new Map<string, Map<string, WebSocket>>();
 const moving = new Map<string, boolean>();
+/** Per-player movement cap (jog speed plus the stamina-limited sprint burst). */
+const budgets = new Map<string, MoveBudget>();
 const dirtyShips = new Set<string>();
 
 const key = (code: string, id: string) => `${code}:${id}`;
@@ -157,6 +161,7 @@ wss.on('connection', (ws) => {
 
         me.character = character;
         Object.assign(me, spawnFor(me.tube));
+        budgets.delete(key(ship.code, pid));
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         console.log(`[ship ${ship.code}] created ${character.job} ${character.firstName} ${character.lastName}`);
@@ -166,7 +171,14 @@ wss.on('connection', (ws) => {
         if (!me.character) return;
         const { x, z, rot } = msg;
         if (![x, z, rot].every((n) => typeof n === 'number' && Number.isFinite(n))) return;
-        const p = clampToLab(x, z);
+        const k = key(ship.code, pid);
+        let budget = budgets.get(k);
+        if (!budget) budgets.set(k, (budget = new MoveBudget(performance.now() / 1000)));
+        // Cap the step first (speed), then keep the result inside the ship (walls, props).
+        const dx = x - me.x;
+        const dz = z - me.z;
+        const frac = budget.take(Math.hypot(dx, dz), performance.now() / 1000);
+        const p = clampToShip(me.x + dx * frac, me.z + dz * frac, 0);
         me.x = p.x;
         me.z = p.z;
         me.rot = rot;
@@ -184,6 +196,7 @@ wss.on('connection', (ws) => {
     if (peers?.get(pid) !== ws) return;
     peers.delete(pid);
     moving.delete(key(ship.code, pid));
+    budgets.delete(key(ship.code, pid));
     const me = ship.members[pid];
     if (me) broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
     console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} disconnected (${peers.size} online)`);

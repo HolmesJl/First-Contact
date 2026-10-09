@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { canvasTexture, makeComposer, starfield, type View } from './common';
+import { makeComposer, type View } from './common';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
-import { buildShip } from './ship';
-import { HOLO_TABLE, TUBE_COUNT, TUBE_X, TUBE_Y, TUBE_Z, clampToLab } from '../../../shared/lab';
+import { ShipInterior } from './shipInterior';
+import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
+import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
+import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, gaitFromSpeed, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
-const WALK_SPEED = 2.2;
-const RUN_SPEED = 4.8;
 const SEND_INTERVAL = 1 / 15;
+const EYE = 1.45;
 
 interface Entity {
   id: string;
@@ -21,18 +22,16 @@ interface Entity {
   trot: number;
   moving: boolean;
   speed: number;
+  lastSnap: number;
   spawnFx: number;
 }
 
 export interface LabHooks {
   onMove(x: number, z: number, rot: number, moving: boolean): void;
-}
-
-interface Tube {
-  fluid: THREE.MeshBasicMaterial;
-  light: THREE.PointLight;
-  bubbles: THREE.Points;
-  flash: number;
+  /** The local player entered a room or corridor. */
+  onSpace?(space: Space): void;
+  /** Local gait and stamina (0..1), every frame. */
+  onStatus?(status: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }): void;
 }
 
 export class LabScene implements View {
@@ -41,16 +40,17 @@ export class LabScene implements View {
   private composer;
   private labels = new CSS2DRenderer();
   private entities = new Map<string, Entity>();
-  private tubes: Tube[] = [];
-  private holo = new THREE.Group();
-  private shipUpdate: (dt: number) => void;
+  private interior: ShipInterior;
   private time = 0;
+  private space: Space | null = null;
+  private stamina = new Stamina();
+  private walkMode = false;
 
   private selfId: string;
   private mode: 'creator' | 'walk' = 'creator';
   private creatorTube = 0;
   private preview: Appearance | null = null;
-  private local = { x: 0, z: 0, rot: 0, moving: false, running: false };
+  private local = { x: 0, z: 0, rot: 0, moving: false, gait: 'jog' as Gait };
   private sendTimer = 0;
   private lastSent = '';
 
@@ -63,6 +63,7 @@ export class LabScene implements View {
   private camLook = new THREE.Vector3(0, 1, 0);
   private drag: { id: number; x: number; y: number } | null = null;
   private cleanup: (() => void)[] = [];
+  private focus = new THREE.Vector3();
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -73,230 +74,12 @@ export class LabScene implements View {
     this.selfId = selfId;
     this.labels.domElement.className = 'label-layer';
     container.appendChild(this.labels.domElement);
-    this.buildRoom();
-    const { ship, update } = buildShip();
-    ship.scale.setScalar(0.028);
-    ship.position.set(0, 0.55, 0);
-    const holoShip = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0x7ce4ff).multiplyScalar(1.3),
-      transparent: true,
-      opacity: 0.45,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    ship.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = holoShip;
-    });
-    this.holo.add(ship);
-    this.shipUpdate = update;
+    this.scene.background = new THREE.Color(0x04060c);
+    this.scene.fog = new THREE.Fog(0x04060c, 34, 95);
+    this.interior = new ShipInterior();
+    this.scene.add(this.interior.root);
     this.composer = makeComposer(renderer, this.scene, this.camera, { strength: 0.4, radius: 0.35, threshold: 1.1 });
     this.bindInput();
-  }
-
-  private buildRoom() {
-    const s = this.scene;
-    s.background = new THREE.Color(0x04060c);
-    s.fog = new THREE.Fog(0x04060c, 14, 34);
-    s.add(new THREE.HemisphereLight(0xb8ccf0, 0x1a1420, 0.5));
-    const key = new THREE.DirectionalLight(0xfff0e0, 1.5);
-    key.position.set(3, 9, 8);
-    s.add(key);
-    const rim = new THREE.DirectionalLight(0x6fc8ff, 0.5);
-    rim.position.set(-4, 5, -8);
-    s.add(rim);
-
-    const floorTex = canvasTexture(256, 256, (ctx) => {
-      ctx.fillStyle = '#1a2130';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.fillStyle = '#202939';
-      ctx.fillRect(6, 6, 118, 118);
-      ctx.fillRect(132, 132, 118, 118);
-      ctx.fillStyle = '#1d2535';
-      ctx.fillRect(132, 6, 118, 118);
-      ctx.fillRect(6, 132, 118, 118);
-      ctx.strokeStyle = '#0d1119';
-      ctx.lineWidth = 4;
-      ctx.strokeRect(0, 0, 256, 256);
-      ctx.strokeRect(128, 0, 0.1, 256);
-      ctx.beginPath();
-      ctx.moveTo(128, 0);
-      ctx.lineTo(128, 256);
-      ctx.moveTo(0, 128);
-      ctx.lineTo(256, 128);
-      ctx.stroke();
-    });
-    floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-    floorTex.repeat.set(10, 7);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 14), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55, metalness: 0.35 }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.z = 0.5;
-    s.add(floor);
-
-    const wall = new THREE.MeshStandardMaterial({ color: 0x2a3446, roughness: 0.7, metalness: 0.3, flatShading: true });
-    const trim = new THREE.MeshStandardMaterial({ color: 0x3b475c, roughness: 0.5, metalness: 0.5, flatShading: true });
-    const glowCyan = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x46d9ff).multiplyScalar(2.2) });
-    const glowAmber = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffb347).multiplyScalar(1.8) });
-    const box = (w: number, h: number, d: number, x: number, y: number, z: number, m: THREE.Material) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-      b.position.set(x, y, z);
-      s.add(b);
-      return b;
-    };
-
-    // Back wall with a viewport onto lunar space.
-    box(20.4, 2.9, 0.4, 0, 1.45, -6.2, wall);
-    box(20.4, 1.6, 0.4, 0, 5.6, -6.2, wall);
-    for (let x = -10; x <= 10; x += 4) box(0.5, 1.9, 0.5, x, 3.85, -6.15, trim);
-    box(20.4, 0.08, 0.1, 0, 2.95, -5.98, glowCyan);
-    const glass = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 1.9),
-      new THREE.MeshStandardMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.06, roughness: 0, metalness: 1 }),
-    );
-    glass.position.set(0, 3.85, -6.1);
-    s.add(glass);
-    const outside = starfield(1500, 120, 1.4);
-    outside.position.set(0, 0, -130);
-    s.add(outside);
-    const moon = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(9, 3),
-      new THREE.MeshStandardMaterial({ color: 0xa4a4ac, roughness: 1, flatShading: true, fog: false, emissive: 0x1a1a22 }),
-    );
-    moon.position.set(14, 8, -60);
-    s.add(moon);
-
-    for (const side of [-1, 1]) {
-      box(0.4, 7, 14, side * 10.2, 3.5, 0.5, wall);
-      for (let z = -5; z <= 6; z += 2.75) box(0.25, 6.4, 0.35, side * 9.95, 3.2, z, trim);
-      box(0.06, 0.08, 13, side * 9.93, 0.25, 0.5, glowCyan);
-      box(0.06, 0.06, 13, side * 9.93, 5.2, 0.5, glowAmber);
-      for (const z of [-1.4, 2.8]) {
-        box(0.9, 0.95, 1.8, side * 9.45, 0.48, z, trim);
-        const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9), new THREE.MeshBasicMaterial({ map: consoleTexture(z > 0), toneMapped: false }));
-        screen.position.set(side * 9.72, 1.6, z);
-        screen.rotation.y = -side * Math.PI / 2;
-        s.add(screen);
-      }
-    }
-    box(20.4, 0.6, 0.4, 0, 0.3, 7.3, wall);
-    box(20.4, 0.06, 0.1, 0, 0.62, 7.1, glowCyan);
-
-    for (let x = -8; x <= 8; x += 4) {
-      box(0.1, 0.04, 9, x, 0.01, 1.5, new THREE.MeshBasicMaterial({ color: new THREE.Color(0x1d6aa0).multiplyScalar(1.2) }));
-    }
-
-    for (let i = 0; i < TUBE_COUNT; i++) this.buildTube(i, trim, glowCyan);
-    this.buildHoloTable(trim);
-  }
-
-  private buildTube(i: number, trim: THREE.Material, glow: THREE.Material) {
-    const s = this.scene;
-    const x = TUBE_X[i];
-    const g = new THREE.Group();
-    g.position.set(x, 0, TUBE_Z);
-    s.add(g);
-
-    const base = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.6, 1.3), trim);
-    base.position.y = 0.3;
-    g.add(base);
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.05, 0.02), glow);
-    strip.position.set(0, 0.45, 0.66);
-    g.add(strip);
-
-    const plate = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.7, 0.22),
-      new THREE.MeshBasicMaterial({
-        map: canvasTexture(256, 80, (ctx) => {
-          ctx.fillStyle = '#071018';
-          ctx.fillRect(0, 0, 256, 80);
-          ctx.strokeStyle = '#46d9ff';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(4, 4, 248, 72);
-          ctx.fillStyle = '#9fe9ff';
-          ctx.font = '700 44px "Orbitron", monospace';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`CL-0${i + 1}`, 128, 42);
-        }),
-      }),
-    );
-    plate.position.set(0, 0.24, 0.655);
-    g.add(plate);
-
-    for (const side of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.64, 0.64, 0.2, 16), trim);
-      cap.rotation.z = Math.PI / 2;
-      cap.position.set(side * 1.15, TUBE_Y, 0);
-      g.add(cap);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.57, 0.025, 6, 32), glow);
-      ring.rotation.y = Math.PI / 2;
-      ring.position.set(side * 1.04, TUBE_Y, 0);
-      g.add(ring);
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, TUBE_Y - 0.6, 0.3), trim);
-      post.position.set(side * 1.15, (TUBE_Y + 0.6) / 2 - 0.1, 0);
-      g.add(post);
-    }
-
-    const glass = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.56, 0.56, 2.1, 24, 1, true),
-      new THREE.MeshStandardMaterial({ color: 0xbfefff, transparent: true, opacity: 0.09, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    glass.rotation.z = Math.PI / 2;
-    glass.position.y = TUBE_Y;
-    glass.renderOrder = 2;
-    g.add(glass);
-    const fluid = new THREE.MeshBasicMaterial({ color: 0x28c8ff, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false });
-    const fluidMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.53, 0.53, 2.08, 24), fluid);
-    fluidMesh.rotation.z = Math.PI / 2;
-    fluidMesh.position.y = TUBE_Y;
-    fluidMesh.renderOrder = 1;
-    g.add(fluidMesh);
-
-    const light = new THREE.PointLight(0x3fd0ff, 0.8, 3.5, 1.6);
-    light.position.set(0, TUBE_Y, 0.7);
-    g.add(light);
-
-    const n = 28;
-    const bp = new Float32Array(n * 3);
-    for (let k = 0; k < n; k++) bp.set([(Math.random() - 0.5) * 2, TUBE_Y + (Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 0.7], k * 3);
-    const bgeo = new THREE.BufferGeometry();
-    bgeo.setAttribute('position', new THREE.BufferAttribute(bp, 3));
-    const bubbles = new THREE.Points(
-      bgeo,
-      new THREE.PointsMaterial({ color: 0xc8f4ff, size: 0.035, transparent: true, opacity: 0.8, depthWrite: false }),
-    );
-    g.add(bubbles);
-
-    this.tubes.push({ fluid, light, bubbles, flash: 0 });
-  }
-
-  private buildHoloTable(trim: THREE.Material) {
-    const g = new THREE.Group();
-    g.position.set(HOLO_TABLE.x, 0, HOLO_TABLE.z);
-    this.scene.add(g);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TABLE.r, HOLO_TABLE.r + 0.15, 0.85, 20), trim);
-    base.position.y = 0.425;
-    g.add(base);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(HOLO_TABLE.r - 0.05, 0.03, 6, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x46d9ff).multiplyScalar(2.5) }));
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = 0.86;
-    g.add(rim);
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.0, 0.7, 1.4, 24, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x3fbfff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-    );
-    beam.position.y = 1.55;
-    g.add(beam);
-
-    const holoMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5fd8ff).multiplyScalar(1.6), wireframe: true, transparent: true, opacity: 0.55 });
-    const moon = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 1), holoMat);
-    moon.position.set(0.45, 0.55, 0);
-    this.holo.add(moon);
-    const orbit = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.006, 4, 64), holoMat);
-    orbit.rotation.x = Math.PI / 2;
-    orbit.position.y = 0.55;
-    this.holo.add(orbit);
-    this.holo.position.y = 1.15;
-    g.add(this.holo);
   }
 
   // ---- players ----
@@ -324,7 +107,7 @@ export class LabScene implements View {
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, spawnFx: 0 };
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, spawnFx: 0 };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
@@ -343,7 +126,7 @@ export class LabScene implements View {
       rig.root.add(e.label);
       if (wasInTube) {
         e.spawnFx = 1;
-        this.tubes[p.tube].flash = 1;
+        this.interior.flashPod(p.tube);
       }
     }
     this.scene.add(rig.root);
@@ -383,7 +166,11 @@ export class LabScene implements View {
       if (id === this.selfId) continue;
       const e = this.entities.get(id);
       if (!e || e.inTube) continue;
-      e.speed = Math.hypot(x - e.tx, z - e.tz) * 15;
+      const now = performance.now();
+      const dt = Math.min(0.3, Math.max(0.03, (now - e.lastSnap) / 1000));
+      const v = Math.hypot(x - e.tx, z - e.tz) / dt;
+      e.speed = e.lastSnap && e.moving ? e.speed * 0.5 + v * 0.5 : v;
+      e.lastSnap = now;
       e.tx = x;
       e.tz = z;
       e.trot = rot;
@@ -395,6 +182,7 @@ export class LabScene implements View {
 
   enterCreator(tube: number, self: PlayerState) {
     this.mode = 'creator';
+    this.interior.setFocus('bay');
     this.creatorTube = tube;
     this.syncPlayer(self);
     const [pos, look] = this.creatorCamera();
@@ -408,8 +196,9 @@ export class LabScene implements View {
   }
 
   enterWalk(self: PlayerState) {
-    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, running: false };
+    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog' };
     this.mode = 'walk';
+    this.space = null;
     this.camYaw = 0;
     this.syncPlayer(self);
   }
@@ -428,8 +217,10 @@ export class LabScene implements View {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       const k = e.key.toLowerCase();
-      if (down) this.keys.add(k);
-      else this.keys.delete(k);
+      if (down) {
+        if (k === 'c' && !e.repeat && !e.ctrlKey && !e.metaKey && this.mode === 'walk') this.walkMode = !this.walkMode;
+        this.keys.add(k);
+      } else this.keys.delete(k);
       if (this.mode === 'walk' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     };
     const kd = onKey(true);
@@ -485,23 +276,6 @@ export class LabScene implements View {
 
   update(dt: number) {
     this.time += dt;
-    this.holo.rotation.y += dt * 0.35;
-    this.shipUpdate(dt);
-
-    this.tubes.forEach((t, i) => {
-      t.flash = Math.max(0, t.flash - dt * 0.8);
-      const pulse = 0.06 + Math.sin(this.time * 1.6 + i) * 0.02;
-      t.fluid.opacity = pulse + t.flash * 0.6;
-      t.light.intensity = 0.8 + Math.sin(this.time * 1.6 + i) * 0.15 + t.flash * 10;
-      const pos = t.bubbles.geometry.attributes.position as THREE.BufferAttribute;
-      for (let k = 0; k < pos.count; k++) {
-        let y = pos.getY(k) + dt * (0.18 + (k % 5) * 0.05);
-        if (y > TUBE_Y + 0.45) y = TUBE_Y - 0.45;
-        pos.setY(k, y);
-      }
-      pos.needsUpdate = true;
-    });
-
     if (this.mode === 'walk') this.updateLocal(dt);
 
     for (const e of this.entities.values()) {
@@ -515,24 +289,28 @@ export class LabScene implements View {
       if (isSelf) {
         r.root.position.set(this.local.x, 0, this.local.z);
         r.root.rotation.y = lerpAngle(r.root.rotation.y, this.local.rot, 1 - Math.exp(-14 * dt));
-        animateRig(r, dt, this.local.moving, this.local.running ? 2 : 1);
+        animateRig(r, dt, this.local.moving, this.local.gait);
       } else {
         const k = 1 - Math.exp(-12 * dt);
         r.root.position.x += (e.tx - r.root.position.x) * k;
         r.root.position.z += (e.tz - r.root.position.z) * k;
         r.root.rotation.y = lerpAngle(r.root.rotation.y, e.trot, k);
         const lag = Math.hypot(e.tx - r.root.position.x, e.tz - r.root.position.z);
-        animateRig(r, dt, e.moving || lag > 0.05, e.speed / WALK_SPEED);
+        animateRig(r, dt, e.moving || lag > 0.05, gaitFromSpeed(e.speed));
       }
       if (e.spawnFx > 0) {
         e.spawnFx = Math.max(0, e.spawnFx - dt * 0.9);
         const s = 1 - e.spawnFx * 0.25;
         r.root.scale.set(s, s, s);
       }
-      if (e.label) e.label.visible = this.camera.position.distanceTo(r.root.position) < 22;
+      const seen = this.interior.isVisible(spaceAt(r.root.position.x, r.root.position.z)?.id ?? null);
+      r.root.visible = seen;
+      if (e.label) e.label.visible = seen && this.camera.position.distanceTo(r.root.position) < 22;
     }
 
     this.updateCamera(dt);
+    this.focus.set(this.mode === 'walk' ? this.local.x : this.camLook.x, this.mode === 'walk' ? EYE : 1.2, this.mode === 'walk' ? this.local.z : this.camLook.z);
+    this.interior.update(dt, this.focus, this.camera);
   }
 
   private updateLocal(dt: number) {
@@ -544,7 +322,9 @@ export class LabScene implements View {
     if (this.keys.has('d') || this.keys.has('arrowright')) ix += 1;
     const len = Math.hypot(ix, iy);
     const moving = len > 0.1;
-    const running = this.keys.has('shift');
+    const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
+    const sprinting = this.stamina.update(dt, moving && this.keys.has('shift'));
+    const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
     if (moving) {
       const n = Math.min(1, len) / len;
       ix *= n;
@@ -555,14 +335,22 @@ export class LabScene implements View {
       const rz = -Math.sin(this.camYaw);
       const mx = fx * iy + rx * ix;
       const mz = fz * iy + rz * ix;
-      const speed = running ? RUN_SPEED : WALK_SPEED;
-      const p = clampToLab(this.local.x + mx * speed * dt, this.local.z + mz * speed * dt);
+      const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
+      const p = clampToShip(this.local.x + mx * speed * dt, this.local.z + mz * speed * dt, 0);
       this.local.x = p.x;
       this.local.z = p.z;
       this.local.rot = Math.atan2(mx, mz);
     }
     this.local.moving = moving;
-    this.local.running = running;
+    this.local.gait = gait;
+
+    const space = spaceAt(this.local.x, this.local.z, 0);
+    if (space && space.id !== this.space?.id) {
+      this.space = space;
+      this.interior.setFocus(space.id);
+      this.hooks.onSpace?.(space);
+    }
+    this.hooks.onStatus?.({ gait, stamina: this.stamina.value, exhausted: this.stamina.exhausted, walkMode: this.walkMode });
 
     this.sendTimer += dt;
     if (this.sendTimer >= SEND_INTERVAL) {
@@ -589,8 +377,7 @@ export class LabScene implements View {
         look.y + Math.sin(this.camPitch) * d,
         look.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * d,
       );
-      pos.x = Math.min(9.6, Math.max(-9.6, pos.x));
-      pos.z = Math.min(7.0, Math.max(-5.6, pos.z));
+      pos.y = Math.max(0.5, pos.y);
     }
     const k = 1 - Math.exp(-(this.mode === 'walk' ? 7 : 3) * dt);
     this.camPos.lerp(pos, k);
@@ -622,25 +409,4 @@ function lerpAngle(a: number, b: number, t: number) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
   if (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
-}
-
-function consoleTexture(alt: boolean) {
-  return canvasTexture(256, 160, (ctx) => {
-    ctx.fillStyle = '#04121c';
-    ctx.fillRect(0, 0, 256, 160);
-    ctx.strokeStyle = alt ? '#ffb347' : '#46d9ff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(4, 4, 248, 152);
-    ctx.fillStyle = alt ? '#ffcf8a' : '#8fe6ff';
-    ctx.font = '600 14px monospace';
-    ctx.fillText(alt ? 'GENOME SEQUENCER' : 'CLONE VITALS', 14, 26);
-    ctx.beginPath();
-    for (let x = 0; x < 228; x += 4) {
-      const y = 90 + Math.sin(x * (alt ? 0.11 : 0.07)) * 22 * Math.sin(x * 0.019);
-      if (x === 0) ctx.moveTo(14 + x, y);
-      else ctx.lineTo(14 + x, y);
-    }
-    ctx.stroke();
-    for (let i = 0; i < 6; i++) ctx.fillRect(14 + i * 38, 136, 28, 6 + (i % 3) * 2);
-  });
 }
