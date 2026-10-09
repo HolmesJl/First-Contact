@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Appearance, Face, Job, Sex } from '../../../shared/protocol';
-import { createMotion, loadMotion, setIdleRate, updateMotion, type Motion } from './characterMotion';
+import { IDLE_PLAYBACK, createMotion, loadMotion, setIdleRate, updateMotion, type Motion } from './characterMotion';
 import { accentFor, loadUniforms, uniformMaterial } from './uniform';
 
 /**
@@ -46,9 +46,14 @@ const LANDMARKS: Record<Sex, Record<'mouth' | 'cornerR' | 'cornerL' | 'eyeR' | '
 };
 const FACE_ISLAND = 0.37;
 
+const IDLE_ARM_Z = 0.11;
+const _armOff = new THREE.Quaternion();
+
 export interface Rig {
   root: THREE.Group;
   head: THREE.Object3D;
+  leftArm: THREE.Bone | null;
+  rightArm: THREE.Bone | null;
   mixer: THREE.AnimationMixer;
   motion: Motion;
   face: { mesh: THREE.SkinnedMesh; names: string[] }[];
@@ -367,6 +372,8 @@ export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
   const rig: Rig = {
     root,
     head: model.getObjectByName('Head') ?? model,
+    leftArm: (model.getObjectByName('LeftArm') as THREE.Bone | undefined) ?? null,
+    rightArm: (model.getObjectByName('RightArm') as THREE.Bone | undefined) ?? null,
     mixer,
     motion,
     face,
@@ -421,18 +428,26 @@ function updateFace(rig: Rig, dt: number) {
   applyFace(rig);
 }
 
+function clearIdleArms(rig: Rig) {
+  for (const bone of [rig.leftArm, rig.rightArm]) {
+    if (!bone) continue;
+    bone.quaternion.multiply(_armOff.setFromAxisAngle(new THREE.Vector3(0, 0, 1), bone === rig.leftArm ? IDLE_ARM_Z : -IDLE_ARM_Z));
+  }
+}
+
 /** speed: ground speed in m/s (used while moving); it picks idle, walk, jog or sprint and the clip's playback rate. */
 export function animateRig(rig: Rig, dt: number, moving: boolean, speed = 0) {
   rig.time += dt;
   updateMotion(rig.motion, dt, moving, speed);
   rig.mixer.update(dt);
+  if (rig.motion.gait === 'idle') clearIdleArms(rig);
   updateFace(rig, dt);
 }
 
 /** Relaxed floating pose for figures inside a tube. */
 export function floatRig(rig: Rig, dt: number) {
   rig.time += dt;
-  setIdleRate(rig.motion, 0.45);
+  setIdleRate(rig.motion, 0.45 * IDLE_PLAYBACK);
   rig.mixer.update(dt);
   updateFace(rig, dt);
 }
