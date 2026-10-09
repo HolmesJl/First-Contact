@@ -55,7 +55,7 @@ function sanitizeCharacter(c: Character): Character {
   return {
     sex: c.sex,
     face: c.face,
-    hairLength: c.hairLength,
+    hairStyle: c.hairStyle,
     facialHair: c.sex === 'female' ? 'none' : c.facialHair,
     hairColor: c.hairColor,
     eyeColor: c.eyeColor,

@@ -633,6 +633,14 @@ kbd {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.seg.wrap {
+  flex-wrap: wrap;
+}
+
+.seg.wrap button {
+  flex: 1 0 22%;
+}
+
 .seg button {
   flex: 1;
   appearance: none;

@@ -11,17 +11,30 @@ import type { Appearance, Face, Sex } from '../../../shared/protocol';
  */
 
 type Clip = 'idle' | 'walk' | 'run';
-type BodyMorph = 'smile' | 'frown' | 'smirk' | 'press' | 'squint' | 'lids' | 'blink' | 'wink';
-type BrowMorph = 'browAngry' | 'browRaise' | 'browRaiseL';
+type BodyMorph = 'smile' | 'frown' | 'smirk' | 'press' | 'squint' | 'lids' | 'blink' | 'wink' | 'open' | 'wide';
+type BrowMorph = 'browAngry' | 'browRaise' | 'browRaiseL' | 'browWorry' | 'browLower';
+export type ExpressionWeights = Partial<Record<BodyMorph | BrowMorph, number>>;
 
-const BODY_MORPHS: BodyMorph[] = ['smile', 'frown', 'smirk', 'press', 'squint', 'lids', 'blink', 'wink'];
-const BROW_MORPHS: BrowMorph[] = ['browAngry', 'browRaise', 'browRaiseL'];
+const BODY_MORPHS: BodyMorph[] = ['smile', 'frown', 'smirk', 'press', 'squint', 'lids', 'blink', 'wink', 'open', 'wide'];
+const BROW_MORPHS: BrowMorph[] = ['browAngry', 'browRaise', 'browRaiseL', 'browWorry', 'browLower'];
 
-const EXPRESSIONS: Record<Face, Partial<Record<BodyMorph | BrowMorph, number>>> = {
+const EXPRESSIONS: Record<Face, ExpressionWeights> = {
+  neutral: {},
   smiling: { smile: 1, squint: 0.35, browRaise: 0.7 },
   serious: { press: 0.85, squint: 0.3, browAngry: 0.35 },
   angry: { frown: 1, press: 0.45, squint: 0.85, browAngry: 1 },
-  flirty: { smirk: 1, lids: 0.55, browRaiseL: 1 },
+  flirty: { smirk: 0.75, smile: 0.2, lids: 0.35, browRaiseL: 0.55, squint: 0.1 },
+  calm: { smile: 0.45, squint: 0.1, lids: 0.15 },
+  determined: { press: 1, frown: 0.25, squint: 0.4, browAngry: 0.55 },
+  smirk: { smirk: 1, squint: 0.15 },
+};
+
+/** Candidates for more faces (not selectable yet): each is only a set of morph weights. Promote one by adding it to FACES and EXPRESSIONS. */
+export const PROTOTYPE_EXPRESSIONS: Record<string, ExpressionWeights> = {
+  'flirty (before)': { smirk: 1, lids: 0.55, browRaiseL: 1 },
+  worried: { frown: 0.45, press: 0.2, lids: 0.1, browWorry: 1 },
+  tired: { lids: 0.9, frown: 0.25, press: 0.15, browLower: 0.7, browWorry: 0.3 },
+  surprised: { browRaise: 1, wide: 1, open: 0.8 },
 };
 
 /** Face landmarks in the body texture's UV space (character's right = low U = -x). */
@@ -38,7 +51,7 @@ export interface Rig {
   actions: Record<Clip, THREE.AnimationAction>;
   clip: Clip;
   face: { mesh: THREE.SkinnedMesh; names: string[] }[];
-  expression: Partial<Record<BodyMorph | BrowMorph, number>>;
+  expression: ExpressionWeights;
   flirty: boolean;
   blinkIn: number;
   winkIn: number;
@@ -193,6 +206,8 @@ function addFaceMorphs(geo: THREE.BufferGeometry, sex: Sex) {
 
     const lips = falloff(Math.hypot((p.x - mouth.x) / 0.032, (p.y - mouth.y) / 0.014));
     if (lips > 0) add('press', i, 0, (mouth.y - p.y) * 0.6 * lips, -0.0015 * lips);
+    const jaw = falloff(Math.hypot((p.x - mouth.x) / 0.034, (p.y - (mouth.y - 0.012)) / 0.03));
+    if (jaw > 0) add('open', i, 0, p.y < mouth.y ? -0.012 * jaw : 0.002 * jaw, p.y < mouth.y ? 0.001 * jaw : 0);
 
     eyes.forEach((e, k) => {
       const w = falloff(Math.hypot((p.x - e.x) / 0.024, (p.y - e.y) / 0.02));
@@ -202,6 +217,7 @@ function addFaceMorphs(geo: THREE.BufferGeometry, sex: Sex) {
       const forward = 0.004 * w * (1 - Math.min(1, Math.abs(dy) / 0.02));
       add('squint', i, 0, upper ? -0.002 * w : 0.0028 * w, 0);
       if (upper) add('lids', i, 0, -dy * 0.5 * w, forward * 0.5);
+      add('wide', i, 0, upper ? 0.0035 * w : -0.0012 * w, 0);
       const close = (m: BodyMorph) => add(m, i, 0, upper ? -dy * 1.0 * w : -dy * 0.35 * w, forward);
       close('blink');
       if (k === 1) close('wink');
@@ -224,6 +240,8 @@ function addBrowMorphs(geo: THREE.BufferGeometry) {
     targets[0].set([-side * 0.005 * inner, -0.014 * inner - 0.003, 0.0025 * inner], i * 3);
     targets[1].set([0, 0.006 + 0.002 * (1 - inner), 0], i * 3);
     if (side > 0) targets[2].set([0, 0.014 + 0.003 * inner, 0.001], i * 3);
+    targets[3].set([side * 0.002 * inner, 0.011 * inner - 0.004 * (1 - inner), 0.001 * inner], i * 3);
+    targets[4].set([0, -0.007 - 0.002 * inner, 0], i * 3);
   }
   geo.morphAttributes.position = targets.map((t) => new THREE.Float32BufferAttribute(t, 3));
   geo.morphTargetsRelative = true;
@@ -297,6 +315,8 @@ function eyeMaterial(base: THREE.MeshStandardMaterial, hex: string) {
   return m;
 }
 
+const hairMeshName = (style: string) => `Hair${style[0].toUpperCase()}${style.slice(1)}`;
+
 // ---------------------------------------------------------------- rigs
 
 /** Builds a character. Pass null for the unformed clone that floats in a tube. */
@@ -327,12 +347,11 @@ export function buildRig(app: Appearance | null): Rig {
       case 'Brows':
         m.material = browMaterial(base, app.hairColor);
         break;
-      case 'HairShort':
-        m.visible = app.hairLength === 'short';
-        m.material = hairMaterial(base, app.hairColor);
-        break;
+      case 'HairParted':
+      case 'HairBuzzed':
+      case 'HairBuns':
       case 'HairLong':
-        m.visible = app.hairLength === 'long';
+        m.visible = m.name === hairMeshName(app.hairStyle);
         m.material = hairMaterial(base, app.hairColor);
         break;
       case 'Beard':
@@ -406,6 +425,13 @@ function applyFace(rig: Rig) {
       inf[i] = v;
     });
   }
+}
+
+/** Dev tools: shows an arbitrary set of weights (e.g. a prototype expression) on a rig built for any face. */
+export function setRigExpression(rig: Rig, weights: ExpressionWeights, flirty = false) {
+  rig.expression = weights;
+  rig.flirty = flirty;
+  applyFace(rig);
 }
 
 function updateFace(rig: Rig, dt: number) {

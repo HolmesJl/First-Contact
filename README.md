@@ -7,7 +7,7 @@ This repo is the **first playable slice**:
 - **Host / join.** The host launches a ship server and gets a 6-character invite code and link. Others join with it.
 - **Crew rules, enforced on the server.** Max 6 players, exactly one Captain. Job caps: Captain 1, Engineer 3, Military 3, Doctor 2, Botanist 4. If five characters exist and none is the Captain, the last berth is reserved for the Captain.
 - **Intro.** A short, skippable cinematic: launch from Earth, then rendezvous with the ship in lunar orbit.
-- **Character creation in the clone lab.** You start as an unformed figure in a horizontal cloning tube. Pick body (male/female), face (smiling, serious, angry, flirty), short or long hair, facial hair for men (none, stubble, full beard), hair color, eye color, starting job (respecting caps), and a first and last name. The preview updates live in the tube.
+- **Character creation in the clone lab.** You start as an unformed figure in a horizontal cloning tube. Pick body (male/female), face (neutral, smiling, serious, angry, flirty), a hairstyle (male: parted, buzzed; female: buzzed, buns, long), facial hair for men (none, stubble, full beard), hair color (12), eye color (12), starting job (respecting caps), and a first and last name. The preview updates live in the tube.
 - **Spawn and walk.** After you click Create, your clone steps out next to the tube in underwear with a floating `Job Firstname Lastname` nameplate. Everyone in the lab sees each other move in real time.
 - **Persistence.** Ships and characters are saved to `server/data/ships.json`. Reload the tab, or come back later with the invite link, and you rejoin as the same character.
 
@@ -102,7 +102,10 @@ client/     Vite + TypeScript + Three.js
   src/scene/character.ts  rigged glTF characters: appearance, procedural expressions, animation
   public/models/          built character assets (see Credits)
   gallery.html            dev-only expression gallery: /gallery.html?view=close or ?view=game
-tools/      offline asset pipeline (build-characters.mjs); not needed to run the game
+  expressions.html        dev-only contact sheet of every face (selectable and prototype) on both heads
+  characters.html         dev-only gallery of the Quaternius characters with retargeted mocap: /characters.html
+  dev-assets/characters/  retargeted character assets for that gallery (not part of the game build)
+tools/      offline asset pipeline (build-characters.mjs, build-character-clips.mjs, blender/); not needed to run the game
   src/ui.ts               title screen, HUD, character creator, joystick
 ```
 
@@ -112,16 +115,40 @@ The server is authoritative for membership, job assignment, character data, and 
 
 ## Characters
 
-Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, with idle, walk and jog clips crossfaded by speed. The base meshes have no facial rig, so the four expressions are procedural morph targets. They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
+Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, with idle, walk and jog clips crossfaded by speed. The base meshes have no facial rig, so the expressions are procedural morph targets (not texture variants). They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
 
+- **Neutral (default):** no morphs.
 - **Smiling:** raised mouth corners and cheeks, lifted brows.
 - **Serious:** pressed lips and a slight furrow.
 - **Angry:** a frown, brows pulled down and in, narrowed eyes.
-- **Flirty:** a one-sided smirk, heavy lids, one raised brow, and the occasional wink.
+- **Flirty:** a soft one-sided smirk, half-lowered lids, one raised brow, and the occasional wink.
 
-Everyone blinks. Hair, beard, and eyes are tinted per character; "no facial hair" swaps to a clean-shaven skin texture.
+Everyone blinks. More faces are only sets of morph weights: `/expressions.html` shows the candidates (calm, determined, worried, tired, surprised, smirk) next to the selectable ones; add one to `FACES` in `shared/protocol.ts` and `EXPRESSIONS` in `scene/character.ts` to ship it. Hair, beard, and eyes are tinted per character; "no facial hair" swaps to a clean-shaven skin texture.
 
-To rebuild the assets (only needed when changing the pipeline):
+### Hairstyles
+
+Only styles from the Quaternius pack that sit properly on that sex's head are offered (`HAIR_STYLES` in `shared/protocol.ts`): male parted and buzzed, female buzzed, buns and long. The pack's long hair and buns are cut for the female head (on the male head they leave the crown bare), and its parted and buzzed styles are cut for the male head. Characters saved before hairstyles had ids (`hairLength` short/long) are upgraded when the server loads them.
+
+### Motion-capture gallery (dev only)
+
+`/characters.html` (run `npm run dev -w client`) shows the Quaternius male and female playing motion-capture clips (idle, walk, jog, sprint) from the ACCAD Open Motion Project, in a painted crew uniform or bare, with a toggle between gendered gait styling and the raw performer motion. The game itself still plays the stock Quaternius clips; this is the pipeline and review page for moving to mocap.
+
+How the clips are made (`tools/blender/`, run headless):
+
+- `retarget_export.py` retargets the BVH takes in `clips.py` onto the Quaternius skeleton. For each mapped bone the world rotation change from a neutral standing frame of the performer is applied on top of the target bone's own rest orientation (`W_target = Rz * dW_src * Q_bone * W_rest`), so rest-pose offsets are preserved instead of copying absolute rotations. Clavicles keep the Quaternius rest orientation (no `Q_bone`), the ACCAD data has no finger motion so a relaxed hand is added, and loops are cut on gait cycles and cross-faded closed. `clips.py` also holds the gendered gait styling.
+- `quaternius_retarget.py` imports `client/public/models/body-<sex>.glb` **with `guess_original_bind_pose=False`**. Blender's default re-derives a bind pose from the inverse bind matrices that does not match the mesh (about 6 cm off at the shoulders and wrists for these characters), which shows up as collapsed shoulders and sheared arms.
+- `tools/build-character-clips.mjs` paints the uniform (`tools/uniform-painter.mjs`), compresses the GLBs and writes `client/dev-assets/characters/`.
+
+To regenerate the clips:
+
+```bash
+tools/blender/setup.sh                     # once: portable Blender 4.2 and the ACCAD BVH files into tools/.cache (about 1 GB)
+cd tools && npm install && npm run build:clips
+```
+
+The pipeline takes about 20 s. To change a clip, edit `tools/blender/clips.py` (take and frame range; `python3 tools/blender/find_loops.py` suggests loop points) and rebuild.
+
+To rebuild the game's character assets (only needed when changing the pipeline):
 
 ```bash
 cd tools && npm install && npm run build:characters
@@ -132,4 +159,4 @@ cd tools && npm install && npm run build:characters
 - Character bodies, hair, beard and eyes: **[Universal Base Characters](https://quaternius.com/packs/universalbasecharacters.html)** by [Quaternius](https://quaternius.com), CC0 1.0.
 - Animations: **[Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)** by Quaternius, CC0 1.0.
 
-The license text ships in `client/public/models/LICENSE-quaternius.txt`. CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the clips were trimmed.
+The license text ships in `client/public/models/LICENSE-quaternius.txt`. The gallery assets in `client/dev-assets/characters` add motion from the ACCAD Open Motion Project, CC BY 3.0 (credit: "Motion capture data from ACCAD, The Ohio State University"); see `client/dev-assets/characters/LICENSES.txt`. CC0 doesn't require attribution, but credit is given anyway; consider supporting Quaternius on [Patreon](https://www.patreon.com/quaternius). The assets were modified: the skin textures were recolored (navy underwear, a shaven variant), hair textures were neutralized for tinting, the meshes were merged per body, and the clips were trimmed.

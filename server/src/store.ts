@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Character } from '../../shared/protocol';
+import { upgradeLegacyCharacter, type Character } from '../../shared/protocol';
 
 export interface MemberRecord {
   id: string;
@@ -28,7 +28,10 @@ export class ShipStore {
   constructor(private file: string) {
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { ships?: ShipRecord[] };
-      for (const s of raw.ships ?? []) this.ships.set(s.code, s);
+      for (const s of raw.ships ?? []) {
+        for (const m of Object.values(s.members)) if (m.character) upgradeLegacyCharacter(m.character as unknown as Record<string, unknown>);
+        this.ships.set(s.code, s);
+      }
       console.log(`[store] loaded ${this.ships.size} ship(s) from ${file}`);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error('[store] failed to load', err);

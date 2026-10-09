@@ -37,19 +37,21 @@ const SOURCES = {
   'License_Standard.txt': UBC,
   'UAL1_Standard.glb': `${UAL}Unreal-Godot/`,
 };
-for (const h of ['Hair_SimpleParted', 'Hair_Long', 'Hair_Beard', 'Hair_Buns', 'Hair_BuzzedFemale']) {
+for (const h of ['Hair_SimpleParted', 'Hair_Buzzed', 'Hair_Long', 'Hair_Beard', 'Hair_Buns', 'Hair_BuzzedFemale']) {
   SOURCES[`${h}.gltf`] = HAIR_DIR;
   SOURCES[`${h}.bin`] = HAIR_DIR;
 }
 
+// Only the hairstyles that sit properly on the head of that sex (checked against the bind pose; see docs):
+// the pack's Long and Buns are cut for the female head, Parted and Buzzed for the male head.
 const HAIR = {
   male: [
-    ['HairShort', 'Hair_SimpleParted.gltf'],
-    ['HairLong', 'Hair_Long.gltf'],
+    ['HairParted', 'Hair_SimpleParted.gltf'],
+    ['HairBuzzed', 'Hair_Buzzed.gltf'],
     ['Beard', 'Hair_Beard.gltf'],
   ],
   female: [
-    ['HairShort', 'Hair_BuzzedFemale.gltf'],
+    ['HairBuzzed', 'Hair_BuzzedFemale.gltf'],
     ['HairBuns', 'Hair_Buns.gltf'],
     ['HairLong', 'Hair_Long.gltf'],
   ],
