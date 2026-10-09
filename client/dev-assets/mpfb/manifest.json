@@ -42,7 +42,7 @@
     "afro01"
    ],
    "vertices": {
-    "Body": 9810,
+    "Body": 9798,
     "Brows": 124,
     "Eyes": 96,
     "Hair_afro01": 2196,
@@ -50,13 +50,13 @@
     "Hair_short04": 983,
     "Lashes": 250
    },
-   "bodyMorphTargets": 28,
+   "bodyMorphTargets": 29,
    "clips": {
     "idle": {
      "posture": {
-      "shoulderAheadOfHipCm": -0.4,
-      "shoulderAboveHipCm": 39.9,
-      "shoulderWidthCm": 43.9,
+      "shoulderAheadOfHipCm": -0.3,
+      "shoulderAboveHipCm": 40.3,
+      "shoulderWidthCm": 42,
       "headAheadOfHipCm": 0.2
      },
      "footSlideCmS": 1.2,
@@ -72,9 +72,9 @@
     },
     "raw_idle": {
      "posture": {
-      "shoulderAheadOfHipCm": 5,
-      "shoulderAboveHipCm": 36.5,
-      "shoulderWidthCm": 39.8,
+      "shoulderAheadOfHipCm": 4.9,
+      "shoulderAboveHipCm": 37.1,
+      "shoulderWidthCm": 38.2,
       "headAheadOfHipCm": 4.6
      },
      "footSlideCmS": 1.2,
@@ -91,8 +91,8 @@
     "walk": {
      "posture": {
       "shoulderAheadOfHipCm": -1,
-      "shoulderAboveHipCm": 40.5,
-      "shoulderWidthCm": 44.5,
+      "shoulderAboveHipCm": 40.9,
+      "shoulderWidthCm": 42.6,
       "headAheadOfHipCm": 0.5
      },
      "footSlideCmS": 17.5,
@@ -108,9 +108,9 @@
     },
     "raw_walk": {
      "posture": {
-      "shoulderAheadOfHipCm": 4.4,
-      "shoulderAboveHipCm": 37.1,
-      "shoulderWidthCm": 40.8,
+      "shoulderAheadOfHipCm": 4.3,
+      "shoulderAboveHipCm": 37.6,
+      "shoulderWidthCm": 39.1,
       "headAheadOfHipCm": 4.8
      },
      "footSlideCmS": 16.1,
@@ -126,12 +126,12 @@
     },
     "jog": {
      "posture": {
-      "shoulderAheadOfHipCm": 4.9,
-      "shoulderAboveHipCm": 43.7,
-      "shoulderWidthCm": 46.8,
+      "shoulderAheadOfHipCm": 5,
+      "shoulderAboveHipCm": 43.9,
+      "shoulderWidthCm": 44.8,
       "headAheadOfHipCm": 9.1
      },
-     "footSlideCmS": 46.6,
+     "footSlideCmS": 46.7,
      "contactFrames": 1,
      "frames": 26,
      "duration": 0.867,
@@ -145,11 +145,11 @@
     "raw_jog": {
      "posture": {
       "shoulderAheadOfHipCm": 9.6,
-      "shoulderAboveHipCm": 40.5,
-      "shoulderWidthCm": 45.9,
+      "shoulderAboveHipCm": 40.8,
+      "shoulderWidthCm": 43.9,
       "headAheadOfHipCm": 12.7
      },
-     "footSlideCmS": 48.6,
+     "footSlideCmS": 48.7,
      "contactFrames": 1,
      "frames": 26,
      "duration": 0.867,
@@ -162,9 +162,9 @@
     },
     "sprint": {
      "posture": {
-      "shoulderAheadOfHipCm": 4.9,
-      "shoulderAboveHipCm": 43.7,
-      "shoulderWidthCm": 46.7,
+      "shoulderAheadOfHipCm": 5.1,
+      "shoulderAboveHipCm": 43.8,
+      "shoulderWidthCm": 44.8,
       "headAheadOfHipCm": 9.3
      },
      "footSlideCmS": 0,
@@ -181,8 +181,8 @@
     "raw_sprint": {
      "posture": {
       "shoulderAheadOfHipCm": 9.6,
-      "shoulderAboveHipCm": 40.5,
-      "shoulderWidthCm": 45.9,
+      "shoulderAboveHipCm": 40.8,
+      "shoulderWidthCm": 43.9,
       "headAheadOfHipCm": 12.8
      },
      "footSlideCmS": 0,
@@ -197,7 +197,11 @@
      ]
     }
    },
-   "bytes": 812528
+   "bytes": 829812,
+   "uniform": {
+    "color": "uniform/male-a.webp",
+    "normal": "uniform/male-a-normal.webp"
+   }
   },
   {
    "id": "female-a",
@@ -219,7 +223,7 @@
     "Hair_ponytail01": 3902,
     "Lashes": 250
    },
-   "bodyMorphTargets": 28,
+   "bodyMorphTargets": 29,
    "clips": {
     "idle": {
      "posture": {
@@ -366,7 +370,11 @@
      ]
     }
    },
-   "bytes": 861788
+   "bytes": 881036,
+   "uniform": {
+    "color": "uniform/female-a.webp",
+    "normal": "uniform/female-a-normal.webp"
+   }
   }
  ],
  "eye": {
@@ -387,5 +395,327 @@
   "eyebrow003": "brows/eyebrow003.webp",
   "eyebrow009": "brows/eyebrow009.webp"
  },
- "lashes": "brows/eyelashes01.webp"
+ "lashes": "brows/eyelashes01.webp",
+ "quaternius": {
+  "male": {
+   "file": "quaternius/male.glb",
+   "uniform": {
+    "color": "quaternius/male-uniform.webp",
+    "normal": "quaternius/male-uniform-normal.webp"
+   },
+   "vertices": {
+    "Body": 7282,
+    "Brows": 650,
+    "Eyes": 556,
+    "HairShort": 757
+   },
+   "clips": {
+    "idle": {
+     "posture": {
+      "shoulderAheadOfHipCm": -3.4,
+      "shoulderAboveHipCm": 44.1,
+      "shoulderWidthCm": 30.4,
+      "headAheadOfHipCm": -1.7
+     },
+     "footSlideCmS": 1.4,
+     "contactFrames": 119,
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "raw_idle": {
+     "posture": {
+      "shoulderAheadOfHipCm": 1.8,
+      "shoulderAboveHipCm": 44,
+      "shoulderWidthCm": 31.4,
+      "headAheadOfHipCm": 3
+     },
+     "footSlideCmS": 1.4,
+     "contactFrames": 119,
+     "frames": 119,
+     "duration": 3.967,
+     "groundSpeed": 0.002,
+     "source": "Male1_bvh/Male1_A2_Sway.bvh",
+     "takeFrames": [
+      24,
+      143
+     ]
+    },
+    "walk": {
+     "posture": {
+      "shoulderAheadOfHipCm": -3.5,
+      "shoulderAboveHipCm": 44.5,
+      "shoulderWidthCm": 30.5,
+      "headAheadOfHipCm": -1.3
+     },
+     "footSlideCmS": 19.2,
+     "contactFrames": 12,
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.146,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "raw_walk": {
+     "posture": {
+      "shoulderAheadOfHipCm": 1.7,
+      "shoulderAboveHipCm": 44.3,
+      "shoulderWidthCm": 31.5,
+      "headAheadOfHipCm": 3.3
+     },
+     "footSlideCmS": 18,
+     "contactFrames": 13,
+     "frames": 34,
+     "duration": 1.133,
+     "groundSpeed": 1.146,
+     "source": "Male1_bvh/Male1_B3_Walk.bvh",
+     "takeFrames": [
+      47,
+      81
+     ]
+    },
+    "jog": {
+     "posture": {
+      "shoulderAheadOfHipCm": 2.3,
+      "shoulderAboveHipCm": 45.2,
+      "shoulderWidthCm": 31,
+      "headAheadOfHipCm": 5.7
+     },
+     "footSlideCmS": 50.3,
+     "contactFrames": 1,
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 3.317,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_jog": {
+     "posture": {
+      "shoulderAheadOfHipCm": 7.2,
+      "shoulderAboveHipCm": 44.6,
+      "shoulderWidthCm": 32.1,
+      "headAheadOfHipCm": 9.9
+     },
+     "footSlideCmS": 52.2,
+     "contactFrames": 1,
+     "frames": 26,
+     "duration": 0.867,
+     "groundSpeed": 3.317,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "sprint": {
+     "posture": {
+      "shoulderAheadOfHipCm": 2.4,
+      "shoulderAboveHipCm": 45.2,
+      "shoulderWidthCm": 31,
+      "headAheadOfHipCm": 5.8
+     },
+     "footSlideCmS": 0,
+     "contactFrames": 0,
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 4.313,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    },
+    "raw_sprint": {
+     "posture": {
+      "shoulderAheadOfHipCm": 7.3,
+      "shoulderAboveHipCm": 44.5,
+      "shoulderWidthCm": 32.1,
+      "headAheadOfHipCm": 10
+     },
+     "footSlideCmS": 0,
+     "contactFrames": 0,
+     "frames": 20,
+     "duration": 0.667,
+     "groundSpeed": 4.313,
+     "source": "Male1_bvh/Male1_C03_Run.bvh",
+     "takeFrames": [
+      17,
+      37
+     ]
+    }
+   },
+   "bytes": 720436
+  },
+  "female": {
+   "file": "quaternius/female.glb",
+   "uniform": {
+    "color": "quaternius/female-uniform.webp",
+    "normal": "quaternius/female-uniform-normal.webp"
+   },
+   "vertices": {
+    "Body": 7380,
+    "Brows": 912,
+    "Eyes": 556,
+    "HairLong": 3080
+   },
+   "clips": {
+    "idle": {
+     "posture": {
+      "shoulderAheadOfHipCm": -0.3,
+      "shoulderAboveHipCm": 44.4,
+      "shoulderWidthCm": 31.9,
+      "headAheadOfHipCm": 1.9
+     },
+     "footSlideCmS": 3.6,
+     "contactFrames": 126,
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.004,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "raw_idle": {
+     "posture": {
+      "shoulderAheadOfHipCm": 3.1,
+      "shoulderAboveHipCm": 44.3,
+      "shoulderWidthCm": 32.2,
+      "headAheadOfHipCm": 4
+     },
+     "footSlideCmS": 3.6,
+     "contactFrames": 126,
+     "frames": 126,
+     "duration": 4.2,
+     "groundSpeed": 0.004,
+     "source": "Female1_bvh/Female1_A02_Sway.bvh",
+     "takeFrames": [
+      39,
+      165
+     ]
+    },
+    "walk": {
+     "posture": {
+      "shoulderAheadOfHipCm": -0.2,
+      "shoulderAboveHipCm": 44.9,
+      "shoulderWidthCm": 32,
+      "headAheadOfHipCm": 2.3
+     },
+     "footSlideCmS": 14.2,
+     "contactFrames": 5,
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.98,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "raw_walk": {
+     "posture": {
+      "shoulderAheadOfHipCm": 3.3,
+      "shoulderAboveHipCm": 44.8,
+      "shoulderWidthCm": 32.3,
+      "headAheadOfHipCm": 4.3
+     },
+     "footSlideCmS": 12.4,
+     "contactFrames": 19,
+     "frames": 38,
+     "duration": 1.267,
+     "groundSpeed": 0.98,
+     "source": "Female1_bvh/Female1_B03_Walk1.bvh",
+     "takeFrames": [
+      53,
+      91
+     ]
+    },
+    "jog": {
+     "posture": {
+      "shoulderAheadOfHipCm": 9.5,
+      "shoulderAboveHipCm": 44.9,
+      "shoulderWidthCm": 31.6,
+      "headAheadOfHipCm": 11.6
+     },
+     "footSlideCmS": 123.6,
+     "contactFrames": 4,
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 3.39,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_jog": {
+     "posture": {
+      "shoulderAheadOfHipCm": 12.5,
+      "shoulderAboveHipCm": 44.2,
+      "shoulderWidthCm": 31.6,
+      "headAheadOfHipCm": 13.2
+     },
+     "footSlideCmS": 87.3,
+     "contactFrames": 4,
+     "frames": 27,
+     "duration": 0.9,
+     "groundSpeed": 3.39,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "sprint": {
+     "posture": {
+      "shoulderAheadOfHipCm": 9.6,
+      "shoulderAboveHipCm": 44.9,
+      "shoulderWidthCm": 31.5,
+      "headAheadOfHipCm": 11.7
+     },
+     "footSlideCmS": 227.7,
+     "contactFrames": 2,
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 4.359,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    },
+    "raw_sprint": {
+     "posture": {
+      "shoulderAheadOfHipCm": 12.6,
+      "shoulderAboveHipCm": 44.2,
+      "shoulderWidthCm": 31.6,
+      "headAheadOfHipCm": 13.3
+     },
+     "footSlideCmS": 201.4,
+     "contactFrames": 1,
+     "frames": 21,
+     "duration": 0.7,
+     "groundSpeed": 4.359,
+     "source": "Female1_bvh/Female1_C03_Run.bvh",
+     "takeFrames": [
+      5,
+      26
+     ]
+    }
+   },
+   "bytes": 766380
+  }
+ }
 }

@@ -28,7 +28,8 @@
     "cheekSquintRight",
     "noseSneerLeft",
     "noseSneerRight",
-    "jawOpen"
+    "jawOpen",
+    "Uniform"
   ],
   "presets": {
     "male-a": {
@@ -50,28 +51,40 @@
         "chin-prominent-incr": 0.4,
         "nose-width1-decr": 0.2,
         "forehead-nubian-incr": 0.2,
-        "torso-vshape-incr": 0.85,
+        "torso-vshape-incr": 0.6,
         "torso-muscle-pectoral-incr": 0.75,
         "torso-muscle-dorsi-incr": 0.8,
-        "measure-shoulder-dist-incr": 0.7,
+        "measure-shoulder-dist-incr": 0.55,
         "torso-scale-horiz-incr": 0.25,
         "l-upperarm-shoulder-muscle-incr": 0.6,
         "r-upperarm-shoulder-muscle-incr": 0.6,
         "l-upperarm-muscle-incr": 1.0,
         "r-upperarm-muscle-incr": 1.0,
         "neck-scale-horiz-incr": 0.25,
-        "l-upperarm-scale-horiz-incr": 0.75,
-        "r-upperarm-scale-horiz-incr": 0.75,
-        "l-upperarm-scale-depth-incr": 0.75,
-        "r-upperarm-scale-depth-incr": 0.75,
+        "l-upperarm-scale-horiz-incr": 0.95,
+        "r-upperarm-scale-horiz-incr": 0.95,
+        "l-upperarm-scale-depth-incr": 0.95,
+        "r-upperarm-scale-depth-incr": 0.95,
         "l-lowerarm-muscle-incr": 1.0,
         "r-lowerarm-muscle-incr": 1.0,
-        "l-lowerarm-scale-horiz-incr": 0.7,
-        "r-lowerarm-scale-horiz-incr": 0.7,
-        "l-lowerarm-scale-depth-incr": 0.7,
-        "r-lowerarm-scale-depth-incr": 0.7,
+        "l-lowerarm-scale-horiz-incr": 0.9,
+        "r-lowerarm-scale-horiz-incr": 0.9,
+        "l-lowerarm-scale-depth-incr": 0.9,
+        "r-lowerarm-scale-depth-incr": 0.9,
         "measure-upperarm-length-decr": 0.6,
-        "measure-lowerarm-length-decr": 0.6
+        "measure-lowerarm-length-decr": 0.6,
+        "l-upperleg-muscle-incr": 0.6,
+        "l-upperleg-scale-horiz-incr": 0.35,
+        "l-upperleg-scale-depth-incr": 0.35,
+        "l-lowerleg-muscle-incr": 0.6,
+        "l-lowerleg-scale-horiz-incr": 0.3,
+        "l-lowerleg-scale-depth-incr": 0.3,
+        "r-upperleg-muscle-incr": 0.6,
+        "r-upperleg-scale-horiz-incr": 0.35,
+        "r-upperleg-scale-depth-incr": 0.35,
+        "r-lowerleg-muscle-incr": 0.6,
+        "r-lowerleg-scale-horiz-incr": 0.3,
+        "r-lowerleg-scale-depth-incr": 0.3
       },
       "brows": "eyebrow003",
       "hair": [
@@ -80,7 +93,7 @@
         "afro01"
       ],
       "sharpShoulders": true,
-      "shoulderLift": 0.05
+      "shoulderLift": 0.028
     },
     "female-a": {
       "sex": "female",

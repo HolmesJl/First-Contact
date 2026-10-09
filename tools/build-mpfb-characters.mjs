@@ -16,7 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { dedup, meshopt, prune, quantize, resample } from '@gltf-transform/functions';
+import { dedup, meshopt, prune, quantize, resample, textureCompress } from '@gltf-transform/functions';
+import { paintUniform } from './uniform-painter.mjs';
 import { MeshoptEncoder } from 'meshoptimizer';
 import sharp from 'sharp';
 
@@ -45,6 +46,14 @@ function blender(script, blend, args) {
   if (res.status !== 0 || /Traceback/.test(res.stdout + res.stderr)) throw new Error(`blender ${script} failed (${res.status})`);
 }
 
+const QWORK = path.join(CACHE, 'quaternius');
+if (!skipBlender) {
+  fs.mkdirSync(QWORK, { recursive: true });
+  for (const sex of ['male', 'female']) {
+    console.log(`== quaternius ${sex}`);
+    blender('quaternius_retarget.py', null, [sex, path.join(QWORK, `${sex}.glb`)]);
+  }
+}
 if (!skipBlender) {
   fs.mkdirSync(WORK, { recursive: true });
   for (const id of Object.keys(cfg.presets)) {
@@ -55,7 +64,7 @@ if (!skipBlender) {
 }
 
 fs.rmSync(OUT, { recursive: true, force: true });
-for (const d of ['skins', 'normals', 'hair', 'eyes', 'brows']) fs.mkdirSync(path.join(OUT, d), { recursive: true });
+for (const d of ['skins', 'normals', 'uniform', 'hair', 'eyes', 'brows', 'quaternius']) fs.mkdirSync(path.join(OUT, d), { recursive: true });
 
 const webp = (img, q = 80) => img.webp({ quality: q, effort: 5 }).toBuffer();
 const write = (rel, buf) => {
@@ -159,6 +168,44 @@ for (const h of hairIds) {
   manifest.hair[h] = write(`hair/${h}.webp`, await hairTexture(path.join(dir, png)));
 }
 
+// ------------------------------------------------------------------ uniform (both character sets)
+
+const ACCENT = [232, 119, 46]; // demo job colour: engineer orange
+const uniformFiles = {};
+for (const [id, p] of Object.entries(cfg.presets)) {
+  const skinFile = path.join(OUT, manifest.skins[p.sex][0].file);
+  const r = await paintUniform({ glbPath: path.join(WORK, `${id}.glb`), skinImage: fs.readFileSync(skinFile), accent: ACCENT });
+  uniformFiles[id] = { color: write(`uniform/${id}.webp`, r.color), normal: write(`uniform/${id}-normal.webp`, r.normal) };
+}
+
+manifest.quaternius = {};
+{
+  const qio = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.encoder': MeshoptEncoder });
+  await MeshoptEncoder.ready;
+  for (const sex of ['male', 'female']) {
+    const src = path.join(QWORK, `${sex}.glb`);
+    const doc = await qio.read(src);
+    const bodyNode = doc.getRoot().listNodes().find((n) => n.getMesh()?.getName() === 'Body');
+    const skinImage = bodyNode.getMesh().listPrimitives()[0].getMaterial().getBaseColorTexture().getImage();
+    const r = await paintUniform({ glbPath: src, skinImage: Buffer.from(skinImage), accent: ACCENT });
+    const motion = JSON.parse(fs.readFileSync(path.join(QWORK, `${sex}.motion.json`), 'utf8'));
+    await doc.transform(prune({ keepAttributes: true, keepLeaves: true }), dedup({ keepUniqueNames: true }), resample({ tolerance: 5e-4 }), textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024], quality: 85 }));
+    await doc.transform(quantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 12, quantizeWeight: 8 }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+    const out = path.join(OUT, `quaternius/${sex}.glb`);
+    await qio.write(out, doc);
+    const verts = {};
+    for (const m of doc.getRoot().listMeshes()) verts[m.getName()] = m.listPrimitives().reduce((a, pr) => a + pr.getAttribute('POSITION').getCount(), 0);
+    manifest.quaternius[sex] = {
+      file: `quaternius/${sex}.glb`,
+      uniform: { color: write(`quaternius/${sex}-uniform.webp`, r.color), normal: write(`quaternius/${sex}-uniform-normal.webp`, r.normal) },
+      vertices: verts,
+      clips: Object.fromEntries(Object.entries(motion).filter(([k]) => k !== 'scale')),
+      bytes: fs.statSync(out).size,
+    };
+    console.log(`quaternius/${sex}.glb  ${(fs.statSync(out).size / 1024).toFixed(0)} KB  ${JSON.stringify(verts)}`);
+  }
+}
+
 // ------------------------------------------------------------------ geometry
 
 await MeshoptEncoder.ready;
@@ -202,6 +249,7 @@ for (const [id, p] of Object.entries(cfg.presets)) {
     bodyMorphTargets: morphTargets,
     clips: Object.fromEntries(Object.entries(motion).filter(([k]) => k !== 'scale')),
     bytes: fs.statSync(glb).size,
+    uniform: uniformFiles[id],
   });
   console.log(`${id}.glb  ${(fs.statSync(glb).size / 1024).toFixed(0)} KB  ${JSON.stringify(counts)}  body morphs ${morphTargets}`);
 }

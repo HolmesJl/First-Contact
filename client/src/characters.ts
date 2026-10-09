@@ -7,9 +7,8 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import * as old from './scene/character';
 import * as mpfb from './scene/mpfbCharacter';
-import type { Appearance } from '../../shared/protocol';
+import * as quat from './scene/quaterniusCharacter';
 
 const params = new URLSearchParams(location.search);
 const manual = params.has('manual');
@@ -47,7 +46,6 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495;
 
-const HAIR_OLD = ['#3b2417', '#c0521f'];
 const status = document.getElementById('status')!;
 
 const assetUrls = import.meta.glob('../dev-assets/mpfb/**/*.{glb,webp,json}', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
@@ -57,24 +55,16 @@ const assetUrl = (rel: string) => {
   return u;
 };
 
-await old.preloadCharacters();
 const manifest = await mpfb.loadMpfb(assetUrl, assetUrl('manifest.json'));
+await quat.loadQuaternius(manifest, assetUrl);
 
 type Entry =
-  | { kind: 'old'; sex: 'male' | 'female'; rig: old.Rig; label: HTMLElement; sub: string }
+  | { kind: 'q'; sex: 'male' | 'female'; rig: quat.QRig; label: HTMLElement; sub: string }
   | { kind: 'new'; sex: 'male' | 'female'; rig: mpfb.MpfbRig; label: HTMLElement; sub: string };
 
 const entries: Entry[] = [];
 const labels = document.getElementById('labels')!;
-
-const oldAppearance = (sex: 'male' | 'female'): Appearance => ({
-  sex,
-  face: 'smiling',
-  hairLength: sex === 'male' ? 'short' : 'long',
-  facialHair: 'none',
-  hairColor: HAIR_OLD[0],
-  eyeColor: '#5a3a1e',
-});
+let outfit: 'uniform' | 'bare' = params.get('outfit') === 'bare' ? 'bare' : 'uniform';
 
 const newLooks: Record<string, Partial<mpfb.Look>> = {
   'male-a': { hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5' },
@@ -97,32 +87,29 @@ function addRing(x: number) {
 
 const SPACING = 1.5;
 const GAP = 1.2;
-const layout: { sex: 'male' | 'female'; kind: 'old' | 'new'; id?: string }[] = [];
-for (const sex of ['male', 'female'] as const) {
-  layout.push({ sex, kind: 'old' });
-  for (const p of manifest.presets.filter((x) => x.sex === sex)) layout.push({ sex, kind: 'new', id: p.id });
-}
-const groupSize = layout.length / 2;
+const layout: { sex: 'male' | 'female'; kind: 'new' | 'q' }[] = [];
+for (const sex of ['male', 'female'] as const) layout.push({ sex, kind: 'new' }, { sex, kind: 'q' });
 layout.forEach((slot, i) => {
-  const inGroup = i % groupSize;
-  const group = Math.floor(i / groupSize);
-  const x = (group === 0 ? -1 : 1) * (GAP + SPACING * (groupSize - 1) / 2) + (inGroup - (groupSize - 1) / 2) * SPACING;
-  if (slot.kind === 'old') {
-    const rig = old.buildRig(oldAppearance(slot.sex));
+  const inGroup = i % 2;
+  const group = Math.floor(i / 2);
+  const x = (group === 0 ? -1 : 1) * (GAP + SPACING / 2) + (inGroup - 0.5) * SPACING;
+  const hairColor = slot.sex === 'male' ? '#4a2f1d' : '#7a4a24';
+  if (slot.kind === 'q') {
+    const rig = quat.buildQuaternius(slot.sex, hairColor);
     rig.root.position.set(x, 0, 0);
     scene.add(rig.root);
     addRing(x);
-    const sub = '~7k verts · UAL clips';
-    entries.push({ kind: 'old', sex: slot.sex, rig, label: addLabel('old', `Current · ${slot.sex}`, sub), sub });
+    const sub = `${(manifest.quaternius[slot.sex].vertices.Body / 1000).toFixed(1)}k body verts`;
+    entries.push({ kind: 'q', sex: slot.sex, rig, label: addLabel('old', `Quaternius · ${slot.sex}`, sub), sub });
   } else {
-    const preset = manifest.presets.find((p) => p.id === slot.id)!;
-    const base: mpfb.Look = { skin: 0, skinTint: '#ffffff', hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5', ...newLooks[preset.id] };
+    const preset = manifest.presets.find((p) => p.sex === slot.sex)!;
+    const base: mpfb.Look = { skin: 0, skinTint: '#ffffff', uniform: outfit === 'uniform', hairStyle: 0, hairColor: '#4a2f1d', eyeColor: '#4f7fb5', ...newLooks[preset.id] };
     const rig = mpfb.buildMpfb(preset.id, base);
     rig.root.position.set(x, 0, 0);
     scene.add(rig.root);
     addRing(x);
     const sub = `${(preset.vertices.Body / 1000).toFixed(1)}k body verts`;
-    entries.push({ kind: 'new', sex: slot.sex, rig, label: addLabel('new', `MPFB · ${preset.label}`, sub), sub });
+    entries.push({ kind: 'new', sex: slot.sex, rig, label: addLabel('new', `MPFB · ${slot.sex}`, sub), sub });
   }
 });
 
@@ -130,7 +117,6 @@ layout.forEach((slot, i) => {
 
 let motion: mpfb.Motion = (params.get('motion') as mpfb.Motion) ?? 'idle';
 let expression: mpfb.Expression = (params.get('expr') as mpfb.Expression) ?? 'neutral';
-const FACE_MAP: Record<mpfb.Expression, Appearance['face']> = { neutral: 'serious', smiling: 'smiling', serious: 'serious', angry: 'angry', flirty: 'flirty' };
 
 let styled = params.get('gait') !== 'raw';
 function updateStatus() {
@@ -138,7 +124,7 @@ function updateStatus() {
     const p = manifest.presets.find((x) => x.sex === sex)!;
     return p.clips[`${styled ? '' : 'raw_'}${motion}` as mpfb.ClipKey].groundSpeed;
   };
-  status.textContent = `${motion}: natural ground speed M ${speed('male').toFixed(2)} m/s, F ${speed('female').toFixed(2)} m/s (new characters) · ${styled ? 'gendered gait styling' : 'raw performer mocap'}`;
+  status.textContent = `${motion}: ground speed M ${speed('male').toFixed(2)} m/s, F ${speed('female').toFixed(2)} m/s · same clips on both sets · ${styled ? 'gendered gait styling' : 'raw performer mocap'}`;
 }
 
 function setMotion(m: mpfb.Motion, nextStyled = styled) {
@@ -147,41 +133,27 @@ function setMotion(m: mpfb.Motion, nextStyled = styled) {
   updateStatus();
   for (const e of entries) {
     if (e.kind === 'new') mpfb.setMotion(e.rig, m, styled);
+    else quat.setMotionQ(e.rig, m, styled);
+  }
+  refreshButtons();
+}
+
+function setOutfit(o: typeof outfit) {
+  outfit = o;
+  for (const e of entries) {
+    if (e.kind === 'new') {
+      e.rig.look.uniform = o === 'uniform';
+      mpfb.applyLook(e.rig);
+      mpfb.applyExpression(e.rig);
+    } else quat.applyOutfit(e.rig, o === 'uniform');
   }
   refreshButtons();
 }
 
 function setExpression(x: mpfb.Expression) {
   expression = x;
-  for (const e of entries) {
-    if (e.kind === 'new') {
-      e.rig.expression = x;
-    } else {
-      e.rig.expression = oldExpressionWeights(FACE_MAP[x]);
-      e.rig.flirty = x === 'flirty';
-    }
-  }
+  for (const e of entries) if (e.kind === 'new') e.rig.expression = x;
   refreshButtons();
-}
-
-const oldExpressionCache = new Map<Appearance['face'], old.Rig['expression']>();
-function oldExpressionWeights(face: Appearance['face']) {
-  let w = oldExpressionCache.get(face);
-  if (!w) {
-    const probe = old.buildRig({ sex: 'male', face, hairLength: 'short', facialHair: 'none', hairColor: '#000000', eyeColor: '#000000' });
-    w = { ...probe.expression };
-    old.disposeRig(probe);
-    oldExpressionCache.set(face, w);
-  }
-  return w;
-}
-
-function oldMotion(rig: old.Rig, dt: number) {
-  const speeds: Record<mpfb.Motion, [boolean, number]> = { idle: [false, 0], walk: [true, 1], jog: [true, 2], sprint: [true, 2] };
-  const [moving, speed] = speeds[motion];
-  old.animateRig(rig, dt, moving, speed);
-  if (motion === 'sprint') rig.actions.run.timeScale = 1.45;
-  rig.mixer.timeScale = 1;
 }
 
 const topBar = document.getElementById('top')!;
@@ -211,10 +183,13 @@ function refreshButtons() {
 
 const gMotion = group(bottomBar, 'Motion');
 for (const m of ['idle', 'walk', 'jog', 'sprint'] as const) button(gMotion, m, () => setMotion(m), () => motion === m);
+const gOutfit = group(bottomBar, 'Outfit');
+button(gOutfit, 'uniform', () => setOutfit('uniform'), () => outfit === 'uniform');
+button(gOutfit, 'bare', () => setOutfit('bare'), () => outfit === 'bare');
 const gGait = group(bottomBar, 'Gait');
 button(gGait, 'gendered', () => setMotion(motion, true), () => styled);
 button(gGait, 'raw mocap', () => setMotion(motion, false), () => !styled);
-const gExpr = group(bottomBar, 'Face');
+const gExpr = group(bottomBar, 'Face (MPFB)');
 for (const x of ['neutral', 'smiling', 'serious', 'angry', 'flirty'] as const) button(gExpr, x, () => setExpression(x), () => expression === x);
 
 const newEntries = () => entries.filter((e): e is Extract<Entry, { kind: 'new' }> => e.kind === 'new');
@@ -235,9 +210,15 @@ hairColor.addEventListener('input', () => {
     e.rig.look.hairColor = hairColor.value;
     mpfb.applyLook(e.rig);
   }
+  for (const e of entries) {
+    if (e.kind !== 'q') continue;
+    const hair = e.rig.meshes.HairShort ?? e.rig.meshes.HairLong;
+    (hair.material as THREE.MeshStandardMaterial).color.set(hairColor.value);
+    (e.rig.meshes.Brows.material as THREE.MeshStandardMaterial).color.set(hairColor.value).multiplyScalar(0.7);
+  }
 });
 gHair.appendChild(hairColor);
-const gEye = group(topBar, 'Eyes');
+const gEye = group(topBar, 'Eyes (MPFB)');
 const eyeColor = document.createElement('input');
 eyeColor.type = 'color';
 eyeColor.value = '#4f7fb5';
@@ -309,7 +290,7 @@ function placeLabels() {
 function step(dt: number) {
   for (const e of entries) {
     if (e.kind === 'new') mpfb.updateMpfb(e.rig, dt);
-    else oldMotion(e.rig, dt);
+    else quat.updateQ(e.rig, dt);
   }
   controls.update();
   placeLabels();
@@ -318,6 +299,7 @@ function step(dt: number) {
 
 setMotion(motion, styled);
 setExpression(expression);
+setOutfit(outfit);
 setFacing(facing);
 
 const timer = new THREE.Timer();
@@ -338,8 +320,12 @@ Object.assign(window, {
   __chars: {
     setMotion,
     setExpression,
+    setOutfit,
     setCam,
     setFacing,
+    setYaw: (rad: number) => {
+      for (const e of entries) e.rig.root.rotation.y = rad;
+    },
     caption: (title: string, sub = '') => {
       const el = document.getElementById('caption')!;
       el.style.display = title ? 'block' : 'none';

@@ -162,6 +162,21 @@ def smooth_shoulder_weights(mesh, vweights, zmax, iterations=8, strength=0.6):
         vweights[:] = new
 
 
+def add_uniform_key(src, zmax):
+    """'Uniform' shape key: fitted-fabric thickness over the body and boot volume around the feet, so the
+    jumpsuit and boots have a silhouette instead of being skin-tight paint. Head and hands are untouched."""
+    names = {g.index: g.name for g in src.vertex_groups}
+    skin_prefix = ("head", "neck_01", "hand_", "index_", "middle_", "ring_", "pinky_", "thumb_")
+    key = src.shape_key_add(name="Uniform", from_mix=False)
+    sm = lambda e0, e1, x: (lambda t: t * t * (3 - 2 * t))(max(0.0, min(1.0, (x - e0) / (e1 - e0))))
+    for v in src.data.vertices:
+        w_skin = sum(g.weight for g in v.groups if names[g.group].startswith(skin_prefix))
+        cover = 1.0 - min(1.0, w_skin * 1.6)
+        h = v.co.z / zmax
+        thickness = 0.0028 * cover + 0.0075 * cover * (1.0 - sm(0.06, 0.115, h))
+        key.data[v.index].co = v.co + v.normal * thickness
+
+
 # ---------------------------------------------------------------------------------- decimation
 
 HEAD_CUT = 0.86
@@ -191,6 +206,7 @@ def decimate_body(body, rig, budget, sharp_shoulders=False, shoulder_lift=0.0):
         for v, sv in zip(work.data.vertices, src.data.vertices):
             v.co = sv.co
     zmax = max(v.co.z for v in src.data.vertices)
+    add_uniform_key(src, zmax)
     head_z = HEAD_CUT * zmax
     head_before = sum(1 for v in work.data.vertices if v.co.z > head_z)
 
@@ -644,6 +660,12 @@ def build(preset_id, out_dir):
         stem = o.name.split(".", 1)[1] if "." in o.name else o.name
         if stem in roles:
             objs[roles[stem]] = o
+
+    # Fitted hair fringes touch the brows and lids: lift and push the hair back a few millimetres.
+    for key, o in objs.items():
+        if key.startswith("Hair_"):
+            for v in o.data.vertices:
+                v.co += Vector((0.0, 0.0025, 0.004))
 
     # Face-unit shapes only matter on the face parts; hair is rigid.
     for key, o in objs.items():

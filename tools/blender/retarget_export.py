@@ -282,6 +282,12 @@ def build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style=None
     if style:
         closed = apply_style(closed, style)
     W = {tb: np.einsum("fij,jk,kl->fil", closed[tb], q_bone[tb], rest[tb]) for _, tb, _ in MAP}
+    damp = style.get("clav_damp", 0.0) if style else 0.0
+    if damp:
+        # Skinning meshes built for subtle clavicle motion collapse at the shoulder under the performer's full
+        # shoulder girdle motion; pull the clavicles part-way back to their bind orientation (arms keep theirs).
+        for tb in ("clavicle_l", "clavicle_r"):
+            W[tb] = np.array([slerp(W[tb][f], rest[tb], damp) for f in range(len(W[tb]))])
     hips = close(hips, False)
     ground_speed = float(np.linalg.norm(((at(src.hips, b) - at(src.hips, a)))[:2]) * r / (n / FPS))
 
@@ -328,9 +334,10 @@ def foot_slide(W, pelvis, n, parent, rest, head, ground_speed, ball_rest_z):
 
 
 def run(preset_id, out_glb):
-    preset = PRESETS[preset_id]
+    # Presets are MPFB characters; "quaternius-male|female" are the original game characters (same skeleton family).
+    sex = PRESETS[preset_id]["sex"] if preset_id in PRESETS else preset_id.split("-")[-1]
     rig = bpy.data.objects["Armature"]
-    clipset = CLIP_SETS[preset["sex"]]
+    clipset = CLIP_SETS[sex]
     bpy.context.view_layer.objects.active = rig
 
     bones = rig.data.bones
@@ -365,11 +372,41 @@ def run(preset_id, out_glb):
 
     clips = {}
     meta = {"scale": round(float(r), 4)}
+    calib = {}
+    if preset_id not in PRESETS:
+        # Other skeletons bring their own rest posture (the Quaternius bind pose leans forward more than the MPFB one),
+        # because the reference-pose method keeps the rest posture. Straighten the spine and neck until the idle
+        # side-view posture matches the MPFB character of the same sex, and apply that to every styled clip.
+        idle_spec = {**clipset["clips"]["idle"], "symmetric_shoulders": clipset.get("symmetric_shoulders", False)}
+        base = dict(STYLES[sex]["idle"])
+        t_sh, t_head = (-0.4, 0.2) if sex == "male" else (3.0, 2.2)
+        ext = ret = nb = 0.0
+        clamp = lambda v, lo, hi: max(lo, min(hi, v))
+
+        def measure():
+            st = {**base, "extend": base.get("extend", 0) + ext, "retract": base.get("retract", 0) + ret, "neck_back": base.get("neck_back", 0) + nb}
+            Wc, pc, nc, _gs = build_clip(idle_spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, st)
+            return posture_metrics(Wc, pc, nc, parent, rest, head)
+
+        # Prefer straightening the spine (up to 12 deg); only then draw the clavicles back (up to 8 deg more), so the
+        # shoulder girdle is not twisted far from the skinning's bind pose.
+        for _ in range(6):
+            ext = clamp(ext + 0.8 * (measure()["shoulderAheadOfHipCm"] - t_sh), 0.0, 12.0)
+        for _ in range(6):
+            ret = clamp(ret + 0.5 * (measure()["shoulderAheadOfHipCm"] - t_sh) / 0.28, 0.0, 8.0)
+        for _ in range(6):
+            pm = measure()
+            nb = clamp(nb + 0.5 * ((pm["headAheadOfHipCm"] - pm["shoulderAheadOfHipCm"]) - (t_head - t_sh)) / 0.17, -14.0, 16.0)
+        calib = {"extend": ext, "retract": ret, "neck_back": nb, "clav_damp": 0.6}
+        print("[spike] posture calibration", {k: round(v, 2) for k, v in calib.items()})
     jobs = []
     for name, spec in clipset["clips"].items():
         spec = {**spec, "symmetric_shoulders": clipset.get("symmetric_shoulders", False)}
-        jobs.append((name, spec, STYLES[preset["sex"]].get(name)))
-        jobs.append(("raw_" + name, spec, None))
+        style = STYLES[sex].get(name)
+        if style and calib:
+            style = {**style, **{k: style.get(k, 0) + v for k, v in calib.items() if k != "clav_damp"}, "elevate": 0.0, "clav_damp": calib["clav_damp"]}
+        jobs.append((name, spec, style))
+        jobs.append(("raw_" + name, spec, {"clav_damp": calib["clav_damp"]} if calib else None))
     for name, spec, style in jobs:
         W, pelvis, n, gs = build_clip(spec, ref_rot, ref_fwd, q_bone, rest, head, parent, r, style)
         lows = []
