@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { makeComposer, type View } from './common';
-import { Controls } from '../input/controls';
+import { Controls, MIN_PITCH } from '../input/controls';
 import { InteractSystem } from '../interact';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { ShipInterior } from './shipInterior';
@@ -12,6 +12,10 @@ import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry }
 
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
+/** The camera never goes lower than this above the floor. */
+const MIN_CAM_Y = 0.3;
+/** Extra pivot height at full look-up, so the player sits low in frame and the view clears them toward door signs. */
+const LOOK_UP_LIFT = 0.9;
 function previewPose(tube: number): [number, number, number] {
   const x = TUBE_X[tube];
   return [x - 0.12, 0, TUBE_Z + 1.28];
@@ -391,7 +395,8 @@ export class LabScene implements View {
       pos.y += Math.sin(this.time * 0.4) * 0.04;
     } else {
       const c = this.controls;
-      look = new THREE.Vector3(this.local.x, EYE, this.local.z);
+      const lookUp = Math.min(1, Math.max(0, c.pitch / MIN_PITCH));
+      look = new THREE.Vector3(this.local.x, EYE + LOOK_UP_LIFT * lookUp, this.local.z);
       const yaw = c.camYaw;
       const cosP = Math.cos(c.pitch);
       pos = new THREE.Vector3(
@@ -399,7 +404,11 @@ export class LabScene implements View {
         look.y + Math.sin(c.pitch) * c.dist,
         look.z + Math.cos(yaw) * cosP * c.dist,
       );
-      pos.y = Math.max(0.5, pos.y);
+      if (pos.y < MIN_CAM_Y) {
+        // Floor stop: slide the target up by the same amount so the view keeps its upward tilt.
+        look.y += MIN_CAM_Y - pos.y;
+        pos.y = MIN_CAM_Y;
+      }
     }
     if (this.mode === 'walk' && this.camSettle <= 0) {
       this.camPos.copy(pos);

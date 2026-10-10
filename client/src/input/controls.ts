@@ -20,8 +20,9 @@
  */
 import { axesFromKeys, behindYaw, cameraYaw, moveVector, returnOffset, smoothstep, wrapAngle } from './controlMath';
 
-export const DEFAULT_PITCH = 0.34;
-const MIN_PITCH = 0.12;
+export const DEFAULT_PITCH = 0.2;
+/** Negative pitch drops the camera below the eye line so it can look up (about -30 degrees). */
+export const MIN_PITCH = -0.55;
 const MAX_PITCH = 1.2;
 const MIN_DIST = 2.2;
 const MAX_DIST = 9;
