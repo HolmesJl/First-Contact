@@ -1,19 +1,16 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { makeComposer, type View } from './common';
+import { Controls } from '../input/controls';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
-import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, gaitFromSpeed, type Gait } from '../../../shared/movement';
+import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
-
-const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-const SHIFT_CODES = new Set(['ShiftLeft', 'ShiftRight']);
-
 function previewPose(tube: number): [number, number, number] {
   const x = TUBE_X[tube];
   return [x - 0.12, 0, TUBE_Z + 1.28];
@@ -54,7 +51,6 @@ export class LabScene implements View {
   private time = 0;
   private space: Space | null = null;
   private stamina = new Stamina();
-  private walkMode = false;
 
   private selfId: string;
   private mode: 'creator' | 'walk' = 'creator';
@@ -64,15 +60,11 @@ export class LabScene implements View {
   private sendTimer = 0;
   private lastSent = '';
 
-  private keys = new Set<string>();
-  private joy = { x: 0, y: 0 };
-  private camYaw = 0;
-  private camPitch = 0.34;
-  private camDist = 3.9;
+  private controls: Controls;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
-  private drag: { id: number; x: number; y: number } | null = null;
-  private cleanup: (() => void)[] = [];
+  /** Seconds left of the soft camera blend after entering walk mode; afterwards the camera follows rigidly. */
+  private camSettle = 0;
   private focus = new THREE.Vector3();
   private previewStage: THREE.Group | null = null;
   private previewLights: THREE.Light[] = [];
@@ -91,7 +83,10 @@ export class LabScene implements View {
     this.interior = new ShipInterior();
     this.scene.add(this.interior.root);
     this.composer = makeComposer(renderer, this.scene, this.camera, { strength: 0.4, radius: 0.35, threshold: 1.1 });
-    this.bindInput();
+    this.controls = new Controls(renderer.domElement, {
+      isActive: () => this.mode === 'walk',
+      onStop: () => this.flushMove(),
+    });
   }
 
   // ---- players ----
@@ -208,6 +203,7 @@ export class LabScene implements View {
 
   enterCreator(tube: number, self: PlayerState) {
     this.mode = 'creator';
+    this.controls.clear(false);
     this.interior.setFocus('bay');
     this.creatorTube = tube;
     this.buildPreviewStage();
@@ -266,9 +262,9 @@ export class LabScene implements View {
     this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog', speed: 0 };
     this.mode = 'walk';
     this.space = null;
-    this.camYaw = 0;
+    this.controls.reset(self.rot);
+    this.camSettle = 1;
     this.destroyPreviewStage();
-    this.clearMovementInput(true);
     this.syncPlayer(self);
   }
 
@@ -280,91 +276,13 @@ export class LabScene implements View {
     return [new THREE.Vector3(px + 0.22, 1.48, pz + 3.35), look];
   }
 
-  // ---- input ----
-
-  private bindInput() {
-    const onKey = (down: boolean) => (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-      const code = e.code;
-      if (down) {
-        if (code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && this.mode === 'walk') this.walkMode = !this.walkMode;
-        if (MOVE_CODES.has(code) || SHIFT_CODES.has(code)) this.keys.add(code);
-      } else if (MOVE_CODES.has(code) || SHIFT_CODES.has(code)) {
-        this.keys.delete(code);
-        if (this.mode === 'walk' && !this.hasMoveInput()) this.flushMove();
-      }
-      if (this.mode === 'walk' && code.startsWith('Arrow')) e.preventDefault();
-    };
-    const kd = onKey(true);
-    const ku = onKey(false);
-    const clear = () => this.clearMovementInput(true);
-    window.addEventListener('keydown', kd);
-    window.addEventListener('keyup', ku);
-    window.addEventListener('blur', clear);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') clear();
-    });
-    document.addEventListener('pointerlockchange', () => {
-      if (!document.pointerLockElement) clear();
-    });
-
-    const canvas = this.renderer.domElement;
-    const pd = (e: PointerEvent) => {
-      if (this.mode !== 'walk') return;
-      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      canvas.setPointerCapture(e.pointerId);
-    };
-    const pm = (e: PointerEvent) => {
-      if (!this.drag || this.drag.id !== e.pointerId) return;
-      this.camYaw -= (e.clientX - this.drag.x) * 0.006;
-      this.camPitch = Math.min(1.2, Math.max(0.12, this.camPitch + (e.clientY - this.drag.y) * 0.004));
-      this.drag.x = e.clientX;
-      this.drag.y = e.clientY;
-    };
-    const pu = (e: PointerEvent) => {
-      if (this.drag?.id === e.pointerId) this.drag = null;
-    };
-    const wheel = (e: WheelEvent) => {
-      if (this.mode !== 'walk') return;
-      this.camDist = Math.min(9, Math.max(2.2, this.camDist + Math.sign(e.deltaY) * 0.5));
-    };
-    canvas.addEventListener('pointerdown', pd);
-    canvas.addEventListener('pointermove', pm);
-    canvas.addEventListener('pointerup', pu);
-    canvas.addEventListener('pointercancel', pu);
-    canvas.addEventListener('wheel', wheel, { passive: true });
-    this.cleanup.push(() => {
-      window.removeEventListener('keydown', kd);
-      window.removeEventListener('keyup', ku);
-      window.removeEventListener('blur', clear);
-      canvas.removeEventListener('pointerdown', pd);
-      canvas.removeEventListener('pointermove', pm);
-      canvas.removeEventListener('pointerup', pu);
-      canvas.removeEventListener('pointercancel', pu);
-      canvas.removeEventListener('wheel', wheel);
-    });
-  }
-
   setJoystick(x: number, y: number) {
-    this.joy.x = x;
-    this.joy.y = y;
-    if (this.mode === 'walk' && x === 0 && y === 0 && !this.hasMoveInput()) this.flushMove();
-  }
-
-  private hasMoveInput() {
-    for (const c of MOVE_CODES) if (this.keys.has(c)) return true;
-    return Math.hypot(this.joy.x, this.joy.y) > 0.08;
-  }
-
-  private clearMovementInput(flush: boolean) {
-    this.keys.clear();
-    this.joy.x = 0;
-    this.joy.y = 0;
-    if (flush && this.mode === 'walk') this.flushMove();
+    this.controls.setJoystick(x, y);
+    if (this.mode === 'walk' && x === 0 && y === 0 && !this.controls.hasMoveInput()) this.flushMove();
   }
 
   private flushMove() {
+    if (this.mode !== 'walk') return;
     this.local.moving = false;
     this.local.speed = 0;
     this.lastSent = '';
@@ -418,36 +336,22 @@ export class LabScene implements View {
   }
 
   private updateLocal(dt: number) {
-    let ix = this.joy.x;
-    let iy = this.joy.y;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) iy += 1;
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) iy -= 1;
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) ix -= 1;
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) ix += 1;
-    const len = Math.hypot(ix, iy);
-    const moving = len > 0.1;
-    const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
-    const sprinting = this.stamina.update(dt, moving && [...SHIFT_CODES].some((c) => this.keys.has(c)));
-    const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
+    const c = this.controls;
+    c.update(dt);
+    const input = c.sample();
+    const moving = input.mag > 0.1;
+    const sprinting = this.stamina.update(dt, moving && input.wantsSprint);
+    const gait: Gait = sprinting ? 'sprint' : c.walkMode || input.analogWalk ? 'walk' : 'jog';
     const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
+    this.local.rot = c.facing;
     if (moving) {
-      const n = Math.min(1, len) / len;
-      ix *= n;
-      iy *= n;
-      const fx = -Math.sin(this.camYaw);
-      const fz = -Math.cos(this.camYaw);
-      const rx = Math.cos(this.camYaw);
-      const rz = -Math.sin(this.camYaw);
-      const mx = fx * iy + rx * ix;
-      const mz = fz * iy + rz * ix;
-      const p = clampToShip(this.local.x + mx * speed * dt, this.local.z + mz * speed * dt, 0);
+      const p = clampToShip(this.local.x + input.x * speed * dt, this.local.z + input.z * speed * dt, 0);
       this.local.x = p.x;
       this.local.z = p.z;
-      this.local.rot = Math.atan2(mx, mz);
     }
     this.local.moving = moving;
     this.local.gait = gait;
-    this.local.speed = moving ? Math.min(1, len) * speed : 0;
+    this.local.speed = moving ? input.mag * speed : 0;
 
     const space = spaceAt(this.local.x, this.local.z, 0);
     if (space && space.id !== this.space?.id) {
@@ -455,7 +359,7 @@ export class LabScene implements View {
       this.interior.setFocus(space.id);
       this.hooks.onSpace?.(space);
     }
-    this.hooks.onStatus?.({ gait, stamina: this.stamina.value, exhausted: this.stamina.exhausted, walkMode: this.walkMode });
+    this.hooks.onStatus?.({ gait, stamina: this.stamina.value, exhausted: this.stamina.exhausted, walkMode: c.walkMode });
 
     this.sendTimer += dt;
     if (this.sendTimer >= SEND_INTERVAL) {
@@ -475,18 +379,26 @@ export class LabScene implements View {
       [pos, look] = this.creatorCamera();
       pos.y += Math.sin(this.time * 0.4) * 0.04;
     } else {
-      look = new THREE.Vector3(this.local.x, 1.45, this.local.z);
-      const d = this.camDist;
+      const c = this.controls;
+      look = new THREE.Vector3(this.local.x, EYE, this.local.z);
+      const yaw = c.camYaw;
+      const cosP = Math.cos(c.pitch);
       pos = new THREE.Vector3(
-        look.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * d,
-        look.y + Math.sin(this.camPitch) * d,
-        look.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * d,
+        look.x + Math.sin(yaw) * cosP * c.dist,
+        look.y + Math.sin(c.pitch) * c.dist,
+        look.z + Math.cos(yaw) * cosP * c.dist,
       );
       pos.y = Math.max(0.5, pos.y);
     }
-    const k = 1 - Math.exp(-(this.mode === 'walk' ? 7 : 3) * dt);
-    this.camPos.lerp(pos, k);
-    this.camLook.lerp(look, k);
+    if (this.mode === 'walk' && this.camSettle <= 0) {
+      this.camPos.copy(pos);
+      this.camLook.copy(look);
+    } else {
+      this.camSettle = Math.max(0, this.camSettle - dt);
+      const k = 1 - Math.exp(-(this.mode === 'walk' ? 7 : 3) * dt);
+      this.camPos.lerp(pos, k);
+      this.camLook.lerp(look, k);
+    }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
   }
@@ -504,7 +416,7 @@ export class LabScene implements View {
   }
 
   dispose() {
-    this.cleanup.forEach((f) => f());
+    this.controls.dispose();
     for (const id of [...this.entities.keys()]) this.removePlayer(id);
     this.labels.domElement.remove();
   }

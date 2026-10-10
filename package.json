@@ -9,7 +9,8 @@
     "dev": "concurrently -k -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
     "build": "npm run build -w client",
-    "check:layout": "tsx shared/shipInterior.check.ts"
+    "check:layout": "tsx shared/shipInterior.check.ts",
+    "check:controls": "tsx client/src/input/controlMath.check.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

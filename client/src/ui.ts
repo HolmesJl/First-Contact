@@ -175,7 +175,7 @@ export class Hud {
         prompt('Copy this invite link:', link);
       }
     });
-    this.hint.innerHTML = `<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · drag to look · scroll to zoom`;
+    this.hint.innerHTML = `<kbd>W</kbd><kbd>S</kbd> move · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · right-drag turn · left-drag orbit · scroll zoom`;
     this.hint.hidden = true;
     this.status.hidden = true;
     this.status.innerHTML = `<span class="gait">JOG</span><div class="stamina"><i></i></div>`;

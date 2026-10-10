@@ -77,19 +77,29 @@ This doesn't work on carrier-grade NAT (common on mobile or satellite internet).
 
 ### Controls
 
-- `W` `A` `S` `D` or arrow keys to move. You **jog** by default (3.5 m/s)
-- `C` toggles **walk** (2.2 m/s) and jog
-- Hold `Shift` to **sprint** (4.8 m/s). It is a burst: the stamina bar under the character drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little
-- Drag to orbit the camera, scroll to zoom. Walls and corridor hulls between the camera and your character fade out so the interior stays readable
-- The HUD shows the room you are in and flashes its name when you enter
-- `Space`, `Enter`, or `Esc` skips the intro
-- On touch devices, an on-screen joystick appears after you create your character
+Classic third-person MMO scheme. The mouse cursor stays free and visible; there is no pointer lock.
+
+| Input | Action |
+| --- | --- |
+| `W` / `S` (or `↑` / `↓`) | Move forward / backward along the way your character faces |
+| `A` / `D` (or `←` / `→`) | Strafe left / right (the character keeps facing the same way) |
+| `Shift` (hold) | **Sprint** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little |
+| `C` | Toggle **walk** (1.5 m/s) and **jog** (3.5 m/s, the default) |
+| Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
+| Left mouse + drag | **Orbit the camera** around the character without turning it. On release the camera eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s) |
+| Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
+| `Space`, `Enter`, `Esc` | Skip the intro |
+
+Letting go of every key stops you; switching windows or tabs releases all keys. `Space`, `Tab` and the arrow keys do not scroll or move focus while you are playing. On touch devices an on-screen joystick appears after you create your character (it moves relative to the camera), and dragging the view orbits it.
+
+The HUD shows the room you are in and flashes its name when you enter.
 
 ### Other scripts
 
 ```bash
 npm run typecheck   # server + client
 npm run build       # production build of the client into client/dist
+npm run check:controls  # unit check of the camera/movement math in client/src/input/
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).
