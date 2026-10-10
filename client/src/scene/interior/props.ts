@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TUBE_Y } from '../../../../shared/lab';
 import type { Facing } from '../../../../shared/shipLayout';
-import type { Prop } from '../../../../shared/shipInterior';
+import { BUNK_SLAB_Y, type Prop } from '../../../../shared/shipInterior';
 import { canvasTexture } from '../common';
 import { buildShip } from '../ship';
 import { Batch, MAT, labelSprite, screenMaterial } from './kit';
@@ -105,8 +105,7 @@ export function buildProp(p: Prop, ctx: PropContext) {
       break;
     }
     case 'bunk': {
-      const slabs = [0.35, 1.4, 2.45];
-      for (const y of slabs) {
+      for (const y of BUNK_SLAB_Y) {
         b.box(p.sx, 0.07, p.sz, p.x, y, p.z, 'dark');
         b.box(p.sx * 0.9, 0.14, p.sz * 0.94, p.x, y + 0.07, p.z, 'mattress');
         b.box(p.sx, 0.28, 0.05, p.x, y + 0.07, p.z + p.sz / 2 - 0.025, 'dark');

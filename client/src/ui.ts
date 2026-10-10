@@ -19,6 +19,7 @@ import {
 import type { Gait } from '../../shared/movement';
 import type { Space } from '../../shared/shipInterior';
 import { captainCommsObjective, questObjective, type QuestStep } from '../../shared/opening';
+import { berthLabel, formatUploadTime } from '../../shared/bunks';
 import type { ShipMeta } from '../../shared/protocol';
 
 const ui = document.getElementById('ui')!;
@@ -219,7 +220,11 @@ export class DataPadOverlay {
     const canOpenComms = isCaptainComms && reportedCount >= 1;
     const task = isCaptainComms
       ? captainCommsObjective([...players.values()], me.id)
-      : questObjective(me.questStep, job, me.isClone, me.hasPad);
+      : questObjective(me.questStep, job, me.isClone, me.hasPad, me.berth);
+    const memory =
+      me.berth === null
+        ? 'No berth claimed · no memory upload on record'
+        : `${esc(berthLabel(me.berth))} · last upload ${me.lastUploadAt ? formatUploadTime(me.lastUploadAt) : 'never'}`;
     this.el.innerHTML = `
       <div class="pad panel">
         <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
@@ -235,6 +240,8 @@ export class DataPadOverlay {
       <p>Ship <b>${esc(ship.shipName)}</b> · ${ship.transitYears} years in transit · hull &amp; life support <i>nominal (placeholder)</i></p>
       <h4>Crew aboard</h4>
       <ul>${crew.map((p) => `<li><b>${esc(p.character!.job)}</b> ${esc(p.character!.firstName)} ${esc(p.character!.lastName)}${p.reportedIn ? ' ✓' : ''}</li>`).join('')}</ul>
+      <h4>Memory backup</h4>
+      <p>${memory}</p>
       <h4>Your task</h4>
       <p>${esc(task)}</p>`;
     this.el.querySelector('.pad-close')!.addEventListener('click', () => handlers.onClose());
@@ -302,8 +309,20 @@ export class Hud {
     this.bar = this.status.querySelector('.stamina i');
     this.gaitLabel = this.status.querySelector('.gait');
     this.loc = this.el.querySelector('.loc');
-    this.inventory.innerHTML = `<span class="label">Gear</span><div class="slots"><span class="slot empty" title="Communicator">📟</span></div>`;
+    this.inventory.innerHTML = `<span class="label">Gear</span><div class="slots"><span class="slot empty" title="Communicator">📟</span></div><span class="bunk-line" hidden></span>`;
     ui.append(this.el, this.hint, this.status, this.roomBanner, this.objective, this.inventory, this.interactPrompt);
+  }
+
+  /** Claimed berth and last memory upload, next to the gear slots. */
+  setBerth(berth: number | null, lastUploadAt: number | null) {
+    const line = this.inventory.querySelector<HTMLElement>('.bunk-line');
+    if (!line) return;
+    if (berth === null) {
+      line.hidden = true;
+      return;
+    }
+    line.hidden = false;
+    line.innerHTML = `<b>${esc(berthLabel(berth))}</b> · upload ${lastUploadAt ? esc(formatUploadTime(lastUploadAt)) : 'never'}`;
   }
 
   setObjective(text: string) {
@@ -334,12 +353,13 @@ export class Hud {
     hasPad: boolean,
     players?: Map<string, PlayerState>,
     selfId?: string,
+    berth: number | null = null,
   ) {
     if (job === 'Captain' && step === 'captain-comms' && players && selfId) {
       this.setObjective(captainCommsObjective([...players.values()], selfId));
       return;
     }
-    this.setObjective(questObjective(step, job, isClone, hasPad));
+    this.setObjective(questObjective(step, job, isClone, hasPad, berth));
   }
 
   showControls(show: boolean) {

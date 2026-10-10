@@ -1,5 +1,6 @@
 import type { Job } from './protocol';
 import { CABIN_KEYPAD_INTERACT_ID, cabinKeypadInteractPosition } from './cabinDoor';
+import { berthFromMemoryStationId, berthLabel, memoryStationFor, memoryStationId } from './bunks';
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 
 export const TRANSIT_YEARS = 60;
@@ -11,6 +12,7 @@ export type QuestStep =
   | 'clone-doctor'
   | 'captain-set-code'
   | 'pick-pad'
+  | 'upload-memories'
   | 'job-station'
   | 'report'
   | 'captain-helm'
@@ -73,10 +75,15 @@ export function initialQuestStep(isClone: boolean, job: Job | null): QuestStep {
   return 'pick-pad';
 }
 
+/**
+ * The one terminal to light up for a step, or null. The upload step has no single terminal until a berth is claimed;
+ * see `uploadObjectiveStationIds` in bunks.ts for the free-berth case.
+ */
 export function objectiveInteractId(
   step: QuestStep,
   job: Job | null,
   _isClone: boolean,
+  berth: number | null = null,
 ): string | null {
   if (!job) return null;
   switch (step) {
@@ -86,6 +93,8 @@ export function objectiveInteractId(
       return CABIN_KEYPAD_INTERACT_ID;
     case 'pick-pad':
       return job === 'Captain' ? 'captain-desk' : 'bunk-desk-pad';
+    case 'upload-memories':
+      return berth === null ? null : memoryStationId(berth);
     case 'job-station':
       return JOB_STATION_INTERACT[job];
     case 'captain-helm':
@@ -104,6 +113,7 @@ export function questObjective(
   job: Job | null,
   isClone: boolean,
   hasPad = false,
+  berth: number | null = null,
 ): string {
   if (!job) return step === 'wake' ? 'Wait for the crew to wake the ship.' : '';
   switch (step) {
@@ -119,6 +129,15 @@ export function questObjective(
       const id = job === 'Captain' ? 'captain-desk' : 'bunk-desk-pad';
       const t = terminalMeta(id)!;
       return `Go to the ${t.room} and pick up your data pad from the ${t.object}.`;
+    }
+    case 'upload-memories': {
+      if (berth !== null) {
+        const s = memoryStationFor(berth)!;
+        return `Upload your memories at the ${berthLabel(berth)} pad in the ${s.room}.`;
+      }
+      if (job === 'Captain') return "Upload your memories at the pad on your berth in the Captain's Cabin.";
+      const s = memoryStationFor(1)!;
+      return `Pick a free bunk in the ${s.room} and upload your memories at its pad. It becomes your bunk.`;
     }
     case 'job-station': {
       if (!hasPad && job !== 'Captain') {
@@ -145,6 +164,8 @@ export function questObjective(
 }
 
 export function interactPrompt(interactId: string): string | null {
+  const berth = berthFromMemoryStationId(interactId);
+  if (berth !== null) return `Upload memories · ${berthLabel(berth)}`;
   switch (interactId) {
     case CABIN_KEYPAD_INTERACT_ID:
       return 'Use cabin keypad';
@@ -168,11 +189,14 @@ export function interactPrompt(interactId: string): string | null {
 
 export function interactIdForProp(propId: string): string | null {
   if (propId === CABIN_KEYPAD_INTERACT_ID) return propId;
+  if (berthFromMemoryStationId(propId) !== null) return propId;
   return INTERACT_IDS.has(propId) ? propId : null;
 }
 
 export function positionForInteract(interactId: string): { x: number; z: number } | null {
   if (interactId === CABIN_KEYPAD_INTERACT_ID) return cabinKeypadInteractPosition();
+  const berth = berthFromMemoryStationId(interactId);
+  if (berth !== null) return memoryStationFor(berth)?.stand ?? null;
   const t = terminalMeta(interactId);
   if (t) return { x: t.x, z: t.z };
   const s = stationById(interactId);
@@ -180,19 +204,21 @@ export function positionForInteract(interactId: string): { x: number; z: number 
 }
 
 /** Toast after completing a quest step (server + client). */
-export function questStepCompleteNotice(step: QuestStep, job: Job, isClone: boolean): string | null {
+export function questStepCompleteNotice(step: QuestStep, job: Job, isClone: boolean, berth: number | null = null): string | null {
   const next = nextQuestStep(step, job, isClone);
   if (!next || next === 'done') return 'Opening tasks complete.';
-  return questObjective(next, job, isClone, true);
+  return questObjective(next, job, isClone, true, berth);
 }
 
-function nextQuestStep(step: QuestStep, job: Job, isClone: boolean): QuestStep | null {
+export function nextQuestStep(step: QuestStep, job: Job, isClone: boolean): QuestStep | null {
   switch (step) {
     case 'clone-doctor':
       return 'pick-pad';
     case 'captain-set-code':
       return 'pick-pad';
     case 'pick-pad':
+      return 'upload-memories';
+    case 'upload-memories':
       return job === 'Captain' ? 'captain-helm' : 'job-station';
     case 'job-station':
       return 'report';

@@ -114,6 +114,19 @@ export interface CabinDoorState {
   openFrac: number;
 }
 
+/**
+ * What a clone restores after death: the state of the character at the last upload. Inventory does not exist yet, so
+ * only the timestamp and quest progress are real; the inventory slots are reserved so the shape does not change when
+ * carry slots, equipped gear and closets land (on-person items are lost on death, closet contents are kept).
+ */
+export interface MemorySnapshot {
+  version: 1;
+  /** Server time (ms) of the upload. */
+  at: number;
+  questStep: QuestStep;
+  inventory: { carry: unknown[]; equipped: unknown[] } | null;
+}
+
 export interface ShipMeta {
   gameStarted: boolean;
   gameStartedAt: number | null;
@@ -136,6 +149,10 @@ export interface PlayerState {
   reportedIn: boolean;
   questStep: QuestStep;
   cloneTank: number | null;
+  /** Claimed berth index (0 = Captain's berth, 1..9 = bunks), or null until the player uses a station. */
+  berth: number | null;
+  /** Server time (ms) of the last memory upload, or null. */
+  lastUploadAt: number | null;
 }
 
 /** [id, x, z, rot, moving] */
@@ -162,7 +179,12 @@ export type ServerMsg =
   | { t: 'notice'; message: string }
   | { t: 'snap'; p: SnapEntry[] }
   | { t: 'cabinDoor'; door: CabinDoorState }
-  | { t: 'cabinKeypadResult'; ok: boolean; message?: string; flash?: 'green' | 'red'; dismissMs?: number; lockoutUntil?: number };
+  | { t: 'cabinKeypadResult'; ok: boolean; message?: string; flash?: 'green' | 'red'; dismissMs?: number; lockoutUntil?: number }
+  /**
+   * Sent to the uploading player only. `claimed` is true for their first berth; `from` is the berth they moved out of
+   * when the upload also switched bunks, else null.
+   */
+  | { t: 'memoryUpload'; berth: number; at: number; claimed: boolean; from: number | null };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 

@@ -1009,6 +1009,19 @@ kbd {
   font-size: 12px;
 }
 
+.inventory-strip .bunk-line {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.inventory-strip .bunk-line b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .inventory-strip .slot.filled {
   filter: none;
   opacity: 1;
@@ -1110,6 +1123,98 @@ kbd {
   grid-column: span 1;
   font-size: 11px;
   letter-spacing: 0.08em;
+}
+
+.memory-upload-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(10, 30, 46, 0.55), rgba(0, 0, 0, 0.7));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.memory-upload-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.memory-card {
+  width: min(92vw, 360px);
+  padding: 22px 26px 20px;
+  border-radius: 14px;
+  background: rgba(8, 16, 28, 0.92);
+  border: 1px solid rgba(94, 231, 255, 0.35);
+  box-shadow: 0 0 40px rgba(94, 231, 255, 0.18);
+  text-align: center;
+}
+
+.memory-title {
+  font-family: var(--display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.memory-berth {
+  margin-top: 6px;
+  font: 700 20px var(--display);
+}
+
+.memory-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.memory-bar {
+  margin: 16px 0 12px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.memory-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  box-shadow: 0 0 12px rgba(94, 231, 255, 0.7);
+}
+
+.memory-upload-overlay.show .memory-bar i {
+  animation: memory-fill 1.4s ease-in-out forwards;
+}
+
+@keyframes memory-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.memory-status {
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 18px;
+}
+
+.memory-upload-overlay.done .memory-status {
+  color: #7dffb8;
+}
+
+.memory-upload-overlay.done .memory-bar i {
+  background: #7dffb8;
+  box-shadow: 0 0 12px rgba(125, 255, 184, 0.7);
 }
 
 .pad-overlay {
