@@ -1,7 +1,8 @@
 /**
- * Memory upload stations: one glowing data pad on every berth (the nine bunks and the Captain's bed). Using a station
- * the first time claims the berth for that player; every use records a memory snapshot on the server (what a future
- * clone would restore). Placement is derived from the bunk and bed prop boxes in shipInterior.ts.
+ * Memory upload stations: one glowing data pad on every berth (the nine bunks and the Captain's bed). Using a free
+ * station claims the berth for that player (and releases their previous one: players may move bunks); every use
+ * records a memory snapshot on the server (what a future clone would restore). Stations work at any point, independent
+ * of quest progress. Placement is derived from the bunk and bed prop boxes in shipInterior.ts.
  */
 import type { Job, PlayerState } from './protocol';
 import type { Facing } from './shipLayout';
@@ -106,7 +107,7 @@ export function memoryStationHoverPrompt(berth: number, owner: BerthOwner | null
   if (job && !berthAllowedForJob(berth, job)) {
     return berth === 0 ? `${label} · Captain only` : `${label} · crew bunk`;
   }
-  if (me && me.berth !== null) return `${label} · free (yours is ${berthLabel(me.berth)})`;
+  if (me && me.berth !== null) return `${label} · free · move here`;
   return `Claim ${label} and upload memories`;
 }
 

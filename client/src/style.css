@@ -1166,6 +1166,12 @@ kbd {
   font: 700 20px var(--display);
 }
 
+.memory-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .memory-bar {
   margin: 16px 0 12px;
   height: 6px;

@@ -348,7 +348,7 @@ function handle(m: ServerMsg) {
       break;
     case 'memoryUpload':
       memoryUpload?.close();
-      memoryUpload = new MemoryUploadOverlay(m.berth, m.at, m.claimed, () => {
+      memoryUpload = new MemoryUploadOverlay(m.berth, m.at, m.claimed, m.from, () => {
         memoryUpload = null;
       });
       break;

@@ -180,8 +180,11 @@ export type ServerMsg =
   | { t: 'snap'; p: SnapEntry[] }
   | { t: 'cabinDoor'; door: CabinDoorState }
   | { t: 'cabinKeypadResult'; ok: boolean; message?: string; flash?: 'green' | 'red'; dismissMs?: number; lockoutUntil?: number }
-  /** Sent to the uploading player only; `claimed` is true the first time (the berth became theirs). */
-  | { t: 'memoryUpload'; berth: number; at: number; claimed: boolean };
+  /**
+   * Sent to the uploading player only. `claimed` is true for their first berth; `from` is the berth they moved out of
+   * when the upload also switched bunks, else null.
+   */
+  | { t: 'memoryUpload'; berth: number; at: number; claimed: boolean; from: number | null };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 

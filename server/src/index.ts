@@ -246,10 +246,11 @@ wss.on('connection', (ws) => {
           if (!up.ok) return send(ws, { t: 'error', message: up.message });
           store.save();
           broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
-          send(ws, { t: 'memoryUpload', berth: up.berth, at: up.at, claimed: up.claimed });
+          send(ws, { t: 'memoryUpload', berth: up.berth, at: up.at, claimed: up.claimed, from: up.from });
           if (up.notice) broadcast(ship.code, { t: 'notice', message: up.notice }, pid);
           if (up.nextHint) send(ws, { t: 'notice', message: up.nextHint });
-          console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} uploaded memories at berth ${up.berth}${up.claimed ? ' (claimed)' : ''}`);
+          const how = up.claimed ? ' (claimed)' : up.from !== null ? ` (moved from ${up.from})` : '';
+          console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} uploaded memories at berth ${up.berth}${how}`);
           break;
         }
         const res = applyInteract(ship, me, msg.id);

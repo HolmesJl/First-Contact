@@ -13,13 +13,15 @@ export class MemoryUploadOverlay {
   readonly el = document.createElement('div');
   private timer = 0;
 
-  constructor(berth: number, at: number, claimed: boolean, private onClose: () => void) {
+  constructor(berth: number, at: number, claimed: boolean, from: number | null, private onClose: () => void) {
     this.el.className = 'memory-upload-overlay';
     const label = berthLabel(berth);
+    const headline = claimed ? `${label} is now yours` : from !== null ? `Moved to ${label}` : label;
+    const sub = from !== null ? `<div class="memory-sub">${berthLabel(from)} released</div>` : '';
     this.el.innerHTML = `
       <div class="memory-card">
         <div class="memory-title">Memory upload</div>
-        <div class="memory-berth">${claimed ? `${label} is now yours` : label}</div>
+        <div class="memory-berth">${headline}</div>${sub}
         <div class="memory-bar"><i></i></div>
         <div class="memory-status">Scanning engrams…</div>
       </div>`;

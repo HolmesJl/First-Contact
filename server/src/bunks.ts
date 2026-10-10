@@ -4,27 +4,22 @@ import type { MemorySnapshot } from '../../shared/protocol';
 import type { MemberRecord, ShipRecord } from './store';
 
 export type MemoryUploadResult =
-  | { ok: true; berth: number; at: number; claimed: boolean; notice?: string; quest?: QuestStep; nextHint?: string }
+  | {
+      ok: true;
+      berth: number;
+      at: number;
+      /** First berth ever claimed by this player. */
+      claimed: boolean;
+      /** Previous berth when the player moved; null for a first claim or an upload at their own berth. */
+      from: number | null;
+      notice?: string;
+      quest?: QuestStep;
+      nextHint?: string;
+    }
   | { ok: false; message: string };
 
 export function berthOwner(ship: ShipRecord, berth: number): MemberRecord | null {
   return Object.values(ship.members).find((m) => m.berth === berth) ?? null;
-}
-
-/** Stations follow the opening order: nothing to upload until the data pad is in hand. Free use from then on. */
-function beforeUploadHint(step: QuestStep): string | null {
-  switch (step) {
-    case 'wake':
-      return 'Wait for the crew to wake the ship.';
-    case 'clone-doctor':
-      return 'Check in with Medical first.';
-    case 'captain-set-code':
-      return 'Set your cabin door code at the keypad first.';
-    case 'pick-pad':
-      return 'Pick up your data pad first.';
-    default:
-      return null;
-  }
 }
 
 function takeSnapshot(member: MemberRecord, now: number): MemorySnapshot {
@@ -32,8 +27,12 @@ function takeSnapshot(member: MemberRecord, now: number): MemorySnapshot {
 }
 
 /**
- * Use a memory upload station: claim the berth if it is free and the player has none, then record a snapshot.
- * Server-authoritative: one player per berth, the Captain's berth only for the Captain, crew bunks only for crew.
+ * Use a memory upload station: claim the berth if it is free (releasing the player's previous berth if they had one),
+ * then record a snapshot. Server-authoritative: one player per berth, the Captain's berth only for the Captain, crew
+ * bunks only for crew. A move is also an upload, so the snapshot timestamp refreshes.
+ *
+ * Stations are not gated on quest progress: a bunk can be picked and used at any point. The `upload-memories` step
+ * completes on whichever upload happens while the player is on it, like every other click-to-complete step.
  */
 export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, interactId: string, now = Date.now()): MemoryUploadResult {
   const berth = berthFromMemoryStationId(interactId);
@@ -46,9 +45,6 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
   const label = berthLabel(berth);
   member.berth ??= null;
 
-  const order = beforeUploadHint(member.questStep ?? 'wake');
-  if (order) return { ok: false, message: order };
-
   if (!berthAllowedForJob(berth, job)) {
     return { ok: false, message: berth === 0 ? "That is the Captain's berth." : 'The Captain sleeps in the cabin, not the bunk room.' };
   }
@@ -57,11 +53,9 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
     const name = owner.character ? `${owner.character.firstName} ${owner.character.lastName}` : 'another crew member';
     return { ok: false, message: `${label} belongs to ${name}.` };
   }
-  if (member.berth !== null && member.berth !== berth) {
-    return { ok: false, message: `Your bunk is ${berthLabel(member.berth)}. Upload there.` };
-  }
-
   const claimed = member.berth === null;
+  const from = !claimed && member.berth !== berth ? member.berth : null;
+  // Setting the member's berth releases the old one: ownership lives only on the member record.
   member.berth = berth;
 
   const name = `${member.character.firstName} ${member.character.lastName}`;
@@ -80,7 +74,8 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
     berth,
     at: now,
     claimed,
-    notice: claimed ? `${name} claimed ${label}.` : undefined,
+    from,
+    notice: claimed ? `${name} claimed ${label}.` : from !== null ? `${name} moved from ${berthLabel(from)} to ${label}.` : undefined,
     quest,
     nextHint,
   };

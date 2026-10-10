@@ -155,7 +155,7 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
       openPad: true,
       notice: 'Data pad added to your communicator slot.',
       quest: next,
-      nextHint: questStepCompleteNotice(prev, job, isClone) ?? undefined,
+      nextHint: questStepCompleteNotice(prev, job, isClone, member.berth ?? null) ?? undefined,
     };
   }
 
