@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { makeComposer, type View } from './common';
 import { Controls } from '../input/controls';
+import { InteractSystem } from '../interact';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
@@ -39,6 +40,8 @@ export interface LabHooks {
   onSpace?(space: Space): void;
   /** Local gait and stamina (0..1), every frame. */
   onStatus?(status: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }): void;
+  onInteractHover?(id: string | null, prompt: string | null): void;
+  onInteract?(id: string): void;
 }
 
 export class LabScene implements View {
@@ -61,6 +64,7 @@ export class LabScene implements View {
   private lastSent = '';
 
   private controls: Controls;
+  private interact: InteractSystem;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
   /** Seconds left of the soft camera blend after entering walk mode; afterwards the camera follows rigidly. */
@@ -86,6 +90,12 @@ export class LabScene implements View {
     this.controls = new Controls(renderer.domElement, {
       isActive: () => this.mode === 'walk',
       onStop: () => this.flushMove(),
+    });
+    this.interact = new InteractSystem(renderer.domElement, this.camera, this.interior.root, {
+      isActive: () => this.mode === 'walk',
+      playerPos: () => (this.mode === 'walk' ? { x: this.local.x, z: this.local.z } : null),
+      onHover: (id, prompt) => this.hooks.onInteractHover?.(id, prompt),
+      onInteract: (id) => this.hooks.onInteract?.(id),
     });
   }
 
@@ -333,6 +343,7 @@ export class LabScene implements View {
     this.updateCamera(dt);
     this.focus.set(this.mode === 'walk' ? this.local.x : this.camLook.x, this.mode === 'walk' ? EYE : 1.2, this.mode === 'walk' ? this.local.z : this.camLook.z);
     this.interior.update(dt, this.focus, this.camera);
+    this.interact.update();
   }
 
   private updateLocal(dt: number) {
@@ -416,6 +427,7 @@ export class LabScene implements View {
   }
 
   dispose() {
+    this.interact.dispose();
     this.controls.dispose();
     for (const id of [...this.entities.keys()]) this.removePlayer(id);
     this.labels.domElement.remove();

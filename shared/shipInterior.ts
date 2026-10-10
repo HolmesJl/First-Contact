@@ -267,6 +267,7 @@ BUNK_STACKS.forEach((s, i) => {
   box('bunks', `closet-stack-${i + 1}`, 'closet', s.x, s.z + 1.2, 1.0, 0.5, 2.6, { face, label: `CLOSETS ${i * 3 + 1}-${i * 3 + 3}` });
 });
 box('bunks', 'upload-station', 'console', -51.6, 9.0, 1.0, 1.4, 1.3, { face: 'W', label: 'UPLOAD MEMORIES', station: 'upload' });
+box('bunks', 'bunk-desk-pad', 'desk', -54.2, 7.8, 1.2, 0.7, 0.7, { face: 'S', label: 'DESK · DATA PAD' });
 
 // Captain's cabin.
 box('cabin', 'captain-bed', 'bed', -53.1, 18.3, 2.0, 1.4, 0.6, { face: 'E', label: "CAPTAIN'S BERTH" });

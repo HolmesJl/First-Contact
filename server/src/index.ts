@@ -3,11 +3,22 @@ import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { ShipStore, type MemberRecord, type ShipRecord } from './store';
 import {
+  applyInteract,
+  applyReportIn,
+  assignCloneTank,
+  normalizeMember,
+  normalizeShip,
+  onCharacterCreated,
+  shipMeta,
+  spawnAfterCreate,
+  startGame,
+} from './opening';
+import {
   MAX_CREW,
   jobCheck,
+  parseClientMsg,
   validateCharacter,
   type Character,
-  type ClientMsg,
   type PlayerState,
   type ServerMsg,
   type SnapEntry,
@@ -46,6 +57,7 @@ function broadcast(code: string, msg: ServerMsg, exceptId?: string) {
 }
 
 function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
+  normalizeMember(m);
   return {
     id: m.id,
     tube: m.tube,
@@ -55,6 +67,11 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     rot: m.rot,
     moving: moving.get(key(ship.code, m.id)) ?? false,
     connected: online.get(ship.code)?.has(m.id) ?? false,
+    isClone: m.isClone ?? false,
+    hasPad: m.hasPad ?? false,
+    reportedIn: m.reportedIn ?? false,
+    questStep: m.questStep ?? 'wake',
+    cloneTank: m.cloneTank ?? null,
   };
 }
 
@@ -88,13 +105,13 @@ wss.on('connection', (ws) => {
   let pid: string | null = null;
 
   ws.on('message', (raw) => {
-    let msg: ClientMsg;
+    let msg;
     try {
-      msg = JSON.parse(String(raw));
+      msg = parseClientMsg(JSON.parse(String(raw)));
     } catch {
       return;
     }
-    if (!msg || typeof msg !== 'object') return;
+    if (!msg) return;
 
     if (!ship || !pid) {
       if (msg.t !== 'host' && msg.t !== 'join') return;
@@ -102,12 +119,13 @@ wss.on('connection', (ws) => {
 
       let target: ShipRecord | undefined;
       if (msg.t === 'host') {
-        target = store.create(msg.playerId);
+        target = normalizeShip(store.create(msg.playerId));
         console.log(`[ship ${target.code}] hosted`);
       } else {
         const code = String(msg.code ?? '').toUpperCase().trim();
         target = store.get(code);
         if (!target) return send(ws, { t: 'error', message: `No ship found with invite code “${code}”.` });
+        normalizeShip(target);
       }
 
       let member = target.members[msg.playerId];
@@ -119,9 +137,24 @@ wss.on('connection', (ws) => {
         let tube = 0;
         while (used.has(tube) && tube < TUBE_COUNT) tube++;
         const spawn = spawnFor(tube);
-        member = { id: msg.playerId, tube, character: null, ...spawn, joinedAt: Date.now() };
+        member = normalizeMember({
+          id: msg.playerId,
+          tube,
+          character: null,
+          ...spawn,
+          joinedAt: Date.now(),
+          isClone: !!target.gameStarted,
+        });
+        if (member.isClone) assignCloneTank(target, member);
         target.members[member.id] = member;
         store.save();
+      } else {
+        normalizeMember(member);
+        if (target.gameStarted && !member.character && !member.isClone) {
+          member.isClone = true;
+          assignCloneTank(target, member);
+          store.save();
+        }
       }
 
       ship = target;
@@ -140,6 +173,7 @@ wss.on('connection', (ws) => {
         code: ship.code,
         you: pid,
         hostId: ship.hostId,
+        ship: shipMeta(ship),
         players: Object.values(ship.members).map((m) => toState(ship!, m)),
       });
       broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, member) }, pid);
@@ -151,8 +185,18 @@ wss.on('connection', (ws) => {
     if (!me) return;
 
     switch (msg.t) {
+      case 'startGame': {
+        if (me.character) return;
+        if (startGame(ship)) {
+          store.save();
+          broadcast(ship.code, { t: 'shipState', ship: shipMeta(ship) });
+          console.log(`[ship ${ship.code}] voyage started`);
+        }
+        break;
+      }
       case 'create': {
         if (me.character) return send(ws, { t: 'createError', message: 'Your clone has already been decanted.' });
+        if (!ship.gameStarted) return send(ws, { t: 'createError', message: 'Wait for the crew to start the voyage.' });
         const err = validateCharacter(msg.character);
         if (err) return send(ws, { t: 'createError', message: err });
         const character = sanitizeCharacter(msg.character);
@@ -163,21 +207,42 @@ wss.on('connection', (ws) => {
         if (jobErr) return send(ws, { t: 'createError', message: jobErr });
 
         me.character = character;
-        Object.assign(me, spawnFor(me.tube));
+        onCharacterCreated(me, character);
+        Object.assign(me, spawnAfterCreate(me));
         budgets.delete(key(ship.code, pid));
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         console.log(`[ship ${ship.code}] created ${character.job} ${character.firstName} ${character.lastName}`);
         break;
       }
+      case 'interact': {
+        const res = applyInteract(ship, me, msg.id);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+        if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
+        break;
+      }
+      case 'reportIn': {
+        const res = applyReportIn(ship, me);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+        if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
+        for (const m of Object.values(ship.members)) {
+          if (m.character?.job === 'Captain' && m.questStep === 'done') {
+            broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, m) });
+            broadcast(ship.code, { t: 'notice', message: 'All crew have reported in. The Captain may resume the journey.' });
+          }
+        }
+        break;
+      }
       case 'move': {
         if (!me.character) return;
         const { x, z, rot } = msg;
-        if (![x, z, rot].every((n) => typeof n === 'number' && Number.isFinite(n))) return;
         const k = key(ship.code, pid);
         let budget = budgets.get(k);
         if (!budget) budgets.set(k, (budget = new MoveBudget(performance.now() / 1000)));
-        // Cap the step first (speed), then keep the result inside the ship (walls, props).
         const dx = x - me.x;
         const dz = z - me.z;
         const frac = budget.take(Math.hypot(dx, dz), performance.now() / 1000);
@@ -185,9 +250,8 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         me.rot = rot;
-        const mk = key(ship.code, pid);
-        moving.set(mk, !!msg.moving);
-        lastMoveMs.set(mk, Date.now());
+        moving.set(k, !!msg.moving);
+        lastMoveMs.set(k, Date.now());
         dirtyShips.add(ship.code);
         store.save(2000);
         break;

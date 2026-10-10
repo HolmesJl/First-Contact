@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TUBE_Y } from '../../../../shared/lab';
 import type { Facing } from '../../../../shared/shipLayout';
 import type { Prop } from '../../../../shared/shipInterior';
+import { interactIdForProp } from '../../../../shared/opening';
 import { canvasTexture } from '../common';
 import { buildShip } from '../ship';
 import { Batch, MAT, labelSprite, screenMaterial } from './kit';
@@ -270,9 +271,19 @@ export function buildProp(p: Prop, ctx: PropContext) {
     const s = labelSprite(p.label!, kind, p.station ? 0.26 : 0.22);
     const top = y0 + p.h;
     s.position.set(p.x, Math.min(Math.max(top + 0.32, 1.25), 3.3), p.z);
-    s.userData.prop = p.id;
+    s.userData.interactId = p.id;
     ctx.group.add(s);
     ctx.sprites.push(s);
+  }
+
+  if (interactIdForProp(p.id)) {
+    const pick = new THREE.Mesh(
+      new THREE.BoxGeometry(p.sx + 0.5, Math.max(p.h, 1.1), p.sz + 0.5),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    pick.position.set(p.x, y0 + Math.max(p.h, 1.1) / 2, p.z);
+    pick.userData.interactId = p.id;
+    ctx.group.add(pick);
   }
 }
 
