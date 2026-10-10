@@ -173,7 +173,10 @@ async function startLab() {
     onInteract: (id) => net?.send({ t: 'interact', id }),
   });
   view = lab;
-  if (import.meta.env.DEV) (window as unknown as { __fc: unknown }).__fc = { lab };
+  if (import.meta.env.DEV) (window as unknown as { __fc: { lab: LabScene; teleport(x: number, z: number): void } }).__fc = {
+    lab,
+    teleport: (x, z) => lab?.devTeleport(x, z),
+  };
   resize();
   hud = new Hud(shipCode, selfId, hostId);
   hud.render(players);
