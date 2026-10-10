@@ -295,6 +295,10 @@ export class LabScene implements View {
     if (this.mode === 'walk' && x === 0 && y === 0 && !this.controls.hasMoveInput()) this.flushMove();
   }
 
+  localPos() {
+    return { x: this.local.x, z: this.local.z };
+  }
+
   /** Dev-only: snap the local player and sync to the server (walk mode). */
   devTeleport(x: number, z: number) {
     if (this.mode !== 'walk') return;

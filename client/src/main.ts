@@ -170,7 +170,10 @@ async function startLab() {
     onSpace: (space) => hud?.setSpace(space),
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (_id, prompt) => hud?.setInteractPrompt(prompt),
-    onInteract: (id) => net?.send({ t: 'interact', id }),
+    onInteract: (id) => {
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'interact', id, x, z });
+    },
   });
   view = lab;
   if (import.meta.env.DEV) (window as unknown as { __fc: { lab: LabScene; teleport(x: number, z: number): void } }).__fc = {

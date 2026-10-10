@@ -139,7 +139,7 @@ export type ClientMsg =
   | { t: 'startGame' }
   | { t: 'create'; character: Character }
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
-  | { t: 'interact'; id: string }
+  | { t: 'interact'; id: string; x: number; z: number }
   | { t: 'reportIn' };
 
 export type ServerMsg =
@@ -204,7 +204,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'interact': {
       const err = validateInteractId(m.id);
       if (err) return null;
-      return { t: 'interact', id: m.id as string };
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'interact', id: m.id as string, x: m.x as number, z: m.z as number };
     }
     default:
       return null;

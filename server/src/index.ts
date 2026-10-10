@@ -216,6 +216,9 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'interact': {
+        const p = clampToShip(msg.x, msg.z, 0);
+        me.x = p.x;
+        me.z = p.z;
         const res = applyInteract(ship, me, msg.id);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
         store.save();
