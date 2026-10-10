@@ -416,9 +416,10 @@ function insideShape(s: WalkShape, x: number, z: number) {
   return Math.hypot(x - s.x, z - s.z) <= s.r;
 }
 
-export function isWalkable(x: number, z: number, level: Level = 0): boolean {
+export function isWalkable(x: number, z: number, level: Level = 0, extraObstacles: readonly Obstacle[] = []): boolean {
   const a = areaFor(level);
-  return a.shapes.some((s) => insideShape(s, x, z)) && !a.obstacles.some((o) => insideObstacle(o, x, z));
+  const obs = extraObstacles.length ? [...a.obstacles, ...extraObstacles] : a.obstacles;
+  return a.shapes.some((s) => insideShape(s, x, z)) && !obs.some((o) => insideObstacle(o, x, z));
 }
 
 const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
@@ -556,13 +557,19 @@ function pushOut(o: Obstacle, p: { x: number; z: number }): boolean {
 }
 
 /** Nearest legal position on a level: inside the walk area and outside every obstacle. */
-export function clampToShip(x: number, z: number, level: Level = 0): { x: number; z: number } {
+export function clampToShip(
+  x: number,
+  z: number,
+  level: Level = 0,
+  extraObstacles: readonly Obstacle[] = [],
+): { x: number; z: number } {
   const a = areaFor(level);
+  const obs = extraObstacles.length ? [...a.obstacles, ...extraObstacles] : a.obstacles;
   const p = { x, z };
   for (let i = 0; i < 4; i++) {
     if (!a.shapes.some((s) => insideShape(s, p.x, p.z))) Object.assign(p, nearestInShapes(a.shapes, p.x, p.z));
     let moved = false;
-    for (const o of a.obstacles) if (pushOut(o, p)) moved = true;
+    for (const o of obs) if (pushOut(o, p)) moved = true;
     if (!moved) break;
   }
   return p;

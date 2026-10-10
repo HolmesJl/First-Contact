@@ -1,8 +1,9 @@
 /** Layout sanity check: `npm run check:layout`. Overlaps, blocked doors and ports, unreachable stations. */
+import { cabinDoorCenter, cabinDoorLaneTestPoint, cabinDoorObstacle, cabinKeypadInteractPosition } from './cabinDoor';
 import { SHIP_LAYOUT } from './shipLayout';
 import { INTERACT_RADIUS } from './opening';
 import { QUEST_TERMINALS } from './shipInterior';
-import { BERTHS, PROPS, SPAWNS, STATIONS, areaFor, clampToShip, isWalkable, portClearZone, thresholdRect, visiblePorts, type Prop } from './shipInterior';
+import { BERTHS, CABIN_KEYPAD, PROPS, SPAWNS, STATIONS, areaFor, clampToShip, isWalkable, portClearZone, thresholdRect, visiblePorts, type Prop } from './shipInterior';
 
 const problems: string[] = [];
 const fail = (m: string) => problems.push(m);
@@ -78,6 +79,25 @@ for (const t of QUEST_TERMINALS) {
   const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
   if (dist > INTERACT_RADIUS)
     fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+}
+
+const closedObs = cabinDoorObstacle(0)!;
+const lane = cabinDoorLaneTestPoint();
+if (isWalkable(lane.x, lane.z, 0, [closedObs])) {
+  fail('closed cabin door does not block the doorway');
+}
+const openLane = clampToShip(lane.x, lane.z, 0, [closedObs]);
+if (Math.hypot(openLane.x - lane.x, openLane.z - lane.z) < 0.08) {
+  fail('closed cabin door obstacle does not push players out of the lane');
+}
+const kp = cabinKeypadInteractPosition();
+const door = cabinDoorCenter();
+if (!isWalkable(kp.x, kp.z)) fail(`cabin keypad stand (${kp.x.toFixed(2)}, ${kp.z.toFixed(2)}) not walkable`);
+if (Math.hypot(kp.x - CABIN_KEYPAD.x, kp.z - CABIN_KEYPAD.z) > 1.2) {
+  fail('cabin keypad interact point too far from keypad prop');
+}
+if (Math.hypot(kp.x - door.x, kp.z - door.z) > 2.5) {
+  fail('cabin keypad should be adjacent to the cabin door');
 }
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${seen.size} reachable cells`);
