@@ -1,4 +1,5 @@
 import type { Job } from './protocol';
+import { CABIN_KEYPAD_INTERACT_ID, cabinKeypadInteractPosition } from './cabinDoor';
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 
 export const TRANSIT_YEARS = 60;
@@ -8,6 +9,7 @@ export const INTERACT_RADIUS = 2.5;
 export type QuestStep =
   | 'wake'
   | 'clone-doctor'
+  | 'captain-set-code'
   | 'pick-pad'
   | 'job-station'
   | 'report'
@@ -67,7 +69,7 @@ export function inRange(px: number, pz: number, x: number, z: number, r = INTERA
 export function initialQuestStep(isClone: boolean, job: Job | null): QuestStep {
   if (!job) return 'wake';
   if (isClone) return 'clone-doctor';
-  if (job === 'Captain') return 'pick-pad';
+  if (job === 'Captain') return 'captain-set-code';
   return 'pick-pad';
 }
 
@@ -80,6 +82,8 @@ export function objectiveInteractId(
   switch (step) {
     case 'clone-doctor':
       return 'lab-bench';
+    case 'captain-set-code':
+      return CABIN_KEYPAD_INTERACT_ID;
     case 'pick-pad':
       return job === 'Captain' ? 'captain-desk' : 'bunk-desk-pad';
     case 'job-station':
@@ -109,6 +113,8 @@ export function questObjective(
       const t = terminalMeta('lab-bench');
       return `Go to the ${t!.room} and check in at the ${t!.object}.`;
     }
+    case 'captain-set-code':
+      return "Go to your cabin and set the door code at the keypad.";
     case 'pick-pad': {
       const id = job === 'Captain' ? 'captain-desk' : 'bunk-desk-pad';
       const t = terminalMeta(id)!;
@@ -140,6 +146,8 @@ export function questObjective(
 
 export function interactPrompt(interactId: string): string | null {
   switch (interactId) {
+    case CABIN_KEYPAD_INTERACT_ID:
+      return 'Use cabin keypad';
     case 'captain-desk':
     case 'bunk-desk-pad':
       return 'Pick up data pad';
@@ -159,10 +167,12 @@ export function interactPrompt(interactId: string): string | null {
 }
 
 export function interactIdForProp(propId: string): string | null {
+  if (propId === CABIN_KEYPAD_INTERACT_ID) return propId;
   return INTERACT_IDS.has(propId) ? propId : null;
 }
 
 export function positionForInteract(interactId: string): { x: number; z: number } | null {
+  if (interactId === CABIN_KEYPAD_INTERACT_ID) return cabinKeypadInteractPosition();
   const t = terminalMeta(interactId);
   if (t) return { x: t.x, z: t.z };
   const s = stationById(interactId);
@@ -179,6 +189,8 @@ export function questStepCompleteNotice(step: QuestStep, job: Job, isClone: bool
 function nextQuestStep(step: QuestStep, job: Job, isClone: boolean): QuestStep | null {
   switch (step) {
     case 'clone-doctor':
+      return 'pick-pad';
+    case 'captain-set-code':
       return 'pick-pad';
     case 'pick-pad':
       return job === 'Captain' ? 'captain-helm' : 'job-station';

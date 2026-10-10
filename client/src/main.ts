@@ -6,6 +6,8 @@ import { LabScene } from './scene/lab';
 import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
+import { CabinKeypadOverlay, CABIN_KEYPAD_INTERACT_ID } from './cabinKeypad';
+import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { objectiveInteractId, questObjective } from '../../shared/opening';
 import type { ClientMsg, Job, PlayerState, ServerMsg, ShipMeta } from '../../shared/protocol';
 
@@ -53,6 +55,7 @@ let hud: Hud | null = null;
 let creator: CreatorPanel | null = null;
 let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
+let cabinKeypad: CabinKeypadOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let hostId = '';
@@ -170,9 +173,39 @@ async function startLab() {
     onMove: (x, z, rot, moving) => net?.send({ t: 'move', x, z, rot, moving }),
     onSpace: (space) => hud?.setSpace(space),
     onStatus: (status) => hud?.setStatus(status),
-    onInteractHover: (_id, prompt) => hud?.setInteractPrompt(prompt),
+    onInteractHover: (id, prompt) => {
+      if (id === CABIN_KEYPAD_INTERACT_ID && shipMeta) {
+        const me = players.get(selfId);
+        const inCabin = lab?.currentSpaceId() === 'cabin';
+        hud?.setInteractPrompt(
+          cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null, inCabin),
+        );
+        return;
+      }
+      hud?.setInteractPrompt(prompt);
+    },
     onInteract: (id) => {
       const { x, z } = lab!.localPos();
+      if (id === CABIN_KEYPAD_INTERACT_ID) {
+        const me = players.get(selfId);
+        if (!me?.character || !shipMeta) return;
+        if (!shipMeta.cabinDoor.codeSet && me.character.job !== 'Captain') {
+          toast('Locked. The captain has not set a code.');
+          return;
+        }
+        cabinKeypad?.destroy();
+        cabinKeypad = new CabinKeypadOverlay({
+          onSubmitSet: (code, confirm) => net?.send({ t: 'cabinKeypad', action: 'set', code, confirm, x, z }),
+          onSubmitEnter: (code) => net?.send({ t: 'cabinKeypad', action: 'enter', code, x, z }),
+          onSubmitChange: (current, code, confirm) =>
+            net?.send({ t: 'cabinKeypad', action: 'change', current, code, confirm, x, z }),
+          onClose: () => {
+            cabinKeypad = null;
+          },
+        });
+        cabinKeypad.open(shipMeta, me.character.job, lab?.currentSpaceId() === 'cabin');
+        return;
+      }
       net?.send({ t: 'interact', id, x, z });
     },
   });
@@ -189,6 +222,7 @@ async function startLab() {
   const me = players.get(selfId)!;
   for (const p of players.values()) if (p.id !== selfId) lab.syncPlayer(p);
   if (me.character) lab.syncPlayer(me);
+  if (shipMeta) lab.setCabinDoor(shipMeta.cabinDoor);
 }
 
 function syncHudSelf() {
@@ -268,6 +302,7 @@ function handle(m: ServerMsg) {
     }
     case 'shipState':
       shipMeta = m.ship;
+      lab?.setCabinDoor(m.ship.cabinDoor);
       wakeIntro?.enableContinue(() => beginCreator());
       break;
     case 'notice':
@@ -275,6 +310,16 @@ function handle(m: ServerMsg) {
       break;
     case 'snap':
       lab?.applySnapshot(m.p);
+      break;
+    case 'cabinDoor':
+      if (shipMeta) shipMeta = { ...shipMeta, cabinDoor: m.door };
+      lab?.setCabinDoor(m.door);
+      break;
+    case 'cabinKeypadResult':
+      if (cabinKeypad) {
+        cabinKeypad.showResult(m.ok, m.message, m.flash, m.dismissMs ?? 1200, m.lockoutUntil);
+        if (m.ok) cabinKeypad = null;
+      } else if (!m.ok && m.message) toast(m.message);
       break;
     case 'createError':
       creator?.showError(m.message);

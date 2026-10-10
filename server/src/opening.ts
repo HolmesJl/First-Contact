@@ -12,6 +12,7 @@ import {
 import { SPAWNS, STATIONS } from '../../shared/shipInterior';
 import { spawnFor } from '../../shared/lab';
 import type { Character, Job } from '../../shared/protocol';
+import { cabinDoorPublic } from './cabinDoor';
 import type { MemberRecord, ShipRecord } from './store';
 
 export function shipMeta(ship: ShipRecord) {
@@ -21,6 +22,7 @@ export function shipMeta(ship: ShipRecord) {
     gameStartedAt: ship.gameStartedAt ?? null,
     shipName: ship.shipName!,
     transitYears: ship.transitYears!,
+    cabinDoor: cabinDoorPublic(ship),
   };
 }
 
@@ -38,6 +40,8 @@ export function normalizeShip(ship: ShipRecord): ShipRecord {
   ship.gameStartedAt ??= null;
   ship.shipName ??= SHIP_DISPLAY_NAME;
   ship.transitYears ??= TRANSIT_YEARS;
+  ship.cabinDoorCode ??= null;
+  ship.cabinDoorOpen ??= false;
   for (const m of Object.values(ship.members)) normalizeMember(m);
   return ship;
 }
@@ -83,6 +87,7 @@ function wrongOrderHint(member: MemberRecord, interactId: string): string | null
   const step = member.questStep!;
 
   if (interactId === padInteractId(job)) {
+    if (step === 'captain-set-code') return 'Set your cabin door code at the keypad first.';
     if (step !== 'pick-pad') return 'You do not need that pad right now.';
     return null;
   }
@@ -91,6 +96,10 @@ function wrongOrderHint(member: MemberRecord, interactId: string): string | null
   if (!kind) return null;
 
   if (step === 'clone-doctor' && kind === 'lab-bench') return null;
+
+  if (step === 'captain-set-code') {
+    return 'Set your cabin door code at the keypad first.';
+  }
 
   if (step === 'pick-pad') {
     return job === 'Captain'

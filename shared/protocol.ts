@@ -107,11 +107,19 @@ export interface Character extends Appearance {
   job: Job;
 }
 
+export interface CabinDoorState {
+  codeSet: boolean;
+  open: boolean;
+  animAt: number;
+  openFrac: number;
+}
+
 export interface ShipMeta {
   gameStarted: boolean;
   gameStartedAt: number | null;
   shipName: string;
   transitYears: number;
+  cabinDoor: CabinDoorState;
 }
 
 export interface PlayerState {
@@ -140,7 +148,10 @@ export type ClientMsg =
   | { t: 'create'; character: Character }
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
   | { t: 'interact'; id: string; x: number; z: number }
-  | { t: 'reportIn' };
+  | { t: 'reportIn' }
+  | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number }
+  | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number }
+  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number };
 
 export type ServerMsg =
   | { t: 'welcome'; code: string; you: string; hostId: string; ship: ShipMeta; players: PlayerState[] }
@@ -149,7 +160,9 @@ export type ServerMsg =
   | { t: 'playerUpdated'; player: PlayerState }
   | { t: 'shipState'; ship: ShipMeta }
   | { t: 'notice'; message: string }
-  | { t: 'snap'; p: SnapEntry[] };
+  | { t: 'snap'; p: SnapEntry[] }
+  | { t: 'cabinDoor'; door: CabinDoorState }
+  | { t: 'cabinKeypadResult'; ok: boolean; message?: string; flash?: 'green' | 'red'; dismissMs?: number; lockoutUntil?: number };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 
@@ -206,6 +219,17 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (err) return null;
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       return { t: 'interact', id: m.id as string, x: m.x as number, z: m.z as number };
+    }
+    case 'cabinKeypad': {
+      const action = m.action;
+      if (action !== 'set' && action !== 'enter' && action !== 'change') return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      const code = typeof m.code === 'string' ? m.code : '';
+      const confirm = typeof m.confirm === 'string' ? m.confirm : '';
+      const current = typeof m.current === 'string' ? m.current : '';
+      if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number };
+      if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number };
+      return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number };
     }
     default:
       return null;

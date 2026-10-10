@@ -8,7 +8,7 @@ import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
-import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
+import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
@@ -301,6 +301,14 @@ export class LabScene implements View {
 
   setQuestHighlight(interactId: string | null) {
     this.interior.setQuestHighlight(interactId);
+  }
+
+  setCabinDoor(door: CabinDoorState) {
+    this.interior.setCabinDoor(door);
+  }
+
+  currentSpaceId() {
+    return this.space?.id ?? null;
   }
 
   /** Dev-only: snap the local player and sync to the server (walk mode). */

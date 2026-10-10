@@ -25,7 +25,18 @@ import {
   type SnapEntry,
 } from '../../shared/protocol';
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
+import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
 import { clampToShip } from '../../shared/shipInterior';
+import {
+  applyCabinKeypadChange,
+  applyCabinKeypadEnter,
+  applyCabinKeypadInteract,
+  applyCabinKeypadSet,
+  cabinDoorObstaclesForShip,
+  cabinDoorPublic,
+  tickCabinDoors,
+  trackCabinDoorPass,
+} from './cabinDoor';
 import { MoveBudget } from '../../shared/movement';
 
 const PORT = Number(process.env.PORT ?? 47322);
@@ -217,15 +228,56 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'interact': {
-        const p = clampToShip(msg.x, msg.z, 0);
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
+        if (msg.id === CABIN_KEYPAD_INTERACT_ID) {
+          const k = applyCabinKeypadInteract(ship, me);
+          if (!k.ok) return send(ws, { t: 'error', message: k.message });
+          return;
+        }
         const res = applyInteract(ship, me, msg.id);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
         if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
+        break;
+      }
+      case 'cabinKeypad': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const now = Date.now();
+        let res;
+        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now);
+        else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now);
+        else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now);
+        if (!res.ok) {
+          send(ws, {
+            t: 'cabinKeypadResult',
+            ok: false,
+            message: res.message,
+            flash: res.flash,
+            dismissMs: res.dismissMs,
+            lockoutUntil: res.lockoutUntil,
+          });
+          return;
+        }
+        store.save();
+        broadcast(ship.code, { t: 'cabinDoor', door: cabinDoorPublic(ship, now) });
+        broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+        if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
+        if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
+        send(ws, {
+          t: 'cabinKeypadResult',
+          ok: true,
+          message: res.notice,
+          flash: res.flash,
+          dismissMs: res.dismissMs,
+        });
         break;
       }
       case 'reportIn': {
@@ -249,12 +301,16 @@ wss.on('connection', (ws) => {
         const k = key(ship.code, pid);
         let budget = budgets.get(k);
         if (!budget) budgets.set(k, (budget = new MoveBudget(performance.now() / 1000)));
+        const prevX = me.x;
+        const prevZ = me.z;
         const dx = x - me.x;
         const dz = z - me.z;
         const frac = budget.take(Math.hypot(dx, dz), performance.now() / 1000);
-        const p = clampToShip(me.x + dx * frac, me.z + dz * frac, 0);
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(me.x + dx * frac, me.z + dz * frac, 0, obs);
         me.x = p.x;
         me.z = p.z;
+        trackCabinDoorPass(ship, me, prevX, prevZ);
         me.rot = rot;
         moving.set(k, !!msg.moving);
         lastMoveMs.set(k, Date.now());
@@ -282,6 +338,14 @@ wss.on('connection', (ws) => {
 
 setInterval(() => {
   const now = Date.now();
+  for (const code of online.keys()) {
+    const ship = store.get(code);
+    if (!ship) continue;
+    if (tickCabinDoors(ship, now)) {
+      store.save();
+      broadcast(code, { t: 'cabinDoor', door: cabinDoorPublic(ship, now) });
+    }
+  }
   for (const [mk, t] of lastMoveMs) {
     if (!moving.get(mk) || now - t <= MOVE_STALE_MS) continue;
     moving.set(mk, false);

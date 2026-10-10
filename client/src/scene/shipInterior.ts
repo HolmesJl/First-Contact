@@ -16,6 +16,8 @@ import {
   spaceGraph,
   visiblePorts,
 } from '../../../shared/shipInterior';
+import { CABIN_DOOR_SLIDE_M, CABIN_KEYPAD_INTERACT_ID, cabinDoorCenter, cabinKeypadInteractPosition } from '../../../shared/cabinDoor';
+import type { CabinDoorState } from '../../../shared/protocol';
 
 /**
  * The walkable interior of the seed ship, built from shared/shipLayout.ts and shared/shipInterior.ts:
@@ -284,6 +286,10 @@ export class ShipInterior {
   private sun = new THREE.DirectionalLight(0xfff4e6, 1.6);
   private cameraAnchor = new THREE.Vector3();
   private questTerminals = new QuestTerminalLayer();
+  private cabinDoorPanel: THREE.Group | null = null;
+  private cabinDoorOpenFrac = 0;
+  private cabinDoorTargetFrac = 0;
+  private keypadGlow: THREE.Mesh | null = null;
 
   constructor() {
     this.buildEnvironment();
@@ -299,6 +305,11 @@ export class ShipInterior {
 
   setQuestHighlight(interactId: string | null) {
     this.questTerminals.setHighlight(interactId);
+    if (this.keypadGlow) this.keypadGlow.visible = interactId === CABIN_KEYPAD_INTERACT_ID;
+  }
+
+  setCabinDoor(door: CabinDoorState) {
+    this.cabinDoorTargetFrac = door.openFrac;
   }
 
   // ---------------------------------------------------------------- environment
@@ -674,6 +685,40 @@ export class ShipInterior {
       k.position.set(x + 0.4, y + 0.55, z);
       cab.group.add(k);
       cab.sprites.push(k);
+
+      const pick = new THREE.Mesh(
+        new THREE.BoxGeometry(0.55, 0.7, 0.45),
+        new THREE.MeshBasicMaterial({ visible: false }),
+      );
+      pick.position.set(x, y, z);
+      pick.userData.interactId = CABIN_KEYPAD_INTERACT_ID;
+      cab.group.add(pick);
+
+      const stand = cabinKeypadInteractPosition();
+      this.keypadGlow = new THREE.Mesh(
+        new THREE.RingGeometry(0.22, 0.38, 32),
+        new THREE.MeshBasicMaterial({ color: 0x5fd8ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+      );
+      this.keypadGlow.rotation.x = -Math.PI / 2;
+      this.keypadGlow.position.set(stand.x, 0.04, stand.z);
+      this.keypadGlow.visible = false;
+      this.root.add(this.keypadGlow);
+    }
+
+    const cabinDoor = SHIP_LAYOUT.doors.find((d) => d.id === 'cabin-in');
+    if (cabinDoor && cabinDoor.level === 0 && !cabinDoor.sealed) {
+      const cd = cabinDoorCenter();
+      const panel = new THREE.Group();
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, DOOR_HEIGHT, cabinDoor.width - 0.12),
+        new THREE.MeshStandardMaterial({ color: 0x4a3038, roughness: 0.55, metalness: 0.25 }),
+      );
+      mesh.position.y = DOOR_HEIGHT / 2;
+      panel.add(mesh);
+      panel.position.set(cd.x, 0, cd.z);
+      this.cabinDoorPanel = panel;
+      const side = this.spaces.get('c-cabin') ?? this.spaces.get('cabin');
+      (side?.group ?? this.root).add(panel);
     }
   }
 
@@ -783,6 +828,15 @@ export class ShipInterior {
   update(dt: number, focus: THREE.Vector3, camera: THREE.PerspectiveCamera) {
     this.time += dt;
     this.questTerminals.update(this.time);
+    if (this.cabinDoorPanel) {
+      const t = Math.min(1, dt * 8);
+      this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;
+      this.cabinDoorPanel.position.x = cabinDoorCenter().x + CABIN_DOOR_SLIDE_M * this.cabinDoorOpenFrac;
+    }
+    if (this.keypadGlow?.visible) {
+      const pulse = 0.5 + 0.35 * Math.sin(this.time * 3.2);
+      (this.keypadGlow.material as THREE.MeshBasicMaterial).opacity = pulse;
+    }
     this.sun.position.set(focus.x + 4, 12, focus.z + 7);
     this.sun.target.position.copy(focus);
 

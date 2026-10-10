@@ -27,6 +27,9 @@ export interface ShipRecord {
   gameStartedAt?: number | null;
   shipName?: string;
   transitYears?: number;
+  /** Four-digit cabin door code, or null until the Captain sets it. */
+  cabinDoorCode?: string | null;
+  cabinDoorOpen?: boolean;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
