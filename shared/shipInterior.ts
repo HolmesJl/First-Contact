@@ -255,18 +255,20 @@ box('commons', 'rug-lounge', 'rug', -43.4, 0, 3.6, 3.4, 0.02, { solid: false });
 box('commons', 'rug-eatery', 'rug', -34.4, 4.6, 4.6, 3.0, 0.02, { solid: false });
 box('commons', 'rug-rr', 'rug', -41.8, 4.9, 3.6, 2.4, 0.02, { solid: false });
 
-// Crew quarters (bunk room): three stacks of three bunks, each with its own closet.
+// Crew quarters (bunk room): three stacks of three bunks, each with its own closet. Each bunk carries its own memory
+// upload station (shared/bunks.ts); there is no separate upload console.
 export const BUNK_STACKS = [
   { x: -56.8, z: 2.95, side: 'W' as const },
   { x: -56.8, z: 8.55, side: 'W' as const },
   { x: -51.6, z: 6.05, side: 'E' as const },
 ];
+/** Bottom of each bunk slab above the floor (lowest first); the client draws the slabs here. */
+export const BUNK_SLAB_Y = [0.35, 1.4, 2.45] as const;
 BUNK_STACKS.forEach((s, i) => {
   const face: Facing = s.side === 'W' ? 'E' : 'W';
   box('bunks', `bunk-stack-${i + 1}`, 'bunk', s.x, s.z, 1.0, 1.9, 3.2, { face, label: `BUNKS ${i * 3 + 1}-${i * 3 + 3}` });
   box('bunks', `closet-stack-${i + 1}`, 'closet', s.x, s.z + 1.2, 1.0, 0.5, 2.6, { face, label: `CLOSETS ${i * 3 + 1}-${i * 3 + 3}` });
 });
-box('bunks', 'upload-station', 'console', -51.6, 9.0, 1.0, 1.4, 1.3, { face: 'W', label: 'UPLOAD MEMORIES', station: 'upload' });
 box('bunks', 'bunk-desk-pad', 'desk', -54.2, 7.8, 1.2, 0.7, 0.7, { face: 'S', label: 'DESK · DATA PAD' });
 
 // Captain's cabin.
@@ -422,12 +424,31 @@ export function isWalkable(x: number, z: number, level: Level = 0, extraObstacle
   return a.shapes.some((s) => insideShape(s, x, z)) && !obs.some((o) => insideObstacle(o, x, z));
 }
 
-const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
+export const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
   N: { dx: 0, dz: -1 },
   S: { dx: 0, dz: 1 },
   E: { dx: 1, dz: 0 },
   W: { dx: -1, dz: 0 },
 };
+
+/**
+ * Stand point just outside a prop's `face` side, nudged outward until walkable. `slide` offsets the point along the
+ * face (positive toward +x or +z), so several interact points can share one prop without sharing a spot.
+ */
+export function standPointOnFace(prop: Prop, standOff = 0.22, slide = 0): { x: number; z: number; face: Facing } {
+  const face = prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  const sx = Math.abs(f.dx) > 0 ? 0 : slide;
+  const sz = Math.abs(f.dx) > 0 ? slide : 0;
+  for (let extra = 0; extra <= 1.35; extra += 0.1) {
+    const along = half + standOff + extra;
+    const x = prop.x + f.dx * along + sx;
+    const z = prop.z + f.dz * along + sz;
+    if (isWalkable(x, z)) return { x, z, face };
+  }
+  throw new Error(`${prop.id}: no walkable stand point on ${face} face`);
+}
 
 /** Quest-terminal click / proximity: on the prop's `face` side, nudged outward until walkable. */
 export function questTerminalPosition(propId: string, standOff = 0.22) {
@@ -438,18 +459,8 @@ export function questTerminalPosition(propId: string, standOff = 0.22) {
     if (!isWalkable(prop.x, prop.z)) throw new Error(`quest pad ${propId} not on walkable floor`);
     return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
   }
-  const face = prop.face ?? 'S';
-  const f = FACE_OUT[face];
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  for (let extra = 0; extra <= 1.35; extra += 0.1) {
-    const along = half + standOff + extra;
-    const x = prop.x + f.dx * along;
-    const z = prop.z + f.dz * along;
-    if (isWalkable(x, z)) {
-      return { x, z, y: y0 + prop.h + 0.04, prop };
-    }
-  }
-  throw new Error(`quest terminal ${propId}: no walkable stand point on ${face} face`);
+  const { x, z } = standPointOnFace(prop, standOff);
+  return { x, z, y: y0 + prop.h + 0.04, prop };
 }
 
 const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {

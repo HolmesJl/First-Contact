@@ -32,6 +32,8 @@ export function normalizeMember(m: MemberRecord): MemberRecord {
   m.reportedIn ??= false;
   m.questStep ??= 'wake';
   m.cloneTank ??= null;
+  m.berth ??= null;
+  m.memory ??= null;
   return m;
 }
 
@@ -107,6 +109,12 @@ function wrongOrderHint(member: MemberRecord, interactId: string): string | null
       : 'Pick up your data pad from the desk in the bunk room first.';
   }
 
+  if (step === 'upload-memories') {
+    return job === 'Captain'
+      ? 'Upload your memories at the pad on your cabin berth first.'
+      : 'Upload your memories at a bunk pad in the bunk room first.';
+  }
+
   if (step === 'job-station' && kind === JOB_STATION_KIND[job]) {
     if (!member.hasPad) return 'You need your data pad first — get it from the bunk room desk.';
     return null;
@@ -139,15 +147,15 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
     if (member.questStep !== 'pick-pad') return { ok: false, message: hint ?? 'Not yet.' };
     if (interactId !== padInteractId(job)) return { ok: false, message: 'That pad is not for you.' };
     member.hasPad = true;
-    const next = job === 'Captain' ? 'captain-helm' : 'job-station';
     const prev = member.questStep!;
+    const next: QuestStep = 'upload-memories';
     member.questStep = next;
     return {
       ok: true,
       openPad: true,
       notice: 'Data pad added to your communicator slot.',
       quest: next,
-      nextHint: questStepCompleteNotice(prev, job, isClone) ?? undefined,
+      nextHint: questStepCompleteNotice(prev, job, isClone, member.berth ?? null) ?? undefined,
     };
   }
 

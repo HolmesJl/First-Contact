@@ -2,6 +2,7 @@
 import { cabinDoorCenter, cabinDoorLaneTestPoint, cabinDoorObstacle, cabinKeypadInteractPosition } from './cabinDoor';
 import { SHIP_LAYOUT } from './shipLayout';
 import { INTERACT_RADIUS } from './opening';
+import { MEMORY_STATIONS } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import { BERTHS, CABIN_KEYPAD, PROPS, SPAWNS, STATIONS, areaFor, clampToShip, isWalkable, portClearZone, thresholdRect, visiblePorts, type Prop } from './shipInterior';
 
@@ -79,6 +80,27 @@ for (const t of QUEST_TERMINALS) {
   const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
   if (dist > INTERACT_RADIUS)
     fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+}
+
+// Memory upload stations: one per berth, pad inside interact range of a walkable, reachable stand point, and no two
+// pads so close that the click boxes overlap.
+if (MEMORY_STATIONS.length !== BERTHS.length) fail(`expected ${BERTHS.length} memory stations, got ${MEMORY_STATIONS.length}`);
+for (const s of MEMORY_STATIONS) {
+  if (!isWalkable(s.stand.x, s.stand.z)) fail(`memory station ${s.interactId} stand (${s.stand.x.toFixed(2)}, ${s.stand.z.toFixed(2)}) not walkable`);
+  if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`memory station ${s.interactId} stand unreachable`);
+  const dist = Math.hypot(s.stand.x - s.x, s.stand.z - s.z);
+  if (dist > INTERACT_RADIUS) fail(`memory station ${s.interactId} pad is ${dist.toFixed(2)}m from its stand point (max ${INTERACT_RADIUS}m)`);
+  const prop = PROPS.find((p) => p.id === s.propId);
+  if (!prop) fail(`memory station ${s.interactId} missing prop ${s.propId}`);
+  else {
+    const b = bounds(prop);
+    const inside = s.x > b.minX + 0.01 && s.x < b.maxX - 0.01 && s.z > b.minZ + 0.01 && s.z < b.maxZ - 0.01;
+    if (inside) fail(`memory station ${s.interactId} pad is inside ${prop.id}`);
+  }
+  for (const o of MEMORY_STATIONS) {
+    if (o === s) continue;
+    if (Math.hypot(o.x - s.x, o.z - s.z) < 0.5 && Math.abs(o.y - s.y) < 0.5) fail(`memory stations ${s.interactId} / ${o.interactId} overlap`);
+  }
 }
 
 const closedObs = cabinDoorObstacle(0)!;

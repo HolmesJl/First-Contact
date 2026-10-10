@@ -7,6 +7,7 @@ import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './characte
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
+import type { BerthOwner } from '../../../shared/bunks';
 import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
@@ -299,8 +300,13 @@ export class LabScene implements View {
     return { x: this.local.x, z: this.local.z };
   }
 
-  setQuestHighlight(interactId: string | null) {
-    this.interior.setQuestHighlight(interactId);
+  setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
+    this.interior.setQuestHighlight(interactId, memoryStationIds);
+  }
+
+  setBerthOwners(owners: Map<number, BerthOwner>) {
+    this.interior.setBerthOwners(owners);
+    this.interact.refreshHover();
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {
@@ -311,12 +317,16 @@ export class LabScene implements View {
     return this.space?.id ?? null;
   }
 
-  /** Dev-only: snap the local player and sync to the server (walk mode). */
-  devTeleport(x: number, z: number) {
+  /** Dev-only: snap the local player (optionally facing `rot`, camera behind) and sync to the server (walk mode). */
+  devTeleport(x: number, z: number, rot?: number) {
     if (this.mode !== 'walk') return;
     const p = clampToShip(x, z, 0);
     this.local.x = p.x;
     this.local.z = p.z;
+    if (rot !== undefined) {
+      this.controls.reset(rot);
+      this.local.rot = this.controls.facing;
+    }
     this.lastSent = '';
     this.hooks.onMove(this.local.x, this.local.z, this.local.rot, false);
   }
