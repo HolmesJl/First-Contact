@@ -85,7 +85,7 @@ export class LabScene implements View {
   private camLook = new THREE.Vector3(0, 1, 0);
   private lookDrag: LookDrag | null = null;
   /** Left-drag left the camera off the character's back; ease yaw (and pitch) back. */
-  private camReturn: { mode: 'smooth' | 'fast'; fromYaw: number; fromPitch: number; t: number; dur: number } | null = null;
+  private camReturn: { mode: 'smooth' | 'fast'; fromYaw: number; fromPitch: number; startMs: number; dur: number } | null = null;
   private cleanup: (() => void)[] = [];
   private focus = new THREE.Vector3();
   private previewStage: THREE.Group | null = null;
@@ -281,7 +281,7 @@ export class LabScene implements View {
     this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog', speed: 0 };
     this.mode = 'walk';
     this.space = null;
-    this.camYaw = self.rot;
+    this.camYaw = followCamYaw(self.rot);
     this.camPitch = DEFAULT_CAM_PITCH;
     this.camReturn = null;
     this.destroyPreviewStage();
@@ -300,7 +300,9 @@ export class LabScene implements View {
 
   private beginCamReturn(mode: 'smooth' | 'fast') {
     const behind = followCamYaw(this.local.rot);
-    if (angleDist(this.camYaw, behind) < 0.02 && Math.abs(this.camPitch - DEFAULT_CAM_PITCH) < 0.02) {
+    if (angleDist(this.camYaw, behind) < 0.008 && Math.abs(this.camPitch - DEFAULT_CAM_PITCH) < 0.008) {
+      this.camYaw = behind;
+      this.camPitch = DEFAULT_CAM_PITCH;
       this.camReturn = null;
       return;
     }
@@ -308,7 +310,7 @@ export class LabScene implements View {
       mode,
       fromYaw: this.camYaw,
       fromPitch: this.camPitch,
-      t: 0,
+      startMs: performance.now(),
       dur: mode === 'fast' ? CAM_RETURN_FAST_S : CAM_RETURN_SMOOTH_S,
     };
   }
@@ -319,11 +321,10 @@ export class LabScene implements View {
     this.endLookDrag('fast');
   }
 
-  private tickCamReturn(dt: number) {
+  private tickCamReturn(_dt: number) {
     const r = this.camReturn;
     if (!r) return;
-    r.t += dt;
-    const u = Math.min(1, r.t / r.dur);
+    const u = Math.min(1, (performance.now() - r.startMs) / (r.dur * 1000));
     const ease = u * u * (3 - 2 * u);
     const targetYaw = followCamYaw(this.local.rot);
     this.camYaw = lerpAngle(r.fromYaw, targetYaw, ease);
@@ -400,7 +401,7 @@ export class LabScene implements View {
     const steer = (dx: number) => {
       this.camReturn = null;
       this.local.rot -= dx * 0.006;
-      this.camYaw = this.local.rot;
+      this.camYaw = followCamYaw(this.local.rot);
       this.camPitch = DEFAULT_CAM_PITCH;
     };
     const orbit = (dx: number, dy: number) => {
@@ -604,10 +605,14 @@ export class LabScene implements View {
       );
       pos.y = Math.max(0.5, pos.y);
     }
-    const follow = this.camReturn ? 14 : this.mode === 'walk' ? 7 : 3;
-    const k = 1 - Math.exp(-follow * dt);
-    this.camPos.lerp(pos, k);
-    this.camLook.lerp(look, k);
+    if (this.camReturn) {
+      this.camPos.copy(pos);
+      this.camLook.copy(look);
+    } else {
+      const k = 1 - Math.exp(-(this.mode === 'walk' ? 7 : 3) * dt);
+      this.camPos.lerp(pos, k);
+      this.camLook.lerp(look, k);
+    }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
   }
@@ -625,7 +630,7 @@ export class LabScene implements View {
   }
 
   dispose() {
-    this.endLookDrag();
+    this.endLookDrag(false);
     this.cleanup.forEach((f) => f());
     for (const id of [...this.entities.keys()]) this.removePlayer(id);
     this.labels.domElement.remove();
