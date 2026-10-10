@@ -7,6 +7,7 @@ import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './characte
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
+import type { BerthOwner } from '../../../shared/bunks';
 import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
@@ -299,8 +300,12 @@ export class LabScene implements View {
     return { x: this.local.x, z: this.local.z };
   }
 
-  setQuestHighlight(interactId: string | null) {
-    this.interior.setQuestHighlight(interactId);
+  setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
+    this.interior.setQuestHighlight(interactId, memoryStationIds);
+  }
+
+  setBerthOwners(owners: Map<number, BerthOwner>) {
+    this.interior.setBerthOwners(owners);
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {

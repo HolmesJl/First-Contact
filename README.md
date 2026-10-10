@@ -111,9 +111,11 @@ shared/     protocol types, job caps and validation, ship layout and interior da
   shipLayout.ts           exterior data: modules, shapes, heights, corridors, doors, docks, lift
   shipInterior.ts         interior data derived from it: walk shapes, props, stations, spawns, berths, `clampToShip`
   shipInterior.check.ts   `npm run check:layout`: overlaps, blocked doors and ports, reachability from the pods
+  bunks.ts                memory upload stations derived from the bunk and bed props; berth claim rules, hover text
   movement.ts             walk/jog/sprint speeds, the stamina rule, and the server's per-player movement budget
   lab.ts                  the bay's pod constants and `spawnFor` (the bay is the world origin)
 server/     Node WebSocket server: ships, membership, character creation, movement relay, JSON persistence
+  src/bunks.ts            berth claims and memory upload snapshots (server-authoritative, one player per berth)
 client/     Vite + TypeScript + Three.js
   src/scene/intro.ts      Earth, Moon, rocket launch and rendezvous cinematic (also the title backdrop)
   src/scene/ship.ts       the First Contact ship model
@@ -147,7 +149,7 @@ The interior is generated from two shared data files, so the client and server c
 - `shared/shipLayout.ts` is the exterior source of truth (module rects, shapes, heights, corridors, doors, docks, lift). This slice removed the NPC dorm's `dorm-grow` dock (single-connection rule), marks the dorm's two doors `sealed`, and adds `maxPorts: 1` for the dorm and the Captain's cabin.
 - `shared/shipInterior.ts` adds, per room: the **walk shapes** (rects, or circles for the round greenhouse and cabin, a plus-and-disc for the nodes, two rects for the bridge's cut rear corners), the **props** (each solid prop is also an obstacle), **stations**, **spawns** (6 pods and 4 clone tanks in the bay), **berths** (0 in the cabin, 1 to 9 in the bunk room) and the NPC dorm panel. `clampToShip(x, z, level)` keeps a point inside the union of walk shapes and door thresholds minus obstacles; `spaceAt` names the room or corridor under a point.
 
-Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, Upload station, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0, trunk, desk with data pad, keypad prop on the locked door; the lock does nothing yet), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
+Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, a memory upload pad on every bunk, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0 with its own upload pad, trunk, desk with data pad, keypad prop on the locked door; the lock does nothing yet), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
 
 Dev helper: `npm run check:layout` fails on overlapping props, props blocking a door lane or a free port, and any station, spawn, berth or door that cannot be reached from the first pod.
 

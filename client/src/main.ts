@@ -8,6 +8,8 @@ import type { View } from './scene/common';
 import { CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
 import { CabinKeypadOverlay, CABIN_KEYPAD_INTERACT_ID } from './cabinKeypad';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
+import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
+import { MemoryUploadOverlay } from './memoryUpload';
 import { objectiveInteractId, questObjective } from '../../shared/opening';
 import type { ClientMsg, Job, PlayerState, ServerMsg, ShipMeta } from '../../shared/protocol';
 
@@ -56,6 +58,7 @@ let creator: CreatorPanel | null = null;
 let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
+let memoryUpload: MemoryUploadOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let hostId = '';
@@ -182,6 +185,12 @@ async function startLab() {
         );
         return;
       }
+      const berth = id === null ? null : berthFromMemoryStationId(id);
+      if (berth !== null) {
+        const owner = berthOwners(players.values()).get(berth) ?? null;
+        hud?.setInteractPrompt(memoryStationHoverPrompt(berth, owner, players.get(selfId) ?? null));
+        return;
+      }
       hud?.setInteractPrompt(prompt);
     },
     onInteract: (id) => {
@@ -231,16 +240,22 @@ async function startLab() {
   for (const p of players.values()) if (p.id !== selfId) lab.syncPlayer(p);
   if (me.character) lab.syncPlayer(me);
   if (shipMeta) lab.setCabinDoor(shipMeta.cabinDoor);
+  syncBerthOwners();
+}
+
+function syncBerthOwners() {
+  lab?.setBerthOwners(berthOwners(players.values()));
 }
 
 function syncHudSelf() {
   const me = players.get(selfId);
   if (!me || !hud) return;
   hud.setHasPad(me.hasPad);
-  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, me.hasPad, players, selfId);
-  lab?.setQuestHighlight(
-    me.character ? objectiveInteractId(me.questStep, me.character.job, me.isClone) : null,
-  );
+  hud.setBerth(me.berth, me.lastUploadAt);
+  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, me.hasPad, players, selfId, me.berth);
+  const terminal = me.character ? objectiveInteractId(me.questStep, me.character.job, me.isClone, me.berth) : null;
+  const stations = me.character && me.questStep === 'upload-memories' ? uploadObjectiveStationIds(me, players.values()) : [];
+  lab?.setQuestHighlight(terminal, stations);
 }
 
 function enterWalk(me: PlayerState) {
@@ -287,6 +302,9 @@ function handle(m: ServerMsg) {
       wakeIntro?.renderCrew(players, selfId, hostId);
       if (!lab) return;
       lab.syncPlayer(p);
+      syncBerthOwners();
+      // Another player's claim can free or take a bunk the upload objective was pointing at.
+      if (p.id !== selfId && players.get(selfId)?.questStep === 'upload-memories') syncHudSelf();
       if (p.id === selfId) {
         if (p.hasPad && !hadPad) {
           hadPad = true;
@@ -322,6 +340,12 @@ function handle(m: ServerMsg) {
     case 'cabinDoor':
       if (shipMeta) shipMeta = { ...shipMeta, cabinDoor: m.door };
       lab?.setCabinDoor(m.door);
+      break;
+    case 'memoryUpload':
+      memoryUpload?.close();
+      memoryUpload = new MemoryUploadOverlay(m.berth, m.at, m.claimed, () => {
+        memoryUpload = null;
+      });
       break;
     case 'cabinKeypadResult':
       if (cabinKeypad) {

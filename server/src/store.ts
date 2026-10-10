@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { upgradeLegacyCharacter, type Character } from '../../shared/protocol';
+import { upgradeLegacyCharacter, type Character, type MemorySnapshot } from '../../shared/protocol';
 import type { QuestStep } from '../../shared/opening';
 
 export interface MemberRecord {
@@ -16,6 +16,10 @@ export interface MemberRecord {
   reportedIn?: boolean;
   questStep?: QuestStep;
   cloneTank?: number | null;
+  /** Claimed berth index (see shared/bunks.ts), or null. */
+  berth?: number | null;
+  /** Last memory upload; what a clone would restore. */
+  memory?: MemorySnapshot | null;
 }
 
 export interface ShipRecord {

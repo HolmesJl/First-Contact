@@ -26,7 +26,9 @@ import {
 } from '../../shared/protocol';
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
 import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
+import { isMemoryStationId } from '../../shared/bunks';
 import { clampToShip } from '../../shared/shipInterior';
+import { applyMemoryUpload } from './bunks';
 import {
   applyCabinKeypadChange,
   applyCabinKeypadEnter,
@@ -84,6 +86,8 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     reportedIn: m.reportedIn ?? false,
     questStep: m.questStep ?? 'wake',
     cloneTank: m.cloneTank ?? null,
+    berth: m.berth ?? null,
+    lastUploadAt: m.memory?.at ?? null,
   };
 }
 
@@ -236,6 +240,17 @@ wss.on('connection', (ws) => {
           const k = applyCabinKeypadInteract(ship, me);
           if (!k.ok) return send(ws, { t: 'error', message: k.message });
           return;
+        }
+        if (isMemoryStationId(msg.id)) {
+          const up = applyMemoryUpload(ship, me, msg.id);
+          if (!up.ok) return send(ws, { t: 'error', message: up.message });
+          store.save();
+          broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+          send(ws, { t: 'memoryUpload', berth: up.berth, at: up.at, claimed: up.claimed });
+          if (up.notice) broadcast(ship.code, { t: 'notice', message: up.notice }, pid);
+          if (up.nextHint) send(ws, { t: 'notice', message: up.nextHint });
+          console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} uploaded memories at berth ${up.berth}${up.claimed ? ' (claimed)' : ''}`);
+          break;
         }
         const res = applyInteract(ship, me, msg.id);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
