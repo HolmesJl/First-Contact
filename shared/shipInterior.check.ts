@@ -1,6 +1,7 @@
 /** Layout sanity check: `npm run check:layout`. Overlaps, blocked doors and ports, unreachable stations. */
 import { SHIP_LAYOUT } from './shipLayout';
-import { INTERACT_RADIUS, QUEST_TERMINALS } from './opening';
+import { INTERACT_RADIUS } from './opening';
+import { QUEST_TERMINALS } from './shipInterior';
 import { BERTHS, PROPS, SPAWNS, STATIONS, areaFor, clampToShip, isWalkable, portClearZone, thresholdRect, visiblePorts, type Prop } from './shipInterior';
 
 const problems: string[] = [];
@@ -69,12 +70,12 @@ if (!isWalkable(p.x, p.z)) fail('clamp returned an unwalkable point');
 
 for (const t of QUEST_TERMINALS) {
   if (!isWalkable(t.x, t.z)) fail(`quest terminal ${t.interactId} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}) not walkable`);
-  const station = STATIONS.find((s) => s.id === t.propId);
-  if (!station) {
-    fail(`quest terminal ${t.interactId} has no station prop ${t.propId}`);
+  const prop = PROPS.find((p) => p.id === t.propId);
+  if (!prop) {
+    fail(`quest terminal ${t.interactId} missing prop ${t.propId}`);
     continue;
   }
-  const dist = Math.hypot(t.x - station.x, t.z - station.z);
+  const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
   if (dist > INTERACT_RADIUS)
     fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
 }

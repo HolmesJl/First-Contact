@@ -319,33 +319,6 @@ box('engine', 'engine-console', 'console', -33.3, -62.2, 0.9, 1.8, 1.1, { face: 
 
 export const PROPS: readonly Prop[] = props;
 
-const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
-  N: { dx: 0, dz: -1 },
-  S: { dx: 0, dz: 1 },
-  E: { dx: 1, dz: 0 },
-  W: { dx: -1, dz: 0 },
-};
-
-/** Quest-terminal click / proximity point: mounted on the prop's `face` side at desk height. */
-export function questTerminalPosition(propId: string, standOff = 0.22) {
-  const prop = PROPS.find((p) => p.id === propId);
-  if (!prop) throw new Error(`unknown quest prop: ${propId}`);
-  const y0 = prop.y ?? 0;
-  if (prop.kind === 'pad') {
-    return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
-  }
-  const face = prop.face ?? 'S';
-  const f = FACE_OUT[face];
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  const along = half + standOff;
-  return {
-    x: prop.x + f.dx * along,
-    z: prop.z + f.dz * along,
-    y: y0 + prop.h + 0.04,
-    prop,
-  };
-}
-
 /** Prop ids that host quest-terminal interact points (interact id matches prop id). */
 export const QUEST_TERMINAL_PROP_IDS = [
   'lab-bench',
@@ -447,6 +420,59 @@ export function isWalkable(x: number, z: number, level: Level = 0): boolean {
   const a = areaFor(level);
   return a.shapes.some((s) => insideShape(s, x, z)) && !a.obstacles.some((o) => insideObstacle(o, x, z));
 }
+
+const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
+  N: { dx: 0, dz: -1 },
+  S: { dx: 0, dz: 1 },
+  E: { dx: 1, dz: 0 },
+  W: { dx: -1, dz: 0 },
+};
+
+/** Quest-terminal click / proximity: on the prop's `face` side, nudged outward until walkable. */
+export function questTerminalPosition(propId: string, standOff = 0.22) {
+  const prop = PROPS.find((p) => p.id === propId);
+  if (!prop) throw new Error(`unknown quest prop: ${propId}`);
+  const y0 = prop.y ?? 0;
+  if (prop.kind === 'pad') {
+    if (!isWalkable(prop.x, prop.z)) throw new Error(`quest pad ${propId} not on walkable floor`);
+    return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
+  }
+  const face = prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  for (let extra = 0; extra <= 1.35; extra += 0.1) {
+    const along = half + standOff + extra;
+    const x = prop.x + f.dx * along;
+    const z = prop.z + f.dz * along;
+    if (isWalkable(x, z)) {
+      return { x, z, y: y0 + prop.h + 0.04, prop };
+    }
+  }
+  throw new Error(`quest terminal ${propId}: no walkable stand point on ${face} face`);
+}
+
+const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {
+  'lab-bench': 'check-in terminal',
+  'bunk-desk-pad': 'desk terminal',
+  'captain-desk': 'desk terminal',
+  'star-map': 'helm terminal',
+  'botanist-station': 'Botanist terminal',
+  'teleporter-pad': 'Engineer terminal',
+  armory: 'Operations terminal',
+};
+
+export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
+  const { x, z, y, prop } = questTerminalPosition(propId);
+  return {
+    interactId: propId,
+    propId,
+    room: SPACE_NAMES[prop.room] ?? prop.room,
+    object: QUEST_TERMINAL_LABELS[propId],
+    x,
+    z,
+    y,
+  };
+});
 
 function insideObstacle(o: Obstacle, x: number, z: number) {
   const R_ = PLAYER_RADIUS;

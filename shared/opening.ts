@@ -1,5 +1,5 @@
 import type { Job } from './protocol';
-import { QUEST_TERMINAL_PROP_IDS, SPACE_NAMES, STATIONS, questTerminalPosition } from './shipInterior';
+import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 
 export const TRANSIT_YEARS = 60;
 export const SHIP_DISPLAY_NAME = 'First Contact';
@@ -42,30 +42,9 @@ export function stationById(id: string) {
   return STATIONS.find((s) => s.id === id);
 }
 
-const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {
-  'lab-bench': 'check-in terminal',
-  'bunk-desk-pad': 'desk terminal',
-  'captain-desk': 'desk terminal',
-  'star-map': 'helm terminal',
-  'botanist-station': 'Botanist terminal',
-  'teleporter-pad': 'Engineer terminal',
-  armory: 'Operations terminal',
-};
-
-export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
-  const { x, z, y, prop } = questTerminalPosition(propId);
-  return {
-    interactId: propId,
-    propId,
-    room: SPACE_NAMES[prop.room] ?? prop.room,
-    object: QUEST_TERMINAL_LABELS[propId],
-    x,
-    z,
-    y,
-  };
-});
-
 const INTERACT_IDS = new Set<string>(QUEST_TERMINALS.map((t) => t.interactId));
+
+export { QUEST_TERMINALS } from './shipInterior';
 
 export function captainCommsObjective(
   crew: readonly { id: string; character: unknown | null; reportedIn?: boolean }[],
