@@ -299,7 +299,8 @@ export class LabScene implements View {
   }
 
   private beginCamReturn(mode: 'smooth' | 'fast') {
-    if (angleDist(this.camYaw, this.local.rot) < 0.02 && Math.abs(this.camPitch - DEFAULT_CAM_PITCH) < 0.02) {
+    const behind = followCamYaw(this.local.rot);
+    if (angleDist(this.camYaw, behind) < 0.02 && Math.abs(this.camPitch - DEFAULT_CAM_PITCH) < 0.02) {
       this.camReturn = null;
       return;
     }
@@ -324,7 +325,7 @@ export class LabScene implements View {
     r.t += dt;
     const u = Math.min(1, r.t / r.dur);
     const ease = u * u * (3 - 2 * u);
-    const targetYaw = this.local.rot;
+    const targetYaw = followCamYaw(this.local.rot);
     this.camYaw = lerpAngle(r.fromYaw, targetYaw, ease);
     this.camPitch = r.fromPitch + (DEFAULT_CAM_PITCH - r.fromPitch) * ease;
     if (u >= 1) {
@@ -641,4 +642,9 @@ function angleDist(a: number, b: number) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
   if (d < -Math.PI) d += Math.PI * 2;
   return Math.abs(d);
+}
+
+/** Yaw that places the follow camera behind the character (see updateCamera offset). */
+function followCamYaw(characterRot: number) {
+  return characterRot + Math.PI;
 }
