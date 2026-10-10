@@ -26,7 +26,7 @@ import {
 } from '../../shared/protocol';
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
 import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
-import { clampMoveToShip } from '../../shared/shipInterior';
+import { clampMoveToShip, clampToShip } from '../../shared/shipInterior';
 import {
   applyCabinKeypadChange,
   applyCabinKeypadEnter,
@@ -229,7 +229,7 @@ wss.on('connection', (ws) => {
       }
       case 'interact': {
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampMoveToShip(me.x, me.z, msg.x, msg.z, 0, obs);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
         if (msg.id === CABIN_KEYPAD_INTERACT_ID) {
@@ -247,7 +247,7 @@ wss.on('connection', (ws) => {
       }
       case 'cabinKeypad': {
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampMoveToShip(me.x, me.z, msg.x, msg.z, 0, obs);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
         const now = Date.now();
