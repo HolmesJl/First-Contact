@@ -100,6 +100,7 @@ The HUD shows the room you are in and flashes its name when you enter.
 npm run typecheck   # server + client
 npm run build       # production build of the client into client/dist
 npm run check:controls  # unit check of the camera/movement math in client/src/input/
+npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).

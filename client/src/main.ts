@@ -230,7 +230,7 @@ async function startLab() {
   const me = players.get(selfId)!;
   for (const p of players.values()) if (p.id !== selfId) lab.syncPlayer(p);
   if (me.character) lab.syncPlayer(me);
-  if (shipMeta) lab.setCabinDoor(shipMeta.cabinDoor);
+  if (shipMeta) lab.setCabinDoor(shipMeta.cabinDoor, true);
 }
 
 function syncHudSelf() {

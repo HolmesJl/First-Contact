@@ -26,7 +26,7 @@ import {
 } from '../../shared/protocol';
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
 import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
-import { clampToShip } from '../../shared/shipInterior';
+import { clampMoveToShip } from '../../shared/shipInterior';
 import {
   applyCabinKeypadChange,
   applyCabinKeypadEnter,
@@ -229,7 +229,7 @@ wss.on('connection', (ws) => {
       }
       case 'interact': {
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampToShip(msg.x, msg.z, 0, obs);
+        const p = clampMoveToShip(me.x, me.z, msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
         if (msg.id === CABIN_KEYPAD_INTERACT_ID) {
@@ -247,7 +247,7 @@ wss.on('connection', (ws) => {
       }
       case 'cabinKeypad': {
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampToShip(msg.x, msg.z, 0, obs);
+        const p = clampMoveToShip(me.x, me.z, msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
         const now = Date.now();
@@ -307,7 +307,9 @@ wss.on('connection', (ws) => {
         const dz = z - me.z;
         const frac = budget.take(Math.hypot(dx, dz), performance.now() / 1000);
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampToShip(me.x + dx * frac, me.z + dz * frac, 0, obs);
+        // Swept from the last accepted position: a point clamp would eject a step past the panel's mid-plane on the
+        // cabin side, letting a client that does not clamp (or a hacked one) walk through the closed door.
+        const p = clampMoveToShip(me.x, me.z, me.x + dx * frac, me.z + dz * frac, 0, obs);
         me.x = p.x;
         me.z = p.z;
         trackCabinDoorPass(ship, me, prevX, prevZ);
