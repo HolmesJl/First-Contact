@@ -107,7 +107,8 @@ if (Math.hypot(openLane.x - lane.x, openLane.z - lane.z) < 0.08) {
 }
 const kp = cabinKeypadInteractPosition();
 const door = cabinDoorCenter();
-if (!isWalkable(kp.x, kp.z)) fail(`cabin keypad stand (${kp.x.toFixed(2)}, ${kp.z.toFixed(2)}) not walkable`);
+if (!isWalkable(kp.x, kp.z, 0, [closedObs])) fail(`cabin keypad stand (${kp.x.toFixed(2)}, ${kp.z.toFixed(2)}) not walkable with the door closed`);
+if (kp.x < door.x + 0.3) fail('cabin keypad stand is not on the corridor side of the door');
 if (Math.hypot(kp.x - CABIN_KEYPAD.x, kp.z - CABIN_KEYPAD.z) > 1.2) {
   fail('cabin keypad interact point too far from keypad prop');
 }
