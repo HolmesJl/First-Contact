@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { starfield, canvasTexture } from './common';
 import { Batch, MAT, labelSprite, screenMaterial, type MatKey } from './interior/kit';
 import { buildProp, type PodFx, type PropAnim, type PropContext } from './interior/props';
+import { QuestTerminalLayer } from './questTerminals';
 import { SHIP_LAYOUT, type Corridor, type Door, type Rect, type Room } from '../../../shared/shipLayout';
 import {
   BRIDGE_POLY,
@@ -282,6 +283,7 @@ export class ShipInterior {
   private time = 0;
   private sun = new THREE.DirectionalLight(0xfff4e6, 1.6);
   private cameraAnchor = new THREE.Vector3();
+  private questTerminals = new QuestTerminalLayer();
 
   constructor() {
     this.buildEnvironment();
@@ -291,7 +293,12 @@ export class ShipInterior {
     this.buildDoors();
     this.buildPorts();
     this.buildSealedDoors();
+    this.questTerminals.attach(this.root);
     this.setFocus(null);
+  }
+
+  setQuestHighlight(interactId: string | null) {
+    this.questTerminals.setHighlight(interactId);
   }
 
   // ---------------------------------------------------------------- environment
@@ -775,6 +782,7 @@ export class ShipInterior {
    */
   update(dt: number, focus: THREE.Vector3, camera: THREE.PerspectiveCamera) {
     this.time += dt;
+    this.questTerminals.update(this.time);
     this.sun.position.set(focus.x + 4, 12, focus.z + 7);
     this.sun.target.position.copy(focus);
 

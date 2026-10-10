@@ -270,7 +270,6 @@ export function buildProp(p: Prop, ctx: PropContext) {
     const s = labelSprite(p.label!, kind, p.station ? 0.26 : 0.22);
     const top = y0 + p.h;
     s.position.set(p.x, Math.min(Math.max(top + 0.32, 1.25), 3.3), p.z);
-    s.userData.prop = p.id;
     ctx.group.add(s);
     ctx.sprites.push(s);
   }

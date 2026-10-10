@@ -267,6 +267,7 @@ BUNK_STACKS.forEach((s, i) => {
   box('bunks', `closet-stack-${i + 1}`, 'closet', s.x, s.z + 1.2, 1.0, 0.5, 2.6, { face, label: `CLOSETS ${i * 3 + 1}-${i * 3 + 3}` });
 });
 box('bunks', 'upload-station', 'console', -51.6, 9.0, 1.0, 1.4, 1.3, { face: 'W', label: 'UPLOAD MEMORIES', station: 'upload' });
+box('bunks', 'bunk-desk-pad', 'desk', -54.2, 7.8, 1.2, 0.7, 0.7, { face: 'S', label: 'DESK · DATA PAD' });
 
 // Captain's cabin.
 box('cabin', 'captain-bed', 'bed', -53.1, 18.3, 2.0, 1.4, 0.6, { face: 'E', label: "CAPTAIN'S BERTH" });
@@ -317,6 +318,17 @@ cyl('engine', 'reactor-core', 'reactor', -38.2, -65.5, 1.5, 3.2, { label: 'REACT
 box('engine', 'engine-console', 'console', -33.3, -62.2, 0.9, 1.8, 1.1, { face: 'W', label: 'ENGINE STATUS', station: 'engine-status', job: 'engineer' });
 
 export const PROPS: readonly Prop[] = props;
+
+/** Prop ids that host quest-terminal interact points (interact id matches prop id). */
+export const QUEST_TERMINAL_PROP_IDS = [
+  'lab-bench',
+  'bunk-desk-pad',
+  'captain-desk',
+  'star-map',
+  'botanist-station',
+  'teleporter-pad',
+  'armory',
+] as const;
 
 export const NPC_PANEL = { room: 'bunks' as RoomId, x: -57.95, z: 6, text: 'NPC DORM' };
 export const CABIN_KEYPAD = { x: -47.3, z: 19.8, y: 1.3 };
@@ -408,6 +420,59 @@ export function isWalkable(x: number, z: number, level: Level = 0): boolean {
   const a = areaFor(level);
   return a.shapes.some((s) => insideShape(s, x, z)) && !a.obstacles.some((o) => insideObstacle(o, x, z));
 }
+
+const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
+  N: { dx: 0, dz: -1 },
+  S: { dx: 0, dz: 1 },
+  E: { dx: 1, dz: 0 },
+  W: { dx: -1, dz: 0 },
+};
+
+/** Quest-terminal click / proximity: on the prop's `face` side, nudged outward until walkable. */
+export function questTerminalPosition(propId: string, standOff = 0.22) {
+  const prop = PROPS.find((p) => p.id === propId);
+  if (!prop) throw new Error(`unknown quest prop: ${propId}`);
+  const y0 = prop.y ?? 0;
+  if (prop.kind === 'pad') {
+    if (!isWalkable(prop.x, prop.z)) throw new Error(`quest pad ${propId} not on walkable floor`);
+    return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
+  }
+  const face = prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  for (let extra = 0; extra <= 1.35; extra += 0.1) {
+    const along = half + standOff + extra;
+    const x = prop.x + f.dx * along;
+    const z = prop.z + f.dz * along;
+    if (isWalkable(x, z)) {
+      return { x, z, y: y0 + prop.h + 0.04, prop };
+    }
+  }
+  throw new Error(`quest terminal ${propId}: no walkable stand point on ${face} face`);
+}
+
+const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {
+  'lab-bench': 'check-in terminal',
+  'bunk-desk-pad': 'desk terminal',
+  'captain-desk': 'desk terminal',
+  'star-map': 'helm terminal',
+  'botanist-station': 'Botanist terminal',
+  'teleporter-pad': 'Engineer terminal',
+  armory: 'Operations terminal',
+};
+
+export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
+  const { x, z, y, prop } = questTerminalPosition(propId);
+  return {
+    interactId: propId,
+    propId,
+    room: SPACE_NAMES[prop.room] ?? prop.room,
+    object: QUEST_TERMINAL_LABELS[propId],
+    x,
+    z,
+    y,
+  };
+});
 
 function insideObstacle(o: Obstacle, x: number, z: number) {
   const R_ = PLAYER_RADIUS;

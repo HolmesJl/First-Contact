@@ -1,3 +1,5 @@
+import type { QuestStep } from './opening';
+
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
 export type Job = (typeof JOBS)[number];
 
@@ -105,6 +107,13 @@ export interface Character extends Appearance {
   job: Job;
 }
 
+export interface ShipMeta {
+  gameStarted: boolean;
+  gameStartedAt: number | null;
+  shipName: string;
+  transitYears: number;
+}
+
 export interface PlayerState {
   id: string;
   tube: number;
@@ -114,6 +123,11 @@ export interface PlayerState {
   rot: number;
   moving: boolean;
   connected: boolean;
+  isClone: boolean;
+  hasPad: boolean;
+  reportedIn: boolean;
+  questStep: QuestStep;
+  cloneTank: number | null;
 }
 
 /** [id, x, z, rot, moving] */
@@ -122,14 +136,19 @@ export type SnapEntry = [string, number, number, number, 0 | 1];
 export type ClientMsg =
   | { t: 'host'; playerId: string }
   | { t: 'join'; playerId: string; code: string }
+  | { t: 'startGame' }
   | { t: 'create'; character: Character }
-  | { t: 'move'; x: number; z: number; rot: number; moving: boolean };
+  | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
+  | { t: 'interact'; id: string; x: number; z: number }
+  | { t: 'reportIn' };
 
 export type ServerMsg =
-  | { t: 'welcome'; code: string; you: string; hostId: string; players: PlayerState[] }
+  | { t: 'welcome'; code: string; you: string; hostId: string; ship: ShipMeta; players: PlayerState[] }
   | { t: 'error'; message: string; fatal?: boolean }
   | { t: 'createError'; message: string }
   | { t: 'playerUpdated'; player: PlayerState }
+  | { t: 'shipState'; ship: ShipMeta }
+  | { t: 'notice'; message: string }
   | { t: 'snap'; p: SnapEntry[] };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
@@ -158,6 +177,39 @@ export function jobCheck(takenJobs: Job[], job: Job): string | null {
     return 'The last berth is reserved for the Captain.';
   }
   return null;
+}
+
+const INTERACT_ID = /^[a-z0-9][a-z0-9-]{0,48}$/;
+
+export function validateInteractId(id: unknown): string | null {
+  if (typeof id !== 'string' || !INTERACT_ID.test(id)) return 'Unknown object.';
+  return null;
+}
+
+export function parseClientMsg(raw: unknown): ClientMsg | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Record<string, unknown>;
+  switch (m.t) {
+    case 'host':
+    case 'join':
+      return typeof m.playerId === 'string' ? (m as ClientMsg) : null;
+    case 'startGame':
+    case 'reportIn':
+      return { t: m.t };
+    case 'create':
+      return m.character ? { t: 'create', character: m.character as Character } : null;
+    case 'move':
+      if (![m.x, m.z, m.rot].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'move', x: m.x as number, z: m.z as number, rot: m.rot as number, moving: !!m.moving };
+    case 'interact': {
+      const err = validateInteractId(m.id);
+      if (err) return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'interact', id: m.id as string, x: m.x as number, z: m.z as number };
+    }
+    default:
+      return null;
+  }
 }
 
 export function validateCharacter(c: unknown): string | null {

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { upgradeLegacyCharacter, type Character } from '../../shared/protocol';
+import type { QuestStep } from '../../shared/opening';
 
 export interface MemberRecord {
   id: string;
@@ -10,6 +11,11 @@ export interface MemberRecord {
   z: number;
   rot: number;
   joinedAt: number;
+  isClone?: boolean;
+  hasPad?: boolean;
+  reportedIn?: boolean;
+  questStep?: QuestStep;
+  cloneTank?: number | null;
 }
 
 export interface ShipRecord {
@@ -17,6 +23,10 @@ export interface ShipRecord {
   hostId: string;
   createdAt: number;
   members: Record<string, MemberRecord>;
+  gameStarted?: boolean;
+  gameStartedAt?: number | null;
+  shipName?: string;
+  transitYears?: number;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

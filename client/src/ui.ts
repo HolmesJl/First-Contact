@@ -18,6 +18,8 @@ import {
 } from '../../shared/protocol';
 import type { Gait } from '../../shared/movement';
 import type { Space } from '../../shared/shipInterior';
+import { captainCommsObjective, questObjective, type QuestStep } from '../../shared/opening';
+import type { ShipMeta } from '../../shared/protocol';
 
 const ui = document.getElementById('ui')!;
 
@@ -135,6 +137,121 @@ export function flash() {
   setTimeout(() => f.remove(), 1400);
 }
 
+// ---------------------------------------------------------------- wake lobby
+
+export class WakeIntro {
+  readonly el = h('div', 'wake-intro');
+  private list: HTMLElement;
+  private body: HTMLElement;
+  private action: HTMLButtonElement;
+
+  constructor(
+    private ship: ShipMeta,
+    isClone: boolean,
+    handlers: { onStart(): void; onContinue(): void },
+  ) {
+    this.el.innerHTML = `
+      <div class="wake-card panel">
+        <div class="wake-fade"></div>
+        <h2>${isClone ? 'You are a clone' : 'Hibernation ended'}</h2>
+        <div class="wake-body"></div>
+        <div class="label">Crew aboard</div>
+        <ul class="wake-crew"></ul>
+        <button class="btn primary big wake-action"></button>
+      </div>`;
+    this.body = this.el.querySelector('.wake-body')!;
+    this.list = this.el.querySelector('.wake-crew')!;
+    this.action = this.el.querySelector('.wake-action')!;
+    const years = ship.transitYears;
+    if (isClone) {
+      this.body.innerHTML = `<p>You are a <b>clone</b>, decanted after the voyage began. Report to Medical before you join the crew. The <b>${esc(ship.shipName)}</b> has been in transit for <b>${years} years</b>.</p>`;
+      this.action.textContent = 'Continue to clone lab';
+      this.action.onclick = () => handlers.onContinue();
+    } else {
+      this.body.innerHTML = `<p>The <b>${esc(ship.shipName)}</b> has been en route for <b>${years} years</b>. Your hibernation is over — wake or clone your crew and survive the rest of the way.</p>`;
+      this.action.textContent = ship.gameStarted ? 'Continue to clone lab' : 'Start';
+      this.action.onclick = () => (ship.gameStarted ? handlers.onContinue() : handlers.onStart());
+    }
+    ui.appendChild(this.el);
+    requestAnimationFrame(() => this.el.classList.add('show'));
+  }
+
+  renderCrew(players: Map<string, PlayerState>, selfId: string, hostId: string) {
+    const list = [...players.values()].sort((a, b) => a.tube - b.tube);
+    this.list.innerHTML = list
+      .map((p) => {
+        const c = p.character;
+        const who = c ? `${c.job} ${esc(c.firstName)} ${esc(c.lastName)}` : `Berth CL-0${p.tube + 1} (forming)`;
+        const tags = [p.id === selfId ? 'you' : '', p.id === hostId ? 'host' : '', p.isClone ? 'clone' : ''].filter(Boolean).join(' · ');
+        return `<li><span>${who}</span><span class="muted">${tags}</span></li>`;
+      })
+      .join('');
+  }
+
+  enableContinue(onContinue: () => void) {
+    this.action.textContent = 'Continue to clone lab';
+    this.action.onclick = onContinue;
+  }
+
+  destroy() {
+    this.el.classList.remove('show');
+    setTimeout(() => this.el.remove(), 500);
+  }
+}
+
+// ---------------------------------------------------------------- data pad
+
+export class DataPadOverlay {
+  readonly el = h('div', 'pad-overlay');
+  private body: HTMLElement;
+
+  constructor(
+    private ship: ShipMeta,
+    private me: PlayerState,
+    players: Map<string, PlayerState>,
+    handlers: { onReportIn(): void; onClose(): void },
+  ) {
+    const crew = [...players.values()].filter((p) => p.character);
+    const job = me.character!.job;
+    const others = [...players.values()].filter((p) => p.character && p.id !== me.id);
+    const reportedCount = others.filter((p) => p.reportedIn).length;
+    const isCaptainComms = job === 'Captain' && me.questStep === 'captain-comms';
+    const canOpenComms = isCaptainComms && reportedCount >= 1;
+    const task = isCaptainComms
+      ? captainCommsObjective([...players.values()], me.id)
+      : questObjective(me.questStep, job, me.isClone, me.hasPad);
+    this.el.innerHTML = `
+      <div class="pad panel">
+        <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
+        <div class="pad-scroll"></div>
+        <footer>
+          <button class="btn primary report-in" ${me.questStep === 'report' || canOpenComms ? '' : 'disabled'}>${isCaptainComms ? 'Open comms channel' : 'Report in to bridge'}</button>
+          ${isCaptainComms && !canOpenComms ? '<p class="muted pad-hint">Opens when at least one crew member reports in.</p>' : ''}
+        </footer>
+      </div>`;
+    this.body = this.el.querySelector('.pad-scroll')!;
+    this.body.innerHTML = `
+      <p class="kicker">Welcome back</p>
+      <p>Ship <b>${esc(ship.shipName)}</b> · ${ship.transitYears} years in transit · hull &amp; life support <i>nominal (placeholder)</i></p>
+      <h4>Crew aboard</h4>
+      <ul>${crew.map((p) => `<li><b>${esc(p.character!.job)}</b> ${esc(p.character!.firstName)} ${esc(p.character!.lastName)}${p.reportedIn ? ' ✓' : ''}</li>`).join('')}</ul>
+      <h4>Your task</h4>
+      <p>${esc(task)}</p>`;
+    this.el.querySelector('.pad-close')!.addEventListener('click', () => handlers.onClose());
+    this.el.querySelector('.report-in')!.addEventListener('click', () => handlers.onReportIn());
+    this.el.addEventListener('click', (e) => {
+      if (e.target === this.el) handlers.onClose();
+    });
+    ui.appendChild(this.el);
+    requestAnimationFrame(() => this.el.classList.add('show'));
+  }
+
+  destroy() {
+    this.el.classList.remove('show');
+    setTimeout(() => this.el.remove(), 300);
+  }
+}
+
 // ---------------------------------------------------------------- hud
 
 export class Hud {
@@ -149,6 +266,9 @@ export class Hud {
   private lastStatus = '';
   private lastRoom = '';
   private roomTimer = 0;
+  private objective = h('div', 'objective-line');
+  private inventory = h('div', 'inventory-strip');
+  private interactPrompt = h('div', 'interact-prompt');
 
   constructor(
     private code: string,
@@ -182,7 +302,44 @@ export class Hud {
     this.bar = this.status.querySelector('.stamina i');
     this.gaitLabel = this.status.querySelector('.gait');
     this.loc = this.el.querySelector('.loc');
-    ui.append(this.el, this.hint, this.status, this.roomBanner);
+    this.inventory.innerHTML = `<span class="label">Gear</span><div class="slots"><span class="slot empty" title="Communicator">📟</span></div>`;
+    ui.append(this.el, this.hint, this.status, this.roomBanner, this.objective, this.inventory, this.interactPrompt);
+  }
+
+  setObjective(text: string) {
+    this.objective.textContent = text;
+    this.objective.hidden = !text;
+  }
+
+  setInteractPrompt(text: string | null) {
+    if (!text) {
+      this.interactPrompt.hidden = true;
+      return;
+    }
+    this.interactPrompt.hidden = false;
+    this.interactPrompt.innerHTML = `<kbd>Click</kbd> ${esc(text)}`;
+  }
+
+  setHasPad(has: boolean) {
+    const slot = this.inventory.querySelector('.slot');
+    if (!slot) return;
+    slot.classList.toggle('empty', !has);
+    slot.classList.toggle('filled', has);
+  }
+
+  syncPlayerQuest(
+    job: Job | null,
+    step: QuestStep,
+    isClone: boolean,
+    hasPad: boolean,
+    players?: Map<string, PlayerState>,
+    selfId?: string,
+  ) {
+    if (job === 'Captain' && step === 'captain-comms' && players && selfId) {
+      this.setObjective(captainCommsObjective([...players.values()], selfId));
+      return;
+    }
+    this.setObjective(questObjective(step, job, isClone, hasPad));
   }
 
   showControls(show: boolean) {
