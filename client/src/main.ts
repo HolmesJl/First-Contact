@@ -223,13 +223,18 @@ async function startLab() {
     (window as unknown as {
       __fc: {
         lab: LabScene;
-        teleport(x: number, z: number): void;
+        teleport(x: number, z: number, rot?: number): void;
         cabinDoorFrac(f: number): void;
+        interact(id: string): void;
       };
     }).__fc = {
       lab,
-      teleport: (x, z) => lab?.devTeleport(x, z),
+      teleport: (x, z, rot) => lab?.devTeleport(x, z, rot),
       cabinDoorFrac: (f) => lab?.setCabinDoor({ codeSet: true, open: f > 0.5, animAt: Date.now(), openFrac: f }, true),
+      interact: (id) => {
+        const { x, z } = lab!.localPos();
+        net?.send({ t: 'interact', id, x, z });
+      },
     };
   resize();
   hud = new Hud(shipCode, selfId, hostId);

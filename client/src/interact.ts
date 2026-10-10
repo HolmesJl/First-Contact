@@ -35,6 +35,11 @@ export class InteractSystem {
     this.highlight?.removeFromParent();
   }
 
+  /** Re-emit the hover for the current target (its prompt may depend on state that just changed). */
+  refreshHover() {
+    if (this.hoverId) this.hooks.onHover(this.hoverId, interactPrompt(this.hoverId));
+  }
+
   update() {
     if (!this.hooks.isActive()) {
       this.setHover(null);

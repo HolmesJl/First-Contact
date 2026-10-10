@@ -11,6 +11,22 @@ export function berthOwner(ship: ShipRecord, berth: number): MemberRecord | null
   return Object.values(ship.members).find((m) => m.berth === berth) ?? null;
 }
 
+/** Stations follow the opening order: nothing to upload until the data pad is in hand. Free use from then on. */
+function beforeUploadHint(step: QuestStep): string | null {
+  switch (step) {
+    case 'wake':
+      return 'Wait for the crew to wake the ship.';
+    case 'clone-doctor':
+      return 'Check in with Medical first.';
+    case 'captain-set-code':
+      return 'Set your cabin door code at the keypad first.';
+    case 'pick-pad':
+      return 'Pick up your data pad first.';
+    default:
+      return null;
+  }
+}
+
 function takeSnapshot(member: MemberRecord, now: number): MemorySnapshot {
   return { version: 1, at: now, questStep: member.questStep ?? 'wake', inventory: null };
 }
@@ -30,6 +46,9 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
   const label = berthLabel(berth);
   member.berth ??= null;
 
+  const order = beforeUploadHint(member.questStep ?? 'wake');
+  if (order) return { ok: false, message: order };
+
   if (!berthAllowedForJob(berth, job)) {
     return { ok: false, message: berth === 0 ? "That is the Captain's berth." : 'The Captain sleeps in the cabin, not the bunk room.' };
   }
@@ -44,7 +63,6 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
 
   const claimed = member.berth === null;
   member.berth = berth;
-  member.memory = takeSnapshot(member, now);
 
   const name = `${member.character.firstName} ${member.character.lastName}`;
   let quest: QuestStep | undefined;
@@ -55,6 +73,8 @@ export function applyMemoryUpload(ship: ShipRecord, member: MemberRecord, intera
     quest = member.questStep;
     nextHint = questStepCompleteNotice(prev, job, !!member.isClone, berth) ?? undefined;
   }
+  // Snapshot after the step advance so a restored clone does not have to redo the upload objective.
+  member.memory = takeSnapshot(member, now);
   return {
     ok: true,
     berth,

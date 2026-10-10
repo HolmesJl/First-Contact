@@ -306,6 +306,7 @@ export class LabScene implements View {
 
   setBerthOwners(owners: Map<number, BerthOwner>) {
     this.interior.setBerthOwners(owners);
+    this.interact.refreshHover();
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {
@@ -316,12 +317,16 @@ export class LabScene implements View {
     return this.space?.id ?? null;
   }
 
-  /** Dev-only: snap the local player and sync to the server (walk mode). */
-  devTeleport(x: number, z: number) {
+  /** Dev-only: snap the local player (optionally facing `rot`, camera behind) and sync to the server (walk mode). */
+  devTeleport(x: number, z: number, rot?: number) {
     if (this.mode !== 'walk') return;
     const p = clampToShip(x, z, 0);
     this.local.x = p.x;
     this.local.z = p.z;
+    if (rot !== undefined) {
+      this.controls.reset(rot);
+      this.local.rot = this.controls.facing;
+    }
     this.lastSent = '';
     this.hooks.onMove(this.local.x, this.local.z, this.local.rot, false);
   }
