@@ -586,6 +586,137 @@ export function clampToShip(
   return p;
 }
 
+interface SweepHit {
+  /** Fraction of the move at which the player's disc first touches the obstacle. */
+  t: number;
+  /** Outward surface normal at the contact. */
+  nx: number;
+  nz: number;
+}
+
+/** Slack so a disc resting on a face (distance exactly R) still counts as outside and is swept, not pushed. */
+const SWEEP_TOL = 1e-3;
+const SWEEP_EPS = 1e-4;
+
+/** First t ≥ 0 at which a ray from (ax, az) along (dx, dz) reaches a circle; null if it misses or starts inside. */
+function rayCircle(ax: number, az: number, dx: number, dz: number, cx: number, cz: number, r: number, tolT: number): number | null {
+  const fx = ax - cx;
+  const fz = az - cz;
+  const a = dx * dx + dz * dz;
+  const b = 2 * (fx * dx + fz * dz);
+  const c = fx * fx + fz * fz - r * r;
+  if (b >= 0) return null;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  const t = (-b - Math.sqrt(disc)) / (2 * a);
+  if (t < -tolT || t > 1) return null;
+  return Math.max(0, t);
+}
+
+/**
+ * Sweep the player's disc from (ax, az) to (bx, bz) against one obstacle. Null if the move never touches it or the
+ * disc already overlaps it at the start (the point clamp handles that case).
+ */
+function sweepObstacle(o: Obstacle, ax: number, az: number, bx: number, bz: number): SweepHit | null {
+  const R_ = PLAYER_RADIUS;
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return null;
+  const tolT = SWEEP_TOL / len;
+  if (!('rect' in o)) {
+    const t = rayCircle(ax, az, dx, dz, o.x, o.z, o.r + R_, tolT);
+    if (t === null) return null;
+    const hx = ax + dx * t - o.x;
+    const hz = az + dz * t - o.z;
+    const hl = Math.hypot(hx, hz) || 1;
+    return { t, nx: hx / hl, nz: hz / hl };
+  }
+  let best: SweepHit | null = null;
+  const consider = (t: number, nx: number, nz: number) => {
+    if (t < -tolT || t > 1) return;
+    if (nx * dx + nz * dz >= 0) return;
+    const tt = Math.max(0, t);
+    if (!best || tt < best.t) best = { t: tt, nx, nz };
+  };
+  // Flat faces of the inflated rect (hit point must lie within the un-inflated extent along the face).
+  if (dx !== 0) {
+    for (const [faceX, nx] of [
+      [o.minX - R_, -1],
+      [o.maxX + R_, 1],
+    ] as const) {
+      const t = (faceX - ax) / dx;
+      const hz = az + dz * t;
+      if (hz >= o.minZ && hz <= o.maxZ) consider(t, nx, 0);
+    }
+  }
+  if (dz !== 0) {
+    for (const [faceZ, nz] of [
+      [o.minZ - R_, -1],
+      [o.maxZ + R_, 1],
+    ] as const) {
+      const t = (faceZ - az) / dz;
+      const hx = ax + dx * t;
+      if (hx >= o.minX && hx <= o.maxX) consider(t, 0, nz);
+    }
+  }
+  // Rounded corners.
+  for (const cx of [o.minX, o.maxX])
+    for (const cz of [o.minZ, o.maxZ]) {
+      const t = rayCircle(ax, az, dx, dz, cx, cz, R_, tolT);
+      if (t === null) continue;
+      const hx = ax + dx * t - cx;
+      const hz = az + dz * t - cz;
+      const hl = Math.hypot(hx, hz) || 1;
+      consider(t, hx / hl, hz / hl);
+    }
+  return best;
+}
+
+/**
+ * Nearest legal end point for a move from one legal position to another, on a level. Unlike `clampToShip` (a point
+ * push-out, which ejects a point past the mid-plane of a thin obstacle on the far side), this sweeps the player's disc
+ * along the move: the move stops where it first touches an obstacle and the remainder slides along the face. Thin
+ * dynamic obstacles such as the sliding cabin door panel therefore cannot be stepped through, whatever the step size.
+ */
+export function clampMoveToShip(
+  fromX: number,
+  fromZ: number,
+  toX: number,
+  toZ: number,
+  level: Level = 0,
+  extraObstacles: readonly Obstacle[] = [],
+): { x: number; z: number } {
+  const a = areaFor(level);
+  const obs = extraObstacles.length ? [...a.obstacles, ...extraObstacles] : a.obstacles;
+  let ax = fromX;
+  let az = fromZ;
+  let bx = toX;
+  let bz = toZ;
+  for (let i = 0; i < 4; i++) {
+    let hit: SweepHit | null = null;
+    for (const o of obs) {
+      const h = sweepObstacle(o, ax, az, bx, bz);
+      if (h && (!hit || h.t < hit.t)) hit = h;
+    }
+    if (!hit) break;
+    const cx = ax + (bx - ax) * hit.t + hit.nx * SWEEP_EPS;
+    const cz = az + (bz - az) * hit.t + hit.nz * SWEEP_EPS;
+    let rx = bx - cx;
+    let rz = bz - cz;
+    const into = rx * hit.nx + rz * hit.nz;
+    if (into < 0) {
+      rx -= hit.nx * into;
+      rz -= hit.nz * into;
+    }
+    ax = cx;
+    az = cz;
+    bx = cx + rx;
+    bz = cz + rz;
+  }
+  return clampToShip(bx, bz, level, extraObstacles);
+}
+
 /** The room, corridor or pass-through containing a point (null on door thresholds and outside the ship). */
 export function spaceAt(x: number, z: number, level: Level = 0): Space | null {
   let hit: Space | null = null;

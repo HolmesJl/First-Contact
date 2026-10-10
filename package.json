@@ -10,6 +10,7 @@
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
     "build": "npm run build -w client",
     "check:layout": "tsx shared/shipInterior.check.ts",
+    "check:door": "tsx server/src/cabinDoor.check.ts",
     "check:controls": "tsx client/src/input/controlMath.check.ts"
   },
   "devDependencies": {

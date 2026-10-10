@@ -27,7 +27,7 @@ import {
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
 import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
 import { isMemoryStationId } from '../../shared/bunks';
-import { clampToShip } from '../../shared/shipInterior';
+import { clampMoveToShip, clampToShip } from '../../shared/shipInterior';
 import { applyMemoryUpload } from './bunks';
 import {
   applyCabinKeypadChange,
@@ -323,7 +323,9 @@ wss.on('connection', (ws) => {
         const dz = z - me.z;
         const frac = budget.take(Math.hypot(dx, dz), performance.now() / 1000);
         const obs = cabinDoorObstaclesForShip(ship);
-        const p = clampToShip(me.x + dx * frac, me.z + dz * frac, 0, obs);
+        // Swept from the last accepted position: a point clamp would eject a step past the panel's mid-plane on the
+        // cabin side, letting a client that does not clamp (or a hacked one) walk through the closed door.
+        const p = clampMoveToShip(me.x, me.z, me.x + dx * frac, me.z + dz * frac, 0, obs);
         me.x = p.x;
         me.z = p.z;
         trackCabinDoorPass(ship, me, prevX, prevZ);
