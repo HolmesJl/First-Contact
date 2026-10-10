@@ -32,6 +32,17 @@ export function stationById(id: string) {
   return STATIONS.find((s) => s.id === id);
 }
 
+/** Players with a character other than `captainId` (for comms progress). */
+export function captainCommsObjective(
+  crew: readonly { id: string; character: unknown | null; reportedIn?: boolean }[],
+  captainId: string,
+): string {
+  const others = crew.filter((p) => p.character && p.id !== captainId);
+  if (others.length === 0) return 'Establish comms: waiting for crew to wake.';
+  const reported = others.filter((p) => p.reportedIn).length;
+  return `Establish comms: ${reported}/${others.length} crew reported in.`;
+}
+
 export function distance2d(ax: number, az: number, bx: number, bz: number) {
   return Math.hypot(ax - bx, az - bz);
 }
@@ -62,7 +73,7 @@ export function questObjective(step: QuestStep, job: Job | null, isClone: boolea
     case 'captain-helm':
       return 'Log in at the helm on the bridge.';
     case 'captain-comms':
-      return 'Establish communication with all crew (wait for reports).';
+      return 'Establish comms with your crew (open your data pad).';
     case 'done':
       return 'Opening tasks complete.';
     default:

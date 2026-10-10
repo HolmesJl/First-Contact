@@ -194,7 +194,7 @@ function syncHudSelf() {
   const me = players.get(selfId);
   if (!me || !hud) return;
   hud.setHasPad(me.hasPad);
-  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone);
+  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, players, selfId);
 }
 
 function enterWalk(me: PlayerState) {
@@ -237,6 +237,7 @@ function handle(m: ServerMsg) {
       const prev = players.get(p.id);
       players.set(p.id, p);
       hud?.render(players);
+      if (p.id === selfId) syncHudSelf();
       wakeIntro?.renderCrew(players, selfId, hostId);
       if (!lab) return;
       lab.syncPlayer(p);

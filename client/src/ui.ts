@@ -18,7 +18,7 @@ import {
 } from '../../shared/protocol';
 import type { Gait } from '../../shared/movement';
 import type { Space } from '../../shared/shipInterior';
-import { questObjective, type QuestStep } from '../../shared/opening';
+import { captainCommsObjective, questObjective, type QuestStep } from '../../shared/opening';
 import type { ShipMeta } from '../../shared/protocol';
 
 const ui = document.getElementById('ui')!;
@@ -213,11 +213,15 @@ export class DataPadOverlay {
   ) {
     const crew = [...players.values()].filter((p) => p.character);
     const job = me.character!.job;
+    const others = [...players.values()].filter((p) => p.character && p.id !== me.id);
+    const reportedCount = others.filter((p) => p.reportedIn).length;
+    const isCaptainComms = job === 'Captain' && me.questStep === 'captain-comms';
+    const canOpenComms = isCaptainComms && reportedCount >= 1;
     const task =
       me.questStep === 'report'
         ? 'Report in to the bridge on your communicator.'
-        : me.questStep === 'captain-comms'
-          ? 'Wait for all crew to report in on their pads.'
+        : isCaptainComms
+          ? captainCommsObjective([...players.values()], me.id)
           : me.questStep === 'captain-helm'
             ? 'Log in at the helm on the bridge.'
             : me.questStep === 'job-station'
@@ -230,7 +234,8 @@ export class DataPadOverlay {
         <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
         <div class="pad-scroll"></div>
         <footer>
-          <button class="btn primary report-in" ${me.questStep === 'report' ? '' : 'disabled'}>Report in to bridge</button>
+          <button class="btn primary report-in" ${me.questStep === 'report' || canOpenComms ? '' : 'disabled'}>${isCaptainComms ? 'Open comms channel' : 'Report in to bridge'}</button>
+          ${isCaptainComms && !canOpenComms ? '<p class="muted pad-hint">Opens when at least one crew member reports in.</p>' : ''}
         </footer>
       </div>`;
     this.body = this.el.querySelector('.pad-scroll')!;
@@ -331,7 +336,11 @@ export class Hud {
     slot.classList.toggle('filled', has);
   }
 
-  syncPlayerQuest(job: Job | null, step: QuestStep, isClone: boolean) {
+  syncPlayerQuest(job: Job | null, step: QuestStep, isClone: boolean, players?: Map<string, PlayerState>, selfId?: string) {
+    if (job === 'Captain' && step === 'captain-comms' && players && selfId) {
+      this.setObjective(captainCommsObjective([...players.values()], selfId));
+      return;
+    }
     this.setObjective(questObjective(step, job, isClone));
   }
 

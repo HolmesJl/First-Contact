@@ -108,7 +108,6 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
 
   if (job === 'Captain' && member.questStep === 'captain-helm' && kind === 'star-map') {
     member.questStep = 'captain-comms';
-    maybeCompleteCaptain(ship);
     return { ok: true, quest: member.questStep, notice: 'Captain logged in at the helm.' };
   }
 
@@ -120,9 +119,28 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
   return { ok: false, message: 'Nothing happens yet.' };
 }
 
+function otherCrew(ship: ShipRecord, captainId: string) {
+  return Object.values(ship.members).filter((x) => x.character && x.id !== captainId);
+}
+
 export function applyReportIn(ship: ShipRecord, member: MemberRecord): InteractResult {
   if (!member.character) return { ok: false, message: 'No character.' };
   if (!member.hasPad) return { ok: false, message: 'You need your data pad.' };
+
+  if (member.character.job === 'Captain' && member.questStep === 'captain-comms') {
+    const others = otherCrew(ship, member.id);
+    const reported = others.filter((x) => x.reportedIn);
+    if (reported.length < 1) {
+      return { ok: false, message: 'Nobody has reported in yet. Wait for your crew to wake and report.' };
+    }
+    member.questStep = 'done';
+    const partial = reported.length < others.length;
+    const notice = partial
+      ? 'Comms channel open. Resuming the voyage with partial crew.'
+      : 'Comms channel open. All awake crew have reported in.';
+    return { ok: true, quest: member.questStep, notice };
+  }
+
   if (member.questStep !== 'report') return { ok: false, message: 'Report in when your pad says to.' };
   member.reportedIn = true;
   member.questStep = 'done';
@@ -131,15 +149,18 @@ export function applyReportIn(ship: ShipRecord, member: MemberRecord): InteractR
   return { ok: true, quest: member.questStep, notice };
 }
 
-function maybeCompleteCaptain(ship: ShipRecord) {
+/** Auto-complete captain when every other character has reported and at least one exists. */
+export function maybeCompleteCaptain(ship: ShipRecord): MemberRecord | null {
   for (const m of Object.values(ship.members)) {
     if (!m.character || m.character.job !== 'Captain') continue;
     if (m.questStep !== 'captain-comms') continue;
-    const others = Object.values(ship.members).filter((x) => x.character && x.id !== m.id);
-    if (others.length === 0 || others.every((x) => x.reportedIn)) {
+    const others = otherCrew(ship, m.id);
+    if (others.length >= 1 && others.every((x) => x.reportedIn)) {
       m.questStep = 'done';
+      return m;
     }
   }
+  return null;
 }
 
 export function onCharacterCreated(member: MemberRecord, character: Character) {

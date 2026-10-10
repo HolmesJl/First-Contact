@@ -8,6 +8,7 @@ import {
   assignCloneTank,
   normalizeMember,
   normalizeShip,
+  maybeCompleteCaptain,
   onCharacterCreated,
   shipMeta,
   spawnAfterCreate,
@@ -232,11 +233,11 @@ wss.on('connection', (ws) => {
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
-        for (const m of Object.values(ship.members)) {
-          if (m.character?.job === 'Captain' && m.questStep === 'done') {
-            broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, m) });
-            broadcast(ship.code, { t: 'notice', message: 'All crew have reported in. The Captain may resume the journey.' });
-          }
+        const captainDone = maybeCompleteCaptain(ship);
+        if (captainDone) {
+          store.save();
+          broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, captainDone) });
+          broadcast(ship.code, { t: 'notice', message: 'All crew have reported in. The Captain may resume the journey.' });
         }
         break;
       }
