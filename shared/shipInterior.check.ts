@@ -1,5 +1,6 @@
 /** Layout sanity check: `npm run check:layout`. Overlaps, blocked doors and ports, unreachable stations. */
 import { SHIP_LAYOUT } from './shipLayout';
+import { INTERACT_RADIUS, QUEST_TERMINALS } from './opening';
 import { BERTHS, PROPS, SPAWNS, STATIONS, areaFor, clampToShip, isWalkable, portClearZone, thresholdRect, visiblePorts, type Prop } from './shipInterior';
 
 const problems: string[] = [];
@@ -65,6 +66,18 @@ for (const d of SHIP_LAYOUT.doors) if (!d.sealed && d.level === 0 && !reachable(
 
 const p = clampToShip(-9.4, 3.5);
 if (!isWalkable(p.x, p.z)) fail('clamp returned an unwalkable point');
+
+for (const t of QUEST_TERMINALS) {
+  if (!isWalkable(t.x, t.z)) fail(`quest terminal ${t.interactId} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}) not walkable`);
+  const station = STATIONS.find((s) => s.id === t.propId);
+  if (!station) {
+    fail(`quest terminal ${t.interactId} has no station prop ${t.propId}`);
+    continue;
+  }
+  const dist = Math.hypot(t.x - station.x, t.z - station.z);
+  if (dist > INTERACT_RADIUS)
+    fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+}
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${seen.size} reachable cells`);
 if (problems.length) {

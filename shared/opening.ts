@@ -1,5 +1,5 @@
 import type { Job } from './protocol';
-import { STATIONS } from './shipInterior';
+import { QUEST_TERMINAL_PROP_IDS, SPACE_NAMES, STATIONS, questTerminalPosition } from './shipInterior';
 
 export const TRANSIT_YEARS = 60;
 export const SHIP_DISPLAY_NAME = 'First Contact';
@@ -42,24 +42,30 @@ export function stationById(id: string) {
   return STATIONS.find((s) => s.id === id);
 }
 
-export const QUEST_TERMINALS: readonly {
-  interactId: string;
-  room: string;
-  object: string;
-  x: number;
-  z: number;
-  y: number;
-}[] = [
-  { interactId: 'lab-bench', room: 'Medical Lab', object: 'check-in terminal', x: -15.35, z: 10.0, y: 1.05 },
-  { interactId: 'bunk-desk-pad', room: 'Crew Quarters', object: 'desk terminal', x: -54.2, z: 7.55, y: 1.05 },
-  { interactId: 'captain-desk', room: "Captain's Cabin", object: 'desk terminal', x: -51.2, z: 16.45, y: 1.05 },
-  { interactId: 'star-map', room: 'Bridge', object: 'helm terminal', x: -38.2, z: 34.85, y: 1.15 },
-  { interactId: 'botanist-station', room: 'Greenhouse', object: 'Botanist terminal', x: -70.7, z: 6.35, y: 1.05 },
-  { interactId: 'teleporter-pad', room: 'Science Lab', object: 'Engineer terminal', x: -53.2, z: -20.55, y: 0.95 },
-  { interactId: 'armory', room: 'Operations', object: 'Operations terminal', x: -23.3, z: 16.75, y: 1.05 },
-];
+const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {
+  'lab-bench': 'check-in terminal',
+  'bunk-desk-pad': 'desk terminal',
+  'captain-desk': 'desk terminal',
+  'star-map': 'helm terminal',
+  'botanist-station': 'Botanist terminal',
+  'teleporter-pad': 'Engineer terminal',
+  armory: 'Operations terminal',
+};
 
-const INTERACT_IDS = new Set(QUEST_TERMINALS.map((t) => t.interactId));
+export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
+  const { x, z, y, prop } = questTerminalPosition(propId);
+  return {
+    interactId: propId,
+    propId,
+    room: SPACE_NAMES[prop.room] ?? prop.room,
+    object: QUEST_TERMINAL_LABELS[propId],
+    x,
+    z,
+    y,
+  };
+});
+
+const INTERACT_IDS = new Set<string>(QUEST_TERMINALS.map((t) => t.interactId));
 
 export function captainCommsObjective(
   crew: readonly { id: string; character: unknown | null; reportedIn?: boolean }[],

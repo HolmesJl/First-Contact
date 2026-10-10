@@ -319,6 +319,44 @@ box('engine', 'engine-console', 'console', -33.3, -62.2, 0.9, 1.8, 1.1, { face: 
 
 export const PROPS: readonly Prop[] = props;
 
+const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
+  N: { dx: 0, dz: -1 },
+  S: { dx: 0, dz: 1 },
+  E: { dx: 1, dz: 0 },
+  W: { dx: -1, dz: 0 },
+};
+
+/** Quest-terminal click / proximity point: mounted on the prop's `face` side at desk height. */
+export function questTerminalPosition(propId: string, standOff = 0.22) {
+  const prop = PROPS.find((p) => p.id === propId);
+  if (!prop) throw new Error(`unknown quest prop: ${propId}`);
+  const y0 = prop.y ?? 0;
+  if (prop.kind === 'pad') {
+    return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
+  }
+  const face = prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  const along = half + standOff;
+  return {
+    x: prop.x + f.dx * along,
+    z: prop.z + f.dz * along,
+    y: y0 + prop.h + 0.04,
+    prop,
+  };
+}
+
+/** Prop ids that host quest-terminal interact points (interact id matches prop id). */
+export const QUEST_TERMINAL_PROP_IDS = [
+  'lab-bench',
+  'bunk-desk-pad',
+  'captain-desk',
+  'star-map',
+  'botanist-station',
+  'teleporter-pad',
+  'armory',
+] as const;
+
 export const NPC_PANEL = { room: 'bunks' as RoomId, x: -57.95, z: 6, text: 'NPC DORM' };
 export const CABIN_KEYPAD = { x: -47.3, z: 19.8, y: 1.3 };
 
