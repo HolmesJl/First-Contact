@@ -86,7 +86,7 @@ Classic third-person MMO scheme. The mouse cursor stays free and visible; there 
 | `Shift` (hold) | **Sprint** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little |
 | `C` | Toggle **walk** (1.5 m/s) and **jog** (3.5 m/s, the default) |
 | Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
-| Left mouse + drag | **Orbit the camera** around the character without turning it. On release the camera eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s) |
+| Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view). On release the camera eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s) |
 | Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
 | `Space`, `Enter`, `Esc` | Skip the intro |
 

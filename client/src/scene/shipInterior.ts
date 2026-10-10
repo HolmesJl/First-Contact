@@ -79,7 +79,11 @@ const LIGHTS: Record<string, LightSpec> = {
   'aft-node': { color: 0xdbe6ff, y: 3.0, intensity: 8 },
 };
 
-const SIGN_EXTRA: Record<string, string> = { 'fore-node': 'Bridge · Ops · Cabin', 'aft-node': 'Science · Engine' };
+/** Door sign names that read better than the full display name. */
+const SIGN_NAMES: Record<string, string> = { bay: 'Cloning Bay' };
+/** Widest a door sign may be at its rest scale (metres); the corridor is 2.4 m across at the ceiling. */
+const SIGN_MAX_WIDTH = 1.6;
+const SIGN_Y_CORRIDOR = 3.02;
 
 const rectCenter = (r: Rect) => ({ x: (r.minX + r.maxX) / 2, z: (r.minZ + r.maxZ) / 2 });
 
@@ -620,7 +624,8 @@ export class ShipInterior {
     }
     for (const [side, b] of per) b.build(this.spaces.get(side)!.group);
 
-    // Signs inside rooms: where each door leads.
+    // Signs on the approach side of each door: they name the room the door opens into. Corridor ceilings are 3.2 m, so the
+    // sign sits just above the lintel, and its width is capped to fit the octagon.
     for (const d of SHIP_LAYOUT.doors) {
       if (d.level !== 0 || d.sealed) continue;
       const room = [d.a, d.b].find((id) => this.spaces.has(id) && !id.startsWith('c-'));
@@ -628,20 +633,25 @@ export class ShipInterior {
       if (!room || !other) continue;
       const corridor = SHIP_LAYOUT.corridors.find((c) => c.id === other);
       if (!corridor) continue;
-      let dest = corridor.joins.find((j) => j !== room) as string | undefined;
-      if (!dest || dest === 'lift-commons') continue;
-      if (dest === 'hangar') dest = 'c-pass';
-      const text = `${SPACE_NAMES[dest]?.toUpperCase() ?? dest}${SIGN_EXTRA[dest] ? ` · ${SIGN_EXTRA[dest]}` : ''}`;
+      const approach = this.spaces.get(corridor.id);
+      const text = `${SIGN_NAMES[room] ?? SPACE_NAMES[room] ?? room}`.toUpperCase();
       const view = this.spaces.get(room)!;
       const pl = doorPlacement(d);
-      const dx = view.center.x - pl.x;
-      const dz = view.center.z - pl.z;
-      const inx = d.axis === 'z' ? Math.sign(dx) : 0;
-      const inz = d.axis === 'x' ? Math.sign(dz) : 0;
+      const inx = d.axis === 'z' ? Math.sign(view.center.x - pl.x) : 0;
+      const inz = d.axis === 'x' ? Math.sign(view.center.z - pl.z) : 0;
       const s = labelSprite(`→ ${text}`, 'sign', 0.24);
-      s.position.set(pl.x + inx * 0.6, 3.35, pl.z + inz * 0.6);
-      view.group.add(s);
-      view.sprites.push(s);
+      if (approach) {
+        const aspect = s.scale.x / s.scale.y;
+        const h = Math.min(0.24, SIGN_MAX_WIDTH / aspect);
+        s.scale.set(h * aspect, h, 1);
+        s.position.set(pl.x - inx * 0.7, SIGN_Y_CORRIDOR, pl.z - inz * 0.7);
+        approach.group.add(s);
+        approach.sprites.push(s);
+      } else {
+        s.position.set(pl.x + inx * 0.6, 3.35, pl.z + inz * 0.6);
+        view.group.add(s);
+        view.sprites.push(s);
+      }
     }
 
     // The Captain's cabin keypad, on the strut side of the locked door.
