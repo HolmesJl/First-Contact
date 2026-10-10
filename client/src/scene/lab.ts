@@ -303,8 +303,8 @@ export class LabScene implements View {
     this.interior.setQuestHighlight(interactId);
   }
 
-  setCabinDoor(door: CabinDoorState) {
-    this.interior.setCabinDoor(door);
+  setCabinDoor(door: CabinDoorState, snap = false) {
+    this.interior.setCabinDoor(door, snap);
   }
 
   currentSpaceId() {

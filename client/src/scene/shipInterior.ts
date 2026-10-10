@@ -16,7 +16,7 @@ import {
   spaceGraph,
   visiblePorts,
 } from '../../../shared/shipInterior';
-import { CABIN_DOOR_SLIDE_M, CABIN_KEYPAD_INTERACT_ID, cabinDoorCenter, cabinKeypadInteractPosition } from '../../../shared/cabinDoor';
+import { CABIN_KEYPAD_INTERACT_ID, cabinDoorPanelPose, cabinDoorSlideBasis, cabinKeypadInteractPosition } from '../../../shared/cabinDoor';
 import type { CabinDoorState } from '../../../shared/protocol';
 
 /**
@@ -308,8 +308,9 @@ export class ShipInterior {
     if (this.keypadGlow) this.keypadGlow.visible = interactId === CABIN_KEYPAD_INTERACT_ID;
   }
 
-  setCabinDoor(door: CabinDoorState) {
+  setCabinDoor(door: CabinDoorState, snap = false) {
     this.cabinDoorTargetFrac = door.openFrac;
+    if (snap) this.cabinDoorOpenFrac = door.openFrac;
   }
 
   // ---------------------------------------------------------------- environment
@@ -675,14 +676,17 @@ export class ShipInterior {
     // The Captain's cabin keypad, on the strut side of the locked door.
     const cab = this.spaces.get('c-cabin');
     if (cab) {
+      const doorWall = cabinDoorSlideBasis();
       const b = new Batch();
-      const { x, z, y } = CABIN_KEYPAD;
-      b.box(0.1, 0.55, 0.4, x + 0.05, y - 0.15, z, 'dark');
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.box(0.04, 0.07, 0.07, x + 0.11, y - 0.3 + r * 0.1, z - 0.12 + c * 0.12, 'glowCyan');
-      b.box(0.04, 0.06, 0.28, x + 0.11, y + 0.18, z, 'glowRed');
+      const { z, y } = CABIN_KEYPAD;
+      const kx = doorWall.x + doorWall.nx * (WALL_T / 2 + 0.05);
+      const kFace = kx + doorWall.nx * 0.06;
+      b.box(0.1, 0.55, 0.4, kx, y - 0.15, z, 'dark');
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.box(0.04, 0.07, 0.07, kFace, y - 0.3 + r * 0.1, z - 0.12 + c * 0.12, 'glowCyan');
+      b.box(0.04, 0.06, 0.28, kFace, y + 0.18, z, 'glowRed');
       b.build(cab.group);
       const k = labelSprite("CAPTAIN'S CABIN · KEYPAD", 'warn', 0.22);
-      k.position.set(x + 0.4, y + 0.55, z);
+      k.position.set(kx + doorWall.nx * 0.35, y + 0.55, z);
       cab.group.add(k);
       cab.sprites.push(k);
 
@@ -690,7 +694,7 @@ export class ShipInterior {
         new THREE.BoxGeometry(0.55, 0.7, 0.45),
         new THREE.MeshBasicMaterial({ visible: false }),
       );
-      pick.position.set(x, y, z);
+      pick.position.set(kx, y, z);
       pick.userData.interactId = CABIN_KEYPAD_INTERACT_ID;
       cab.group.add(pick);
 
@@ -707,18 +711,19 @@ export class ShipInterior {
 
     const cabinDoor = SHIP_LAYOUT.doors.find((d) => d.id === 'cabin-in');
     if (cabinDoor && cabinDoor.level === 0 && !cabinDoor.sealed) {
-      const cd = cabinDoorCenter();
+      const basis = cabinDoorSlideBasis();
+      const closed = cabinDoorPanelPose(0);
       const panel = new THREE.Group();
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, DOOR_HEIGHT, cabinDoor.width - 0.12),
+        new THREE.BoxGeometry(basis.depth, DOOR_HEIGHT, cabinDoor.width - 0.12),
         new THREE.MeshStandardMaterial({ color: 0x4a3038, roughness: 0.55, metalness: 0.25 }),
       );
       mesh.position.y = DOOR_HEIGHT / 2;
       panel.add(mesh);
-      panel.position.set(cd.x, 0, cd.z);
+      panel.position.set(closed.x, 0, closed.z);
+      panel.rotation.y = closed.yaw;
       this.cabinDoorPanel = panel;
-      const side = this.spaces.get('c-cabin') ?? this.spaces.get('cabin');
-      (side?.group ?? this.root).add(panel);
+      this.root.add(panel);
     }
   }
 
@@ -831,7 +836,9 @@ export class ShipInterior {
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;
-      this.cabinDoorPanel.position.x = cabinDoorCenter().x + CABIN_DOOR_SLIDE_M * this.cabinDoorOpenFrac;
+      const pose = cabinDoorPanelPose(this.cabinDoorOpenFrac);
+      this.cabinDoorPanel.position.set(pose.x, 0, pose.z);
+      this.cabinDoorPanel.rotation.y = pose.yaw;
     }
     if (this.keypadGlow?.visible) {
       const pulse = 0.5 + 0.35 * Math.sin(this.time * 3.2);

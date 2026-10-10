@@ -5,7 +5,8 @@ import { CABIN_KEYPAD, isWalkable } from './shipInterior';
 export const CABIN_DOOR_ID = 'cabin-in';
 export const CABIN_KEYPAD_INTERACT_ID = 'cabin-keypad';
 
-export const CABIN_DOOR_SLIDE_M = 1.05;
+/** Slide far enough that the panel clears the door frame (along-wall pocket). */
+export const CABIN_DOOR_SLIDE_M = 1.72;
 export const CABIN_DOOR_OPEN_MS = 600;
 export const CABIN_DOOR_IDLE_CLOSE_MS = 6000;
 export const CABIN_DOOR_AFTER_PASS_MS = 4000;
@@ -28,21 +29,48 @@ export function cabinDoorCenter() {
   return { x, z: d.z, width: d.width, axis: d.axis as 'x' | 'z' };
 }
 
+const PANEL_DEPTH = 0.14;
+
+/** Outward normal and wall tangent at the cabin door (slide along tangent, thin along normal). */
+export function cabinDoorSlideBasis() {
+  const { x, z, width } = cabinDoorCenter();
+  const rdx = x - ROUND_CABIN.x;
+  const rdz = z - ROUND_CABIN.z;
+  const rlen = Math.hypot(rdx, rdz) || 1;
+  const nx = rdx / rlen;
+  const nz = rdz / rlen;
+  const tx = -nz;
+  const tz = nx;
+  /** Pocket the panel along the hull toward +z on this doorway. */
+  const slideSign = 1;
+  return { x, z, width, nx, nz, tx, tz, slideSign, depth: PANEL_DEPTH };
+}
+
+/** World pose for the sliding panel mesh (yaw aligns panel thickness with wall normal). */
+export function cabinDoorPanelPose(openFrac: number) {
+  const b = cabinDoorSlideBasis();
+  const slide = CABIN_DOOR_SLIDE_M * openFrac * b.slideSign;
+  return {
+    x: b.x + b.tx * slide,
+    z: b.z + b.tz * slide,
+    /** Local +X is panel thickness; align with outward wall normal (nx, nz). */
+    yaw: Math.atan2(-b.nz, b.nx),
+  };
+}
+
 /** Sliding panel obstacle; openFrac 0 = closed (blocks), 1 = slid aside (no block). */
 export function cabinDoorObstacle(openFrac: number): Obstacle | null {
   if (openFrac >= 0.98) return null;
-  const { x, z, width } = cabinDoorCenter();
-  const slide = CABIN_DOOR_SLIDE_M * openFrac;
-  const panelX = x + slide;
-  const halfW = width / 2 + 0.04;
-  const depth = 0.14;
-  return {
-    rect: true,
-    minX: panelX - depth / 2,
-    maxX: panelX + depth / 2,
-    minZ: z - halfW,
-    maxZ: z + halfW,
-  };
+  const b = cabinDoorSlideBasis();
+  const slide = CABIN_DOOR_SLIDE_M * openFrac * b.slideSign;
+  const px = b.x + b.tx * slide;
+  const pz = b.z + b.tz * slide;
+  const halfW = b.width / 2 + 0.04;
+  const halfD = b.depth / 2;
+  if (Math.abs(b.nx) >= Math.abs(b.nz)) {
+    return { rect: true, minX: px - halfD, maxX: px + halfD, minZ: pz - halfW, maxZ: pz + halfW };
+  }
+  return { rect: true, minX: px - halfW, maxX: px + halfW, minZ: pz - halfD, maxZ: pz + halfD };
 }
 
 export function cabinDoorExtraObstacles(openFrac: number): Obstacle[] {

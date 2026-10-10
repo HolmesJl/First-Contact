@@ -210,10 +210,18 @@ async function startLab() {
     },
   });
   view = lab;
-  if (import.meta.env.DEV) (window as unknown as { __fc: { lab: LabScene; teleport(x: number, z: number): void } }).__fc = {
-    lab,
-    teleport: (x, z) => lab?.devTeleport(x, z),
-  };
+  if (import.meta.env.DEV)
+    (window as unknown as {
+      __fc: {
+        lab: LabScene;
+        teleport(x: number, z: number): void;
+        cabinDoorFrac(f: number): void;
+      };
+    }).__fc = {
+      lab,
+      teleport: (x, z) => lab?.devTeleport(x, z),
+      cabinDoorFrac: (f) => lab?.setCabinDoor({ codeSet: true, open: f > 0.5, animAt: Date.now(), openFrac: f }, true),
+    };
   resize();
   hud = new Hud(shipCode, selfId, hostId);
   hud.render(players);
