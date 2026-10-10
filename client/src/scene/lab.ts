@@ -26,9 +26,7 @@ function isUiTarget(target: EventTarget | null) {
   return target instanceof Element && !!target.closest('#ui');
 }
 
-function pointerLockedTo(canvas: HTMLCanvasElement) {
-  return document.pointerLockElement === canvas;
-}
+type LookDrag = { button: 0 | 2; id: number; x: number; y: number };
 
 interface Entity {
   id: string;
@@ -53,8 +51,6 @@ export interface LabHooks {
   onSpace?(space: Space): void;
   /** Local gait and stamina (0..1), every frame. */
   onStatus?(status: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }): void;
-  /** True when the canvas has pointer lock (mouse-look captured). */
-  onPointerLock?(locked: boolean): void;
 }
 
 export class LabScene implements View {
@@ -84,7 +80,9 @@ export class LabScene implements View {
   private camDist = 3.9;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
-  private drag: { id: number; x: number; y: number } | null = null;
+  private lookDrag: LookDrag | null = null;
+  /** Camera was orbited with left-drag; snap behind the character when they start moving. */
+  private cameraOrbit = false;
   private cleanup: (() => void)[] = [];
   private focus = new THREE.Vector3();
   private previewStage: THREE.Group | null = null;
@@ -221,7 +219,7 @@ export class LabScene implements View {
 
   enterCreator(tube: number, self: PlayerState) {
     this.mode = 'creator';
-    this.releasePointerLock();
+    this.endLookDrag();
     this.interior.setFocus('bay');
     this.creatorTube = tube;
     this.buildPreviewStage();
@@ -280,15 +278,17 @@ export class LabScene implements View {
     this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog', speed: 0 };
     this.mode = 'walk';
     this.space = null;
-    this.camYaw = 0;
+    this.camYaw = self.rot;
+    this.cameraOrbit = false;
     this.destroyPreviewStage();
     this.clearMovementInput(true);
     this.syncPlayer(self);
-    this.hooks.onPointerLock?.(pointerLockedTo(this.renderer.domElement));
   }
 
-  private releasePointerLock() {
-    if (pointerLockedTo(this.renderer.domElement)) document.exitPointerLock();
+  private endLookDrag() {
+    if (!this.lookDrag) return;
+    this.renderer.domElement.style.cursor = '';
+    this.lookDrag = null;
   }
 
   private creatorCamera(): [THREE.Vector3, THREE.Vector3] {
@@ -311,11 +311,6 @@ export class LabScene implements View {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       const code = e.code;
-      if (code === 'Escape' && pointerLockedTo(canvas)) {
-        e.preventDefault();
-        document.exitPointerLock();
-        return;
-      }
       if (MOVE_CODES.has(code) || SHIFT_CODES.has(code) || BROWSER_TRAP_CODES.has(code) || code.startsWith('Arrow')) e.preventDefault();
     };
 
@@ -334,59 +329,60 @@ export class LabScene implements View {
     };
     const kd = onKey(true);
     const ku = onKey(false);
-    const clear = () => this.clearMovementInput(true);
+    const clear = () => {
+      this.endLookDrag();
+      this.clearMovementInput(true);
+    };
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
     window.addEventListener('blur', clear);
 
-    const onLockChange = () => {
-      const locked = pointerLockedTo(canvas);
-      if (!locked) {
-        this.drag = null;
-        clear();
-      }
-      if (this.mode === 'walk') this.hooks.onPointerLock?.(locked);
-    };
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') clear();
     });
-    document.addEventListener('pointerlockchange', onLockChange);
 
     const onContextMenu = (e: MouseEvent) => {
       if (this.mode !== 'walk') return;
       if (isUiTarget(e.target)) return;
-      if (e.target === canvas || pointerLockedTo(canvas)) e.preventDefault();
+      if (e.target === canvas) e.preventDefault();
     };
     document.addEventListener('contextmenu', onContextMenu, true);
 
+    const steer = (dx: number) => {
+      this.local.rot -= dx * 0.006;
+      this.camYaw = this.local.rot;
+      this.cameraOrbit = false;
+    };
+    const orbit = (dx: number, dy: number) => {
+      this.camYaw -= dx * 0.006;
+      this.camPitch = Math.min(1.2, Math.max(0.12, this.camPitch + dy * 0.004));
+      this.cameraOrbit = true;
+    };
+
     const pd = (e: PointerEvent) => {
-      if (this.mode !== 'walk') return;
+      if (this.mode !== 'walk' || e.target !== canvas) return;
       if (e.button === 1) {
         e.preventDefault();
         return;
       }
-      if (e.button === 2) {
-        e.preventDefault();
-        this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
-        canvas.setPointerCapture(e.pointerId);
-        return;
-      }
-      if (e.button === 0) void canvas.requestPointerLock();
+      if (e.button !== 0 && e.button !== 2) return;
+      e.preventDefault();
+      this.lookDrag = { button: e.button as 0 | 2, id: e.pointerId, x: e.clientX, y: e.clientY };
+      canvas.style.cursor = 'none';
     };
-    const pm = (e: PointerEvent) => {
-      if (this.mode === 'walk' && pointerLockedTo(canvas)) {
-        this.camYaw -= e.movementX * 0.006;
-        this.camPitch = Math.min(1.2, Math.max(0.12, this.camPitch + e.movementY * 0.004));
-        return;
-      }
-      if (!this.drag || this.drag.id !== e.pointerId) return;
-      this.camYaw -= (e.clientX - this.drag.x) * 0.006;
-      this.camPitch = Math.min(1.2, Math.max(0.12, this.camPitch + (e.clientY - this.drag.y) * 0.004));
-      this.drag.x = e.clientX;
-      this.drag.y = e.clientY;
+    const pmWin = (e: PointerEvent) => {
+      const d = this.lookDrag;
+      if (!d || d.id !== e.pointerId) return;
+      const dx = e.clientX - d.x;
+      const dy = e.clientY - d.y;
+      if (d.button === 2) steer(dx);
+      else orbit(dx, dy);
+      d.x = e.clientX;
+      d.y = e.clientY;
     };
-    const pu = (e: PointerEvent) => {
-      if (this.drag?.id === e.pointerId) this.drag = null;
+    const puWin = (e: PointerEvent) => {
+      if (this.lookDrag?.id !== e.pointerId) return;
+      this.endLookDrag();
     };
     const onAux = (e: MouseEvent) => {
       if (this.mode === 'walk' && e.target === canvas && e.button === 1) e.preventDefault();
@@ -396,24 +392,23 @@ export class LabScene implements View {
       this.camDist = Math.min(9, Math.max(2.2, this.camDist + Math.sign(e.deltaY) * 0.5));
     };
     canvas.addEventListener('pointerdown', pd);
-    canvas.addEventListener('pointermove', pm);
-    canvas.addEventListener('pointerup', pu);
-    canvas.addEventListener('pointercancel', pu);
+    window.addEventListener('pointermove', pmWin);
+    window.addEventListener('pointerup', puWin);
+    window.addEventListener('pointercancel', puWin);
     canvas.addEventListener('auxclick', onAux);
     canvas.addEventListener('wheel', wheel, { passive: true });
     this.cleanup.push(() => {
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
       window.removeEventListener('blur', clear);
-      document.removeEventListener('pointerlockchange', onLockChange);
       document.removeEventListener('contextmenu', onContextMenu, true);
       canvas.removeEventListener('pointerdown', pd);
-      canvas.removeEventListener('pointermove', pm);
-      canvas.removeEventListener('pointerup', pu);
-      canvas.removeEventListener('pointercancel', pu);
+      window.removeEventListener('pointermove', pmWin);
+      window.removeEventListener('pointerup', puWin);
+      window.removeEventListener('pointercancel', puWin);
       canvas.removeEventListener('auxclick', onAux);
       canvas.removeEventListener('wheel', wheel);
-      this.releasePointerLock();
+      this.endLookDrag();
     });
   }
 
@@ -497,6 +492,10 @@ export class LabScene implements View {
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) ix += 1;
     const len = Math.hypot(ix, iy);
     const moving = len > 0.1;
+    if (moving && this.cameraOrbit) {
+      this.camYaw = this.local.rot;
+      this.cameraOrbit = false;
+    }
     const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
     const sprinting = this.stamina.update(dt, moving && [...SHIFT_CODES].some((c) => this.keys.has(c)));
     const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
@@ -505,10 +504,10 @@ export class LabScene implements View {
       const n = Math.min(1, len) / len;
       ix *= n;
       iy *= n;
-      const fx = -Math.sin(this.camYaw);
-      const fz = -Math.cos(this.camYaw);
-      const rx = Math.cos(this.camYaw);
-      const rz = -Math.sin(this.camYaw);
+      const fx = Math.sin(this.local.rot);
+      const fz = Math.cos(this.local.rot);
+      const rx = Math.cos(this.local.rot);
+      const rz = -Math.sin(this.local.rot);
       const mx = fx * iy + rx * ix;
       const mz = fz * iy + rz * ix;
       const p = clampToShip(this.local.x + mx * speed * dt, this.local.z + mz * speed * dt, 0);
@@ -575,7 +574,7 @@ export class LabScene implements View {
   }
 
   dispose() {
-    this.releasePointerLock();
+    this.endLookDrag();
     this.cleanup.forEach((f) => f());
     for (const id of [...this.entities.keys()]) this.removePlayer(id);
     this.labels.domElement.remove();
