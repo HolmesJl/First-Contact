@@ -10,6 +10,9 @@ import { JOB_INFO, type Appearance, type Job, type PlayerState, type SnapEntry }
 
 const SEND_INTERVAL = 1 / 15;
 const EYE = 1.45;
+const DEFAULT_CAM_PITCH = 0.34;
+const CAM_RETURN_SMOOTH_S = 0.45;
+const CAM_RETURN_FAST_S = 0.12;
 
 const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const SHIFT_CODES = new Set(['ShiftLeft', 'ShiftRight']);
@@ -76,13 +79,13 @@ export class LabScene implements View {
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
   private camYaw = 0;
-  private camPitch = 0.34;
+  private camPitch = DEFAULT_CAM_PITCH;
   private camDist = 3.9;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
   private lookDrag: LookDrag | null = null;
-  /** Camera was orbited with left-drag; snap behind the character when they start moving. */
-  private cameraOrbit = false;
+  /** Left-drag left the camera off the character's back; ease yaw (and pitch) back. */
+  private camReturn: { mode: 'smooth' | 'fast'; fromYaw: number; fromPitch: number; t: number; dur: number } | null = null;
   private cleanup: (() => void)[] = [];
   private focus = new THREE.Vector3();
   private previewStage: THREE.Group | null = null;
@@ -279,16 +282,61 @@ export class LabScene implements View {
     this.mode = 'walk';
     this.space = null;
     this.camYaw = self.rot;
-    this.cameraOrbit = false;
+    this.camPitch = DEFAULT_CAM_PITCH;
+    this.camReturn = null;
     this.destroyPreviewStage();
     this.clearMovementInput(true);
     this.syncPlayer(self);
   }
 
-  private endLookDrag() {
+  private endLookDrag(behind: 'smooth' | 'fast' | false = 'smooth') {
     if (!this.lookDrag) return;
+    const wasLeft = this.lookDrag.button === 0;
     this.renderer.domElement.style.cursor = '';
     this.lookDrag = null;
+    if (!wasLeft || !behind || this.mode !== 'walk') return;
+    this.beginCamReturn(behind);
+  }
+
+  private beginCamReturn(mode: 'smooth' | 'fast') {
+    if (angleDist(this.camYaw, this.local.rot) < 0.02 && Math.abs(this.camPitch - DEFAULT_CAM_PITCH) < 0.02) {
+      this.camReturn = null;
+      return;
+    }
+    this.camReturn = {
+      mode,
+      fromYaw: this.camYaw,
+      fromPitch: this.camPitch,
+      t: 0,
+      dur: mode === 'fast' ? CAM_RETURN_FAST_S : CAM_RETURN_SMOOTH_S,
+    };
+  }
+
+  /** Drop left-orbit drag when the player steers with WASD so camera can return behind. */
+  private cancelLeftOrbitForMovement() {
+    if (this.lookDrag?.button !== 0) return;
+    this.endLookDrag('fast');
+  }
+
+  private tickCamReturn(dt: number) {
+    const r = this.camReturn;
+    if (!r) return;
+    r.t += dt;
+    const u = Math.min(1, r.t / r.dur);
+    const ease = u * u * (3 - 2 * u);
+    const targetYaw = this.local.rot;
+    this.camYaw = lerpAngle(r.fromYaw, targetYaw, ease);
+    this.camPitch = r.fromPitch + (DEFAULT_CAM_PITCH - r.fromPitch) * ease;
+    if (u >= 1) {
+      this.camYaw = targetYaw;
+      this.camPitch = DEFAULT_CAM_PITCH;
+      this.camReturn = null;
+    }
+  }
+
+  private requestCamBehindFast() {
+    if (this.camReturn?.mode === 'fast') return;
+    this.beginCamReturn('fast');
   }
 
   private creatorCamera(): [THREE.Vector3, THREE.Vector3] {
@@ -330,7 +378,7 @@ export class LabScene implements View {
     const kd = onKey(true);
     const ku = onKey(false);
     const clear = () => {
-      this.endLookDrag();
+      this.endLookDrag(false);
       this.clearMovementInput(true);
     };
     window.addEventListener('keydown', kd);
@@ -349,14 +397,15 @@ export class LabScene implements View {
     document.addEventListener('contextmenu', onContextMenu, true);
 
     const steer = (dx: number) => {
+      this.camReturn = null;
       this.local.rot -= dx * 0.006;
       this.camYaw = this.local.rot;
-      this.cameraOrbit = false;
+      this.camPitch = DEFAULT_CAM_PITCH;
     };
     const orbit = (dx: number, dy: number) => {
+      this.camReturn = null;
       this.camYaw -= dx * 0.006;
       this.camPitch = Math.min(1.2, Math.max(0.12, this.camPitch + dy * 0.004));
-      this.cameraOrbit = true;
     };
 
     const pd = (e: PointerEvent) => {
@@ -382,7 +431,7 @@ export class LabScene implements View {
     };
     const puWin = (e: PointerEvent) => {
       if (this.lookDrag?.id !== e.pointerId) return;
-      this.endLookDrag();
+      this.endLookDrag('smooth');
     };
     const onAux = (e: MouseEvent) => {
       if (this.mode === 'walk' && e.target === canvas && e.button === 1) e.preventDefault();
@@ -490,12 +539,11 @@ export class LabScene implements View {
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) iy -= 1;
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) ix -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) ix += 1;
+    if (this.hasMoveInput()) this.cancelLeftOrbitForMovement();
+    else if (this.lookDrag?.button === 2) this.requestCamBehindFast();
+
     const len = Math.hypot(ix, iy);
     const moving = len > 0.1;
-    if (moving && this.cameraOrbit) {
-      this.camYaw = this.local.rot;
-      this.cameraOrbit = false;
-    }
     const joyWalk = len < 0.55 && Math.hypot(this.joy.x, this.joy.y) > 0.1 && !this.keys.size;
     const sprinting = this.stamina.update(dt, moving && [...SHIFT_CODES].some((c) => this.keys.has(c)));
     const gait: Gait = sprinting ? 'sprint' : this.walkMode || joyWalk ? 'walk' : 'jog';
@@ -545,6 +593,7 @@ export class LabScene implements View {
       [pos, look] = this.creatorCamera();
       pos.y += Math.sin(this.time * 0.4) * 0.04;
     } else {
+      this.tickCamReturn(dt);
       look = new THREE.Vector3(this.local.x, 1.45, this.local.z);
       const d = this.camDist;
       pos = new THREE.Vector3(
@@ -554,7 +603,8 @@ export class LabScene implements View {
       );
       pos.y = Math.max(0.5, pos.y);
     }
-    const k = 1 - Math.exp(-(this.mode === 'walk' ? 7 : 3) * dt);
+    const follow = this.camReturn ? 14 : this.mode === 'walk' ? 7 : 3;
+    const k = 1 - Math.exp(-follow * dt);
     this.camPos.lerp(pos, k);
     this.camLook.lerp(look, k);
     this.camera.position.copy(this.camPos);
@@ -585,4 +635,10 @@ function lerpAngle(a: number, b: number, t: number) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
   if (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
+}
+
+function angleDist(a: number, b: number) {
+  let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return Math.abs(d);
 }
