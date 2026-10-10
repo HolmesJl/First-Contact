@@ -225,6 +225,7 @@ wss.on('connection', (ws) => {
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
+        if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
         break;
       }
       case 'reportIn': {
@@ -233,6 +234,7 @@ wss.on('connection', (ws) => {
         store.save();
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
+        if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
         const captainDone = maybeCompleteCaptain(ship);
         if (captainDone) {
           store.save();

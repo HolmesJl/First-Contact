@@ -299,6 +299,10 @@ export class LabScene implements View {
     return { x: this.local.x, z: this.local.z };
   }
 
+  setQuestHighlight(interactId: string | null) {
+    this.interior.setQuestHighlight(interactId);
+  }
+
   /** Dev-only: snap the local player and sync to the server (walk mode). */
   devTeleport(x: number, z: number) {
     if (this.mode !== 'walk') return;

@@ -6,6 +6,7 @@ import { LabScene } from './scene/lab';
 import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
+import { objectiveInteractId, questObjective } from '../../shared/opening';
 import type { ClientMsg, Job, PlayerState, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -194,7 +195,10 @@ function syncHudSelf() {
   const me = players.get(selfId);
   if (!me || !hud) return;
   hud.setHasPad(me.hasPad);
-  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, players, selfId);
+  hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, me.hasPad, players, selfId);
+  lab?.setQuestHighlight(
+    me.character ? objectiveInteractId(me.questStep, me.character.job, me.isClone) : null,
+  );
 }
 
 function enterWalk(me: PlayerState) {

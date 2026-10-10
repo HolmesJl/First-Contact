@@ -217,18 +217,9 @@ export class DataPadOverlay {
     const reportedCount = others.filter((p) => p.reportedIn).length;
     const isCaptainComms = job === 'Captain' && me.questStep === 'captain-comms';
     const canOpenComms = isCaptainComms && reportedCount >= 1;
-    const task =
-      me.questStep === 'report'
-        ? 'Report in to the bridge on your communicator.'
-        : isCaptainComms
-          ? captainCommsObjective([...players.values()], me.id)
-          : me.questStep === 'captain-helm'
-            ? 'Log in at the helm on the bridge.'
-            : me.questStep === 'job-station'
-              ? `Go to your ${job} station.`
-              : me.questStep === 'clone-doctor'
-                ? 'Visit the Doctor in Medical.'
-                : 'Explore the ship and follow your objectives.';
+    const task = isCaptainComms
+      ? captainCommsObjective([...players.values()], me.id)
+      : questObjective(me.questStep, job, me.isClone, me.hasPad);
     this.el.innerHTML = `
       <div class="pad panel">
         <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
@@ -336,12 +327,19 @@ export class Hud {
     slot.classList.toggle('filled', has);
   }
 
-  syncPlayerQuest(job: Job | null, step: QuestStep, isClone: boolean, players?: Map<string, PlayerState>, selfId?: string) {
+  syncPlayerQuest(
+    job: Job | null,
+    step: QuestStep,
+    isClone: boolean,
+    hasPad: boolean,
+    players?: Map<string, PlayerState>,
+    selfId?: string,
+  ) {
     if (job === 'Captain' && step === 'captain-comms' && players && selfId) {
       this.setObjective(captainCommsObjective([...players.values()], selfId));
       return;
     }
-    this.setObjective(questObjective(step, job, isClone));
+    this.setObjective(questObjective(step, job, isClone, hasPad));
   }
 
   showControls(show: boolean) {
