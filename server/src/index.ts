@@ -416,6 +416,11 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'scavengerIssue': {
+        // Same as `interact`: take the client's position (clamped) before the Bridge check. The last `move` can sit a
+        // step behind after a budget-limited sprint, since a standing client stops repeating its position.
+        const p = clampToShip(msg.x, msg.z, 0, cabinDoorObstaclesForShip(ship));
+        me.x = p.x;
+        me.z = p.z;
         const res = applyScavengerIssue(me);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
         store.save();

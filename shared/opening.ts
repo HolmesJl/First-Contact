@@ -165,7 +165,7 @@ export function questObjective(
     case 'captain-comms':
       return 'Establish comms with your crew (open your data pad).';
     case 'done':
-      return 'Opening tasks complete.';
+      return 'Go to the Bridge and open your data pad (P) for new orders.';
     default:
       return '';
   }
@@ -218,7 +218,7 @@ export function positionForInteract(interactId: string): { x: number; z: number 
 /** Toast after completing a quest step (server + client). */
 export function questStepCompleteNotice(step: QuestStep, job: Job, isClone: boolean, berth: number | null = null): string | null {
   const next = nextQuestStep(step, job, isClone);
-  if (!next || next === 'done') return 'Opening tasks complete.';
+  if (!next || next === 'done') return 'Opening tasks complete. Go to the Bridge and open your data pad (P) for new orders.';
   return questObjective(next, job, isClone, true, berth);
 }
 

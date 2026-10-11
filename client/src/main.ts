@@ -11,9 +11,9 @@ import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
 import { InventoryOverlay } from './inventory';
-import { objectiveInteractId, questObjective } from '../../shared/opening';
+import { REPORT_IN_INTERACT_ID, objectiveInteractId, questObjective } from '../../shared/opening';
 import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt, stockPanelById } from '../../shared/items';
-import { scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
+import { isOnBridge, scavengerAwaiting, scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
 import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -285,7 +285,15 @@ async function startLab() {
   }
   lab = new LabScene(renderer, document.getElementById('app')!, selfId, {
     onMove: (x, z, rot, moving) => net?.send({ t: 'move', x, z, rot, moving }),
-    onSpace: (space) => hud?.setSpace(space),
+    onSpace: (space) => {
+      hud?.setSpace(space);
+      // Walking onto the Bridge with the pad open: its orders block flips to Accept, and the hunt is handed out.
+      const me = players.get(selfId);
+      if (pad && me && shipMeta) {
+        pad.render(shipMeta, me, players, onBridge());
+        requestScavengerIssue();
+      }
+    },
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (id, prompt) => {
       if (isCabinKeypadId(id) && shipMeta) {
@@ -301,6 +309,10 @@ async function startLab() {
       }
       if (id !== null && isItemInteractId(id)) {
         hud?.setInteractPrompt(itemInteractPrompt(id, players.get(selfId)?.berth ?? null));
+        return;
+      }
+      if (id === REPORT_IN_INTERACT_ID && scavengerAwaiting(players.get(selfId) ?? { questStep: 'wake', hasPad: false, scavenger: null })) {
+        hud?.setInteractPrompt('Open your data pad for new orders');
         return;
       }
       hud?.setInteractPrompt(prompt);
@@ -346,6 +358,12 @@ async function startLab() {
           },
         });
         cabinKeypad.open(shipMeta, me.character.job);
+        return;
+      }
+      // The lit comms console after the opening: clicking it opens the pad, which hands out the Captain's orders.
+      if (id === REPORT_IN_INTERACT_ID && scavengerAwaiting(players.get(selfId) ?? { questStep: 'wake', hasPad: false, scavenger: null })) {
+        if (!pad) openPad();
+        else requestScavengerIssue();
         return;
       }
       net?.send({ t: 'interact', id, x, z });
@@ -414,7 +432,33 @@ function syncHudSelf() {
   lab?.setQuestHighlight(terminal, stations);
   lab?.setOwnBerth(me.berth);
   inventory?.setInventory(me.inventory);
-  if (pad && shipMeta) pad.render(shipMeta, me, players);
+  if (pad && shipMeta) {
+    pad.render(shipMeta, me, players, onBridge());
+    // The pad was already open when the opening ended (the Captain opens comms from it): hand the orders out now.
+    requestScavengerIssue();
+  }
+}
+
+const onBridge = () => {
+  const p = lab?.localPos();
+  return !!p && isOnBridge(p.x, p.z);
+};
+
+let scavengerRequestedAt = 0;
+/** Ask the server for the Captain's orders if the pad can take them here. `explicit` (the Accept button) toasts why not. */
+function requestScavengerIssue(explicit = false) {
+  const me = players.get(selfId);
+  if (!me?.character || !lab || !net) return;
+  const block = scavengerIssueBlock(me, onBridge());
+  if (block) {
+    if (explicit) toast(block);
+    return;
+  }
+  const now = performance.now();
+  if (now - scavengerRequestedAt < 1500) return;
+  scavengerRequestedAt = now;
+  const { x, z } = lab.localPos();
+  net.send({ t: 'scavengerIssue', x, z });
 }
 
 function toggleInventory() {
@@ -458,16 +502,18 @@ async function logout() {
 function openPad() {
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !shipMeta) return;
-  // Opening the pad on the Bridge once the opening quest is done is how the Captain's scavenger hunt is handed out.
-  if (!scavengerIssueBlock(me, lab?.currentSpaceId() ?? null)) net?.send({ t: 'scavengerIssue' });
   pad?.destroy();
-  pad = new DataPadOverlay(shipMeta, me, players, {
+  pad = new DataPadOverlay(shipMeta, me, players, onBridge(), {
     onReportIn: () => net?.send({ t: 'reportIn' }),
+    onAcceptOrders: () => requestScavengerIssue(true),
     onClose: () => {
       pad?.destroy();
       pad = null;
     },
   });
+  // Opening the pad on the Bridge once the opening quest is done is how the Captain's scavenger hunt is handed out;
+  // the pad also offers an Accept button for the same thing.
+  requestScavengerIssue();
 }
 
 window.addEventListener('keydown', (e) => {

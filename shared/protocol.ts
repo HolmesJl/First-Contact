@@ -219,7 +219,7 @@ export type ClientMsg =
   | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string }
   | { t: 'inv'; action: InventoryAction; x: number; z: number }
   /** Opening the data pad on the Bridge after the opening quest: receive the scavenger hunt (server checks place and step). */
-  | { t: 'scavengerIssue' };
+  | { t: 'scavengerIssue'; x: number; z: number };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -340,8 +340,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'reportIn':
     case 'newCharacter':
     case 'logout':
-    case 'scavengerIssue':
       return { t: m.t };
+    case 'scavengerIssue':
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'scavengerIssue', x: m.x as number, z: m.z as number };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
     case 'move':
