@@ -87,7 +87,7 @@ Classic third-person MMO scheme. The mouse cursor stays free and visible; there 
 | `Shift` (hold) | **Sprint** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little |
 | `C` | Toggle **walk** (1.5 m/s) and **jog** (3.5 m/s, the default) |
 | Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
-| Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view). On release the camera eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s) |
+| Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view), drag down to look down. On release the camera yaw eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s). The pitch you set is kept until you drag again or re-board |
 | Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
 | `I` | Open / close the **personal inventory** (see below) |
 | `P` / `Tab` | Open the personal data pad (tasks, saved Files, crew) |
@@ -106,7 +106,7 @@ npm run check:controls  # unit check of the camera/movement math in client/src/i
 npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
 npm run smoke:characters  # starts its own server: create, disconnect, restart, landing profile, board, log out, take-over, delete
 npm run smoke:items  # starts its own server: stock panels, Files, closets, equip rules, the full scavenger hunt, persistence across a restart
-npm run smoke:steer  # browser smoke (needs Chromium, see tools/steer-smoke.mjs): right-drag steers / left-drag orbits with the inventory closed, the modal takes the mouse when open
+npm run smoke:steer  # browser smoke (needs Chromium, see tools/steer-smoke.mjs): right-drag steers / left-drag orbits with the inventory closed, the modal takes the mouse when open, vertical left-drag changes the pitch and it holds after release
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).

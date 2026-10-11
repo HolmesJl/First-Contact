@@ -15,7 +15,9 @@ import WebSocket from 'ws';
 import { memoryStationFor, memoryStationId } from '../shared/bunks';
 import { CARRY_SLOTS, CLOSET_SLOTS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, closetFor, stockPanelById, worldFileById, type Inventory, type Slots } from '../shared/items';
 import { REPORT_IN_INTERACT_ID, positionForInteract } from '../shared/opening';
-import { SCAVENGER_FILE_NAME, SCAVENGER_INTRO, type ScavengerTaskId } from '../shared/scavenger';
+import { SCAVENGER_FILE_NAME, SCAVENGER_INTRO, isOnBridge, type ScavengerTaskId } from '../shared/scavenger';
+import { clampToShip, spaceAt } from '../shared/shipInterior';
+import { SHIP_LAYOUT } from '../shared/shipLayout';
 import type { Character, ClientMsg, InventoryAction, PlayerState, ServerMsg } from '../shared/protocol';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -182,6 +184,13 @@ async function syncAfterOk(me: Me) {
 const carried = (inv: Inventory) => inv.carry.filter(Boolean);
 const taskDone = (p: PlayerState, id: ScavengerTaskId) => p.scavenger?.done[id] !== undefined;
 
+/** A point in the Bridge doorway just inside the door line: `spaceAt` is null there (door thresholds are no space). */
+function bridgeDoorwayPoint() {
+  const d = SHIP_LAYOUT.doors.find((x) => x.id === 'bridge-in')!;
+  // The Bridge lies on the +z side of this door (its corridor runs in from the fore node).
+  return { x: d.x, z: d.z + 0.3 };
+}
+
 async function takeNotice(me: Me, re: RegExp, what: string) {
   const n = await me.c.wait((m) => m.t === 'notice' && re.test(m.message), 2000).catch(() => null);
   assert(n, `${what}: expected a notice matching ${re}`);
@@ -226,17 +235,29 @@ async function main() {
   crew.inbox.length = 0;
 
   // -- 1. The scavenger hunt is handed out by the pad on the Bridge only.
+  const comms = positionForInteract(REPORT_IN_INTERACT_ID)!;
   await placeAt(me, FAR);
-  crew.send({ t: 'scavengerIssue' });
+  crew.send({ t: 'scavengerIssue', x: FAR.x, z: FAR.z });
   const offBridge = await crew.wait(is('error'));
   assert(/Bridge/.test(offBridge.message), `quest refused off the Bridge (${offBridge.message})`);
-  await placeAt(me, positionForInteract(REPORT_IN_INTERACT_ID)!);
-  crew.send({ t: 'scavengerIssue' });
+  // The Bridge check tolerates its door thresholds (spaceAt is null there) and the first step outside.
+  {
+    const door = bridgeDoorwayPoint();
+    const c = clampToShip(door.x, door.z, 0);
+    assert(Math.hypot(c.x - door.x, c.z - door.z) < 1e-6 && spaceAt(door.x, door.z) === null, 'the Bridge doorway is walkable and belongs to no space');
+    assert(isOnBridge(door.x, door.z), 'standing in the Bridge doorway counts as on the Bridge');
+    assert(!isOnBridge(door.x, door.z - 1.2), 'the corridor side of the door does not');
+    assert(!isOnBridge(FAR.x, FAR.z), 'the pass-through corridor is not the Bridge');
+  }
+  // The request carries the player's position, like `interact`: the server's last `move` position (still FAR here)
+  // must not refuse a player whose client is standing at the comms console.
+  crew.send({ t: 'scavengerIssue', x: comms.x, z: comms.z });
   {
     const u = await crew.wait((m): m is Msg<'playerUpdated'> => m.t === 'playerUpdated' && m.player.id === eng.you && !!m.player.scavenger);
     me.state = u.player;
+    me.pos = comms;
     await takeNotice(me, new RegExp(SCAVENGER_INTRO.slice(0, 20)), 'quest issue');
-    crew.send({ t: 'scavengerIssue' });
+    crew.send({ t: 'scavengerIssue', x: comms.x, z: comms.z });
     const again = await crew.wait(is('error'));
     assert(/already/.test(again.message), 'quest is issued once');
   }
@@ -419,6 +440,33 @@ async function main() {
     assert(JSON.stringify(p.scavenger) === JSON.stringify(before.quest), 'quest progress restored');
     const cl = await c.wait(is('closet'));
     assert(JSON.stringify(cl.slots) === JSON.stringify(before.closet) && cl.slots[0]?.item === 'lite-body-armor', 'closet restored');
+    c.close();
+  }
+  await sleep(200);
+  await stopServer();
+
+  // -- 9. A character saved before items existed (no inventory / closet / padFiles / scavenger keys) whose opening is
+  //       done: the Captain's record is rewritten that way on disk, and the hunt still issues on the Bridge.
+  {
+    const disk = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as { ships: { code: string; members: Record<string, Record<string, unknown>> }[] };
+    const m = disk.ships.find((s) => s.code === cap.code)!.members[cap.you];
+    assert(m && m.character && (m.character as { job: string }).job === 'Captain', 'captain record on disk');
+    for (const k of ['inventory', 'closet', 'padFiles', 'scavenger']) delete m[k];
+    m.questStep = 'done';
+    m.hasPad = true;
+    fs.writeFileSync(DATA_FILE, JSON.stringify(disk));
+  }
+  await startServer();
+  {
+    const { c } = await connect({ t: 'join', clientId: HOST, code: cap.code });
+    c.send({ t: 'pickCharacter', characterId: cap.you });
+    const w = await c.wait(is('welcome'));
+    const p = w.players.find((x) => x.id === cap.you)!;
+    assert(p.questStep === 'done' && p.hasPad && p.scavenger === null && p.padFiles.length === 0, 'legacy record normalised: done, pad, no quest 2 yet');
+    assert(p.inventory.equipped.suit?.item === 'jumpsuit' && p.inventory.carry.length === CARRY_SLOTS, 'legacy record gets a starting inventory');
+    c.send({ t: 'scavengerIssue', x: comms.x, z: comms.z });
+    const u = await c.wait((m): m is Msg<'playerUpdated'> | Msg<'error'> => m.t === 'error' || (m.t === 'playerUpdated' && m.player.id === cap.you && !!m.player.scavenger));
+    assert(u.t === 'playerUpdated', `legacy Captain receives the hunt on the Bridge (${u.t === 'error' ? u.message : ''})`);
     c.close();
   }
   await sleep(200);

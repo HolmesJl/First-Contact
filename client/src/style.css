@@ -1828,6 +1828,35 @@ kbd {
 
 /* ---------------------------------------------------------------- data pad: quest list and saved files */
 
+.pad-orders {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 196, 107, 0.45);
+  background: rgba(255, 196, 107, 0.08);
+}
+
+.pad-orders.here {
+  border-color: rgba(255, 196, 107, 0.85);
+  box-shadow: 0 0 18px rgba(255, 196, 107, 0.18);
+}
+
+.pad-orders-title {
+  font: 700 12px var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffc46b;
+  margin-bottom: 6px;
+}
+
+.pad-orders p {
+  margin: 0 0 8px;
+}
+
+.pad-orders .pad-hint {
+  margin: 0;
+}
+
 .pad-quest-intro {
   margin: 0 0 8px;
   color: var(--muted);

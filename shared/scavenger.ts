@@ -4,10 +4,17 @@
  * item event arrives. Progress lives on the member record (server) and is mirrored in PlayerState.scavenger.
  */
 import { MATERIALS_PAD_INTERACT_ID, type ItemEvent } from './items';
-import type { QuestStep } from './opening';
+import { REPORT_IN_INTERACT_ID, type QuestStep } from './opening';
+import { spaceAt } from './shipInterior';
 
 export const SCAVENGER_INTRO = 'The captain has given the crew the following task:';
 export const SCAVENGER_TITLE = 'Scavenger hunt';
+/** HUD line and pad hint between the opening's end and picking the hunt up. */
+export const SCAVENGER_FETCH_OBJECTIVE = 'Go to the Bridge and open your data pad (P) for new orders.';
+/** Heading of the pad block that hands the hunt out. */
+export const SCAVENGER_ORDERS_TITLE = 'New orders from the Captain';
+export const SCAVENGER_ORDERS_TEXT = 'The Captain has a task list for the crew. Accept it to add the scavenger hunt to your pad.';
+export const SCAVENGER_OFF_BRIDGE = 'Orders are handed out on the Bridge. Go there and open your pad.';
 /** Name of the Science Lab File task 2 asks for (see FILE_SPECS in items.ts). */
 export const SCAVENGER_FILE_NAME = 'Read Me: module replicator';
 
@@ -65,26 +72,54 @@ export function scavengerCurrentTask(state: ScavengerState | null): ScavengerTas
 
 export const scavengerComplete = (state: ScavengerState | null) => !!state && scavengerCurrentTask(state) === null;
 
-/** Why the pad cannot issue the quest right now, or null when it can. `spaceId` is where the player stands. */
-export function scavengerIssueBlock(p: { questStep: QuestStep; hasPad: boolean; scavenger: ScavengerState | null }, spaceId: string | null): string | null {
+/** How far a door-threshold point may be from the Bridge floor and still count as on it (thresholds are ~2 m deep). */
+const BRIDGE_FRINGE = 1.1;
+
+/**
+ * Is this point on the Bridge? `spaceAt` is null across the ~2 m door threshold, so a player standing in the doorway
+ * counts if the Bridge floor is within BRIDGE_FRINGE of them (the half of the threshold past the door line). A point
+ * in another room or corridor never counts. Used by both the client (pad hint, auto-issue) and the server (the actual
+ * check), so they never disagree.
+ */
+export function isOnBridge(x: number, z: number): boolean {
+  const here = spaceAt(x, z);
+  if (here) return here.id === 'bridge';
+  for (const [dx, dz] of [
+    [BRIDGE_FRINGE, 0],
+    [-BRIDGE_FRINGE, 0],
+    [0, BRIDGE_FRINGE],
+    [0, -BRIDGE_FRINGE],
+  ]) {
+    if (spaceAt(x + dx, z + dz)?.id === 'bridge') return true;
+  }
+  return false;
+}
+
+/** The player has finished the opening and has nothing from the Captain yet: the hunt is waiting on the Bridge. */
+export const scavengerAwaiting = (p: { character?: unknown; questStep: QuestStep; hasPad: boolean; scavenger: ScavengerState | null }) =>
+  !!p.character && p.questStep === 'done' && p.hasPad && !p.scavenger;
+
+/** Why the pad cannot issue the quest right now, or null when it can. `onBridge` is where the player stands. */
+export function scavengerIssueBlock(p: { questStep: QuestStep; hasPad: boolean; scavenger: ScavengerState | null }, onBridge: boolean): string | null {
   if (p.scavenger) return 'The scavenger hunt is already on your pad.';
   if (!p.hasPad) return 'You need your data pad.';
   if (p.questStep !== 'done') return 'Finish the opening tasks first.';
-  if (spaceId !== 'bridge') return 'Open your data pad on the Bridge to receive the next task.';
+  if (!onBridge) return SCAVENGER_OFF_BRIDGE;
   return null;
 }
 
 /** HUD objective line while the opening is done: the current scavenger task, a prompt to fetch it, or the wrap-up. */
 export function scavengerObjective(state: ScavengerState | null): string {
-  if (!state) return 'Opening tasks complete. Open your data pad (P) on the Bridge for the captain\'s next task.';
+  if (!state) return SCAVENGER_FETCH_OBJECTIVE;
   const cur = scavengerCurrentTask(state);
   if (!cur) return 'Scavenger hunt complete.';
   const n = SCAVENGER_TASKS.indexOf(cur) + 1;
   return `${SCAVENGER_TITLE} ${n}/${SCAVENGER_TASKS.length}: ${cur.text}`;
 }
 
-/** Interactable to highlight for the current task, or null. */
+/** Interactable to highlight: the current task's station, the Bridge comms console while the hunt is waiting, or null. */
 export function scavengerHighlightId(state: ScavengerState | null): string | null {
+  if (!state) return REPORT_IN_INTERACT_ID;
   return scavengerCurrentTask(state)?.interactId ?? null;
 }
 

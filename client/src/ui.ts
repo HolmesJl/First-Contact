@@ -22,7 +22,19 @@ import type { Space } from '../../shared/shipInterior';
 import { captainCommsObjective, questObjective, type QuestStep } from '../../shared/opening';
 import { berthLabel, formatUploadTime } from '../../shared/bunks';
 import type { ShipMeta } from '../../shared/protocol';
-import { SCAVENGER_INTRO, SCAVENGER_TASKS, SCAVENGER_TITLE, scavengerComplete, scavengerCurrentTask, scavengerObjective, type ScavengerState } from '../../shared/scavenger';
+import {
+  SCAVENGER_INTRO,
+  SCAVENGER_OFF_BRIDGE,
+  SCAVENGER_ORDERS_TEXT,
+  SCAVENGER_ORDERS_TITLE,
+  SCAVENGER_TASKS,
+  SCAVENGER_TITLE,
+  scavengerAwaiting,
+  scavengerComplete,
+  scavengerCurrentTask,
+  scavengerObjective,
+  type ScavengerState,
+} from '../../shared/scavenger';
 
 const ui = document.getElementById('ui')!;
 
@@ -440,7 +452,8 @@ export class DataPadOverlay {
     ship: ShipMeta,
     me: PlayerState,
     players: Map<string, PlayerState>,
-    private handlers: { onReportIn(): void; onClose(): void },
+    onBridge: boolean,
+    private handlers: { onReportIn(): void; onAcceptOrders(): void; onClose(): void },
   ) {
     this.el.innerHTML = `
       <div class="pad panel">
@@ -456,6 +469,7 @@ export class DataPadOverlay {
       if ((e.target as HTMLElement).closest('.report-in')) handlers.onReportIn();
     });
     this.body.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.pad-accept')) return handlers.onAcceptOrders();
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-file]');
       if (!b) return;
       const name = b.dataset.file!;
@@ -467,13 +481,16 @@ export class DataPadOverlay {
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el) handlers.onClose();
     });
-    this.render(ship, me, players);
+    this.render(ship, me, players, onBridge);
     ui.appendChild(this.el);
     requestAnimationFrame(() => this.el.classList.add('show'));
   }
 
-  /** Redraw from the latest state (the pad stays open while quest tasks complete or Files are saved). */
-  render(ship: ShipMeta, me: PlayerState, players: Map<string, PlayerState>) {
+  /**
+   * Redraw from the latest state (the pad stays open while quest tasks complete or Files are saved). `onBridge` decides
+   * whether the Captain's orders block offers Accept or points the player to the Bridge.
+   */
+  render(ship: ShipMeta, me: PlayerState, players: Map<string, PlayerState>, onBridge = false) {
     const crew = [...players.values()].filter((p) => p.character);
     const job = me.character!.job;
     const others = [...players.values()].filter((p) => p.character && p.id !== me.id);
@@ -506,6 +523,7 @@ export class DataPadOverlay {
       <p>${memory}</p>
       <h4>Your task</h4>
       <p>${esc(task)}</p>
+      ${scavengerAwaiting(me) ? ordersHtml(onBridge) : ''}
       ${me.scavenger ? scavengerListHtml(me.scavenger) : ''}
       <h4>Files</h4>
       ${files}`;
@@ -525,6 +543,16 @@ export class DataPadOverlay {
 function formatPadTime(at: number) {
   const d = new Date(at);
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** Between the opening and the hunt: the Captain's orders are waiting; Accept on the Bridge, directions elsewhere. */
+function ordersHtml(onBridge: boolean) {
+  return `
+      <div class="pad-orders${onBridge ? ' here' : ''}">
+        <div class="pad-orders-title">${esc(SCAVENGER_ORDERS_TITLE)}</div>
+        <p>${esc(SCAVENGER_ORDERS_TEXT)}</p>
+        ${onBridge ? '<button type="button" class="btn primary small pad-accept">Accept orders</button>' : `<p class="muted pad-hint">${esc(SCAVENGER_OFF_BRIDGE)}</p>`}
+      </div>`;
 }
 
 /** The scavenger hunt on the pad: the Captain's intro, each task with Complete once done, in order. */
