@@ -4,6 +4,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Appearance, Face, Job, Sex } from '../../../shared/protocol';
 import { IDLE_PLAYBACK, createMotion, loadMotion, setIdleRate, updateMotion, type Motion } from './characterMotion';
 import { accentFor, loadUniforms, uniformMaterial } from './uniform';
+import { armorBodyMaterial, attachArmorShells, detachArmorShells, loadBodyArmor, type ArmorOptions } from './bodyArmor';
 
 /**
  * Characters are Quaternius' CC0 "Universal Base Characters" (client/public/models/LICENSE-quaternius.txt,
@@ -64,6 +65,11 @@ export interface Rig {
   blink: number;
   wink: number;
   time: number;
+  /** What the body material is built from (null for the unformed clone). */
+  look: { sex: Sex; shaven: boolean; accent: string } | null;
+  body: THREE.SkinnedMesh | null;
+  /** Lite Body Armor currently worn, if any (see setBodyArmor). */
+  armor: { options: ArmorOptions; shells: THREE.SkinnedMesh[] } | null;
 }
 
 interface BodyAsset {
@@ -103,6 +109,7 @@ export function preloadCharacters() {
       new THREE.TextureLoader().loadAsync(`${MODEL_URL}skin-male-shaven.jpg`),
       loadMotion(MODEL_URL),
       loadUniforms(MODEL_URL),
+      loadBodyArmor(MODEL_URL),
     ]);
     shavenTex.flipY = false;
     shavenTex.colorSpace = THREE.SRGBColorSpace;
@@ -317,6 +324,7 @@ export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
   const asset = bodies[sex];
   const model = SkeletonUtils.clone(asset.gltf.scene);
   const face: Rig['face'] = [];
+  let body: THREE.SkinnedMesh | null = null;
 
   model.traverse((o) => {
     const m = o as THREE.SkinnedMesh;
@@ -330,6 +338,7 @@ export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
     }
     switch (m.name) {
       case 'Body':
+        body = m;
         m.material = uniformMaterial(asset.skin, sex, sex === 'male' && app.facialHair === 'none', accentFor(app.job));
         break;
       case 'Eyes':
@@ -384,9 +393,33 @@ export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
     blink: 0,
     wink: 0,
     time: 0,
+    look: app ? { sex, shaven: sex === 'male' && app.facialHair === 'none', accent: accentFor(app.job) } : null,
+    body,
+    armor: null,
   };
   applyFace(rig);
   return rig;
+}
+
+/**
+ * Puts Lite Body Armor on over the jumpsuit (`{}` for the default grey, `{ primary: '#hex' }` for another plate
+ * colour), or takes it off (`null`). The upper-arm bands always take the character's job colour, like the jumpsuit
+ * accent. Safe to call repeatedly; no-op for unformed clones.
+ */
+export function setBodyArmor(rig: Rig, options: ArmorOptions | null) {
+  if (!rig.look || !rig.body || !bodies) return;
+  const { sex, shaven, accent } = rig.look;
+  if (rig.armor) {
+    detachArmorShells(rig.armor.shells);
+    rig.armor = null;
+  }
+  if (!options) {
+    rig.body.material = uniformMaterial(bodies[sex].skin, sex, shaven, accent);
+    return;
+  }
+  const material = armorBodyMaterial(bodies[sex].skin, sex, shaven, accent, options.primary);
+  rig.body.material = material;
+  rig.armor = { options, shells: attachArmorShells(rig.body, sex, material) };
 }
 
 function applyFace(rig: Rig) {
@@ -453,6 +486,8 @@ export function floatRig(rig: Rig, dt: number) {
 }
 
 export function disposeRig(rig: Rig) {
+  if (rig.armor) detachArmorShells(rig.armor.shells);
+  rig.armor = null;
   rig.mixer.stopAllAction();
   rig.mixer.uncacheRoot(rig.mixer.getRoot());
 }

@@ -331,6 +331,7 @@ async function startLab() {
         teleport(x: number, z: number, rot?: number): void;
         cabinDoorFrac(f: number): void;
         interact(id: string): void;
+        armor(on: boolean | string | null, playerId?: string): void;
       };
     }).__fc = {
       lab,
@@ -340,6 +341,8 @@ async function startLab() {
         const { x, z } = lab!.localPos();
         net?.send({ t: 'interact', id, x, z });
       },
+      // __fc.armor(true) puts the grey Lite Body Armor on yourself; pass a hex for another primary, false/null to remove.
+      armor: (on, playerId = selfId) => lab?.setPlayerArmor(playerId, on ? (typeof on === 'string' ? { primary: on } : {}) : null),
     };
   resize();
   hud = new Hud(shipCode, selfId);

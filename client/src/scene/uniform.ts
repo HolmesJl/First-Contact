@@ -68,30 +68,47 @@ function layer(sex: Sex, shaven: boolean): Layer {
   return l;
 }
 
+export const hexToRgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+/** Adds mask * (target - painted) to the pixels of `img`, which recolours a painted flat colour exactly. */
+export function recolour(img: ImageData, mask: Uint8ClampedArray, painted: number[], targetHex: string) {
+  const delta = hexToRgb(targetHex).map((v, k) => v - painted[k]);
+  for (let i = 0; i < mask.length; i++) {
+    const w = mask[i] / 255;
+    if (w === 0) continue;
+    for (let k = 0; k < 3; k++) img.data[i * 4 + k] += w * delta[k];
+  }
+}
+
+export function canvasTexture(img: ImageData, srgb: boolean) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  canvas.getContext('2d')!.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.flipY = false;
+  if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** The painted uniform with the accent recoloured: a fresh copy the caller may keep drawing on. */
+export function uniformImage(sex: Sex, shaven: boolean, accentHex: string) {
+  const { color, mask } = layer(sex, shaven);
+  const out = new ImageData(new Uint8ClampedArray(color.data), color.width, color.height);
+  recolour(out, mask, PAINTED_ACCENT, accentHex);
+  return out;
+}
+
+export const uniformNormalImage = (sex: Sex) => pixels(normals.get(sex)!.image as HTMLImageElement);
+
 /** A skin material wearing the uniform with the given accent colour. Shared between characters with the same look. */
 export function uniformMaterial(skin: THREE.MeshStandardMaterial, sex: Sex, shaven: boolean, accentHex: string) {
   const key = `${sex}|${shaven}|${accentHex}`;
   let m = materials.get(key);
   if (m) return m;
-  const { color, mask } = layer(sex, shaven);
-  const out = new ImageData(new Uint8ClampedArray(color.data), color.width, color.height);
-  const rgb = [1, 3, 5].map((i) => parseInt(accentHex.slice(i, i + 2), 16));
-  const delta = rgb.map((v, k) => v - PAINTED_ACCENT[k]);
-  for (let i = 0; i < mask.length; i++) {
-    const w = mask[i] / 255;
-    if (w === 0) continue;
-    for (let k = 0; k < 3; k++) out.data[i * 4 + k] += w * delta[k];
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = color.width;
-  canvas.height = color.height;
-  canvas.getContext('2d')!.putImageData(out, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.flipY = false;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
   m = skin.clone();
-  m.map = tex;
+  m.map = canvasTexture(uniformImage(sex, shaven, accentHex), true);
   m.normalMap = normals.get(sex)!;
   m.normalScale.set(1.4, 1.4);
   m.roughness = 0.78;

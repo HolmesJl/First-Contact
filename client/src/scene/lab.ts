@@ -3,7 +3,8 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { makeComposer, type View } from './common';
 import { Controls, MIN_PITCH } from '../input/controls';
 import { InteractSystem } from '../interact';
-import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
+import { animateRig, buildRig, disposeRig, floatRig, setBodyArmor, type Rig } from './character';
+import type { ArmorOptions } from './bodyArmor';
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampMoveToShip, clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
@@ -37,6 +38,8 @@ interface Entity {
   /** Recent snapshot positions [ms, x, z], for the ground speed estimate. */
   track: [number, number, number][];
   spawnFx: number;
+  /** Lite Body Armor worn by this player; re-applied when the rig is rebuilt. */
+  armor: ArmorOptions | null;
 }
 
 export interface LabHooks {
@@ -127,10 +130,12 @@ export class LabScene implements View {
       return;
     }
     const wasInTube = existing?.inTube ?? false;
+    const armor = existing?.armor ?? null;
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0 };
+    if (armor && !inTube) setBodyArmor(rig, armor);
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0, armor };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
@@ -315,6 +320,17 @@ export class LabScene implements View {
 
   currentSpaceId() {
     return this.space?.id ?? null;
+  }
+
+  /**
+   * Equips Lite Body Armor on a player (`{}` = the starter armor's grey, `{ primary: '#hex' }` for another plate
+   * colour) or removes it (`null`). The upper-arm bands follow their job colour. This is the hook for inventory equip.
+   */
+  setPlayerArmor(id: string, armor: ArmorOptions | null) {
+    const e = this.entities.get(id);
+    if (!e) return;
+    e.armor = armor;
+    if (!e.inTube) setBodyArmor(e.rig, armor);
   }
 
   /** Dev-only: snap the local player (optionally facing `rot`, camera behind) and sync to the server (walk mode). */
