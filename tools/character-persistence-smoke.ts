@@ -12,6 +12,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { BERTHS, spaceAt } from '../shared/shipInterior';
 import { homeSpawnFor, memoryStationFor, memoryStationId } from '../shared/bunks';
+import { CABIN_KEYPAD_INTERACT_ID, CABIN_KEYPAD_IN_INTERACT_ID, cabinKeypadInInteractPosition, cabinKeypadInteractPosition } from '../shared/cabinDoor';
 import type { Character, ClientMsg, ServerMsg } from '../shared/protocol';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -134,6 +135,30 @@ async function createNew(c: Client, job: Character['job'], name: string, startVo
 
 const near = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z) < 0.01;
 
+/** Test shortcut: the interact handler syncs the sender's position before its range check, so a no-op interact places us. */
+async function placeAt(c: Client, p: { x: number; z: number }) {
+  c.send({ t: 'interact', id: 'smoke-noop', x: p.x, z: p.z });
+  await c.wait((m) => m.t === 'error' && !m.fatal);
+}
+
+const CABIN_CODE = '4321';
+const OUTSIDE_STAND = cabinKeypadInteractPosition();
+const INSIDE_STAND = cabinKeypadInInteractPosition();
+
+/** Use the inside keypad with the saved code: must open without any set prompt (an explicit set is refused). */
+async function openFromInside(c: Client, what: string) {
+  await placeAt(c, INSIDE_STAND);
+  c.send({ t: 'interact', id: CABIN_KEYPAD_IN_INTERACT_ID, x: INSIDE_STAND.x, z: INSIDE_STAND.z });
+  await sleep(250);
+  assert(!c.inbox.some((m) => m.t === 'error'), `${what}: inside keypad interact refused`);
+  c.send({ t: 'cabinKeypad', action: 'set', code: '0000', confirm: '0000', x: INSIDE_STAND.x, z: INSIDE_STAND.z, keypad: CABIN_KEYPAD_IN_INTERACT_ID });
+  const reSet = await c.wait(is('cabinKeypadResult'));
+  assert(!reSet.ok && /already set/i.test(reSet.message ?? ''), `${what}: inside keypad offered to set the code again (${reSet.message})`);
+  c.send({ t: 'cabinKeypad', action: 'enter', code: CABIN_CODE, x: INSIDE_STAND.x, z: INSIDE_STAND.z, keypad: CABIN_KEYPAD_IN_INTERACT_ID });
+  const res = await c.wait(is('cabinKeypadResult'));
+  assert(res.ok, `${what}: inside keypad rejected the saved code (${res.message})`);
+}
+
 // ---------------------------------------------------------------- scenario
 
 const HOST = `smoke-host-${crypto.randomUUID()}`;
@@ -186,6 +211,15 @@ async function main() {
   host.send({ t: 'move', x: cap.player.x, z: cap.player.z + 1.2, rot: 1, moving: false });
   await sleep(150);
 
+  // -- 1b. The captain sets the cabin door code at the corridor keypad. From here on the code is set for the ship.
+  await placeAt(host, OUTSIDE_STAND);
+  host.send({ t: 'cabinKeypad', action: 'set', code: CABIN_CODE, confirm: CABIN_CODE, x: OUTSIDE_STAND.x, z: OUTSIDE_STAND.z, keypad: CABIN_KEYPAD_INTERACT_ID });
+  const setRes = await host.wait(is('cabinKeypadResult'));
+  assert(setRes.ok, `set code failed (${setRes.message})`);
+  const doorMsg = await host.wait(is('cabinDoor'));
+  assert(doorMsg.door.codeSet && doorMsg.door.open, 'door reports code set and opening');
+  await host.wait((m) => m.t === 'playerUpdated' && m.player.id === cap.you && m.player.questStep === 'pick-pad');
+
   // -- 2. Both leave; the other side sees them go offline (not removed).
   host.close();
   crew.close();
@@ -199,17 +233,21 @@ async function main() {
     assert(s.id === cap.you && s.character.job === 'Captain' && s.character.firstName === 'Cap', 'saved captain matches');
     assert(!s.online, 'captain not online after disconnect');
     assert(Date.now() - s.lastPlayedAt < 5000, 'lastPlayedAt updated on disconnect');
-    assert(s.uniform === 'crew' && s.berth === null && s.questStep === 'captain-set-code', 'saved captain fields');
+    assert(s.uniform === 'crew' && s.berth === null && s.questStep === 'pick-pad', 'saved captain fields');
+    assert(chars.ship.cabinDoor.codeSet, 'cabin code still set on reconnect');
     assert(chars.crewCount === 2, `crew count 2 (${chars.crewCount})`);
     c.close();
   }
 
   // -- 4. Restart the server: everything must come back from disk.
   await stopServer();
-  const onDisk = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as { ships: { code: string; members: Record<string, { ownerId: string; character: Character | null }> }[] };
+  const onDisk = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as {
+    ships: { code: string; cabinDoorCode?: string | null; members: Record<string, { ownerId: string; character: Character | null }> }[];
+  };
   const shipOnDisk = onDisk.ships.find((s) => s.code === code)!;
   assert(shipOnDisk, 'ship written to disk');
   assert(Object.values(shipOnDisk.members).every((m) => m.character && m.ownerId), 'members on disk have characters and owners');
+  assert(shipOnDisk.cabinDoorCode === CABIN_CODE, `cabin door code persisted to disk (${shipOnDisk.cabinDoorCode})`);
   await startServer();
 
   // -- 5. Reopened browser: the landing screen asks `hello` and gets every character it owns, with its ship, even
@@ -242,10 +280,14 @@ async function main() {
   assert(me2.character?.job === 'Captain', 'captain character restored');
   assert(near(me2, homeSpawnFor('Captain', null)), `captain spawns at the cabin spot (${me2.x}, ${me2.z})`);
   assert(spaceAt(me2.x, me2.z)?.id === 'cabin', 'captain is inside the cabin');
-  assert(me2.questStep === 'captain-set-code' && !me2.hasPad, 'captain quest state resumed, no wake replay');
+  assert(me2.questStep === 'pick-pad' && !me2.hasPad, 'captain quest state resumed, no wake replay');
   assert(me2.isHost, 'isHost survives restart');
   const engState = w2.players.find((p) => p.id === eng.you)!;
   assert(engState && !engState.connected && engState.berth === 2, 'offline engineer still on the crew with Bunk 2');
+  // The door code survived the restart: the inside keypad opens with it, and never asks to set it again.
+  assert(w2.ship.cabinDoor.codeSet, 'cabin code set after server restart');
+  await openFromInside(host2.c, 'after restart');
+  host2.c.inbox.length = 0;
 
   // -- 6. Engineer picks: spawns at their own bunk, quest step and berth intact.
   const crew2 = await connect({ t: 'join', clientId: CREW, code });
@@ -283,7 +325,9 @@ async function main() {
     again.c.send({ t: 'pickCharacter', characterId: cap.you });
     const w = await again.c.wait(is('welcome'));
     const me = w.players.find((pl) => pl.id === cap.you)!;
-    assert(spaceAt(me.x, me.z)?.id === 'cabin' && me.questStep === 'captain-set-code', 'boarding again after logout lands in the cabin');
+    assert(spaceAt(me.x, me.z)?.id === 'cabin' && me.questStep === 'pick-pad', 'boarding again after logout lands in the cabin');
+    assert(w.ship.cabinDoor.codeSet, 'cabin code set after logout and board');
+    await openFromInside(again.c, 'after logout');
     host2.c = again.c;
     host2.c.inbox.length = 0;
   }

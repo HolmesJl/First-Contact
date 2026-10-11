@@ -522,16 +522,17 @@ export class Hud {
         </div>
       </div>`;
     this.crew = this.el.querySelector('.crew')!;
+    const logoutRow = this.el.querySelector<HTMLElement>('.logout-row')!;
     const logoutBtn = this.el.querySelector<HTMLButtonElement>('[data-act=logout]')!;
     const confirm = this.el.querySelector<HTMLElement>('.logout-confirm')!;
-    logoutBtn.addEventListener('click', () => {
-      logoutBtn.hidden = true;
-      confirm.hidden = false;
-    });
-    this.el.querySelector('[data-act=logout-no]')!.addEventListener('click', () => {
-      confirm.hidden = true;
-      logoutBtn.hidden = false;
-    });
+    // The confirm replaces the trigger (one "Log out" on screen at a time); Stay swaps back.
+    const confirming = (on: boolean) => {
+      logoutRow.classList.toggle('confirming', on);
+      logoutBtn.hidden = on;
+      confirm.hidden = !on;
+    };
+    logoutBtn.addEventListener('click', () => confirming(true));
+    this.el.querySelector('[data-act=logout-no]')!.addEventListener('click', () => confirming(false));
     this.el.querySelector<HTMLButtonElement>('[data-act=logout-yes]')!.addEventListener('click', (e) => {
       (e.currentTarget as HTMLButtonElement).textContent = 'Saving…';
       confirm.querySelectorAll('button').forEach((b) => (b.disabled = true));

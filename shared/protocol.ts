@@ -206,9 +206,10 @@ export type ClientMsg =
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
   | { t: 'interact'; id: string; x: number; z: number }
   | { t: 'reportIn' }
-  | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number }
-  | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number }
-  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number };
+  /** `keypad` is which side's keypad is being used (defaults to the corridor one); the server range-checks against it. */
+  | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number; keypad?: string }
+  | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number; keypad?: string }
+  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string };
 
 export type ServerMsg =
   | { t: 'profile'; characters: ProfileCharacter[] }
@@ -311,9 +312,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       const code = typeof m.code === 'string' ? m.code : '';
       const confirm = typeof m.confirm === 'string' ? m.confirm : '';
       const current = typeof m.current === 'string' ? m.current : '';
-      if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number };
-      if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number };
-      return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number };
+      const keypad = typeof m.keypad === 'string' ? m.keypad : undefined;
+      if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number, keypad };
+      if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number, keypad };
+      return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number, keypad };
     }
     default:
       return null;

@@ -23,7 +23,7 @@ import {
   type ServerMsg,
   type SnapEntry,
 } from '../../shared/protocol';
-import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
+import { isCabinKeypadId } from '../../shared/cabinDoor';
 import { isMemoryStationId } from '../../shared/bunks';
 import { clampMoveToShip, clampToShip } from '../../shared/shipInterior';
 import { applyMemoryUpload } from './bunks';
@@ -34,6 +34,7 @@ import {
   applyCabinKeypadSet,
   cabinDoorObstaclesForShip,
   cabinDoorPublic,
+  resolveKeypadId,
   tickCabinDoors,
   trackCabinDoorPass,
 } from './cabinDoor';
@@ -281,8 +282,8 @@ wss.on('connection', (ws) => {
         const p = clampToShip(msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
-        if (msg.id === CABIN_KEYPAD_INTERACT_ID) {
-          const k = applyCabinKeypadInteract(ship, me);
+        if (isCabinKeypadId(msg.id)) {
+          const k = applyCabinKeypadInteract(ship, me, msg.id);
           if (!k.ok) return send(ws, { t: 'error', message: k.message });
           return;
         }
@@ -312,10 +313,11 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         const now = Date.now();
+        const keypad = resolveKeypadId(msg.keypad);
         let res;
-        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now);
-        else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now);
-        else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now);
+        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now, keypad);
+        else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now, keypad);
+        else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now, keypad);
         if (!res.ok) {
           send(ws, {
             t: 'cabinKeypadResult',

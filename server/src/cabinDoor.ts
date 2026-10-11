@@ -7,7 +7,9 @@ import {
   CABIN_MAX_WRONG_ATTEMPTS,
   cabinDoorExtraObstacles,
   cabinDoorCenter,
+  isCabinKeypadId,
   isValidCabinCode,
+  type CabinKeypadId,
 } from '../../shared/cabinDoor';
 import { inRange, positionForInteract, questStepCompleteNotice, type QuestStep } from '../../shared/opening';
 import type { MemberRecord, ShipRecord } from './store';
@@ -42,7 +44,9 @@ const attemptKey = (code: string, pid: string) => `${code}:${pid}`;
 function rt(ship: ShipRecord): DoorRuntime {
   let r = runtime.get(ship.code);
   if (!r) {
-    r = { openFrac: 0, animFrom: 0, animTo: 0, animStart: 0, closeAt: null, lastPassAt: null };
+    // A door saved open (the server went down mid-cycle) gets a fresh idle timer so it still closes on its own.
+    const open = !!ship.cabinDoorOpen;
+    r = { openFrac: open ? 1 : 0, animFrom: 0, animTo: 0, animStart: 0, closeAt: open ? Date.now() + CABIN_DOOR_IDLE_CLOSE_MS : null, lastPassAt: null };
     runtime.set(ship.code, r);
   }
   return r;
@@ -148,8 +152,13 @@ function lockoutMessage(until: number, now: number) {
   return `Too many wrong attempts. Try again in ${s}s.`;
 }
 
-function checkKeypadRange(member: MemberRecord): string | null {
-  const pos = positionForInteract(CABIN_KEYPAD_INTERACT_ID);
+/** Which keypad a message means; unknown or missing ids fall back to the corridor keypad (older clients). */
+export function resolveKeypadId(id: unknown): CabinKeypadId {
+  return isCabinKeypadId(id) ? id : CABIN_KEYPAD_INTERACT_ID;
+}
+
+function checkKeypadRange(member: MemberRecord, keypad: CabinKeypadId): string | null {
+  const pos = positionForInteract(keypad);
   if (!pos) return 'Nothing to interact with.';
   if (!inRange(member.x, member.z, pos.x, pos.z)) return 'Move closer to the keypad.';
   return null;
@@ -159,8 +168,8 @@ export type CabinKeypadResult =
   | { ok: true; notice?: string; quest?: QuestStep; nextHint?: string; flash?: 'green' | 'red'; dismissMs?: number }
   | { ok: false; message: string; lockoutUntil?: number; dismissMs?: number; flash?: 'green' | 'red' };
 
-export function applyCabinKeypadInteract(ship: ShipRecord, member: MemberRecord): CabinKeypadResult {
-  const err = checkKeypadRange(member);
+export function applyCabinKeypadInteract(ship: ShipRecord, member: MemberRecord, keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID): CabinKeypadResult {
+  const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character) return { ok: false, message: 'Finish creating your clone first.' };
   normalizeCabinDoor(ship);
@@ -179,8 +188,9 @@ export function applyCabinKeypadSet(
   code: string,
   confirm: string,
   now = Date.now(),
+  keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
-  const err = checkKeypadRange(member);
+  const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character || member.character.job !== 'Captain') {
     return { ok: false, message: 'Only the Captain can set the cabin code.' };
@@ -190,8 +200,9 @@ export function applyCabinKeypadSet(
   }
   if (code !== confirm) return { ok: false, message: 'Codes do not match.' };
   normalizeCabinDoor(ship);
+  // The code is set once per ship. A Captain still on the set-code step (older save) may re-set; otherwise it is a change.
   if (ship.cabinDoorCode && member.questStep !== 'captain-set-code') {
-    return { ok: false, message: 'Use “change code” from inside the cabin.' };
+    return { ok: false, message: 'The cabin code is already set. Enter it, or pick “Change code”.' };
   }
   ship.cabinDoorCode = code;
   openCabinDoor(ship, now);
@@ -218,8 +229,9 @@ export function applyCabinKeypadEnter(
   member: MemberRecord,
   code: string,
   now = Date.now(),
+  keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
-  const err = checkKeypadRange(member);
+  const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character) return { ok: false, message: 'No character.' };
   normalizeCabinDoor(ship);
@@ -266,8 +278,9 @@ export function applyCabinKeypadChange(
   code: string,
   confirm: string,
   now = Date.now(),
+  keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
-  const err = checkKeypadRange(member);
+  const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character || member.character.job !== 'Captain') {
     return { ok: false, message: 'Only the Captain can change the code.' };

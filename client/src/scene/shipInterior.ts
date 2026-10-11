@@ -20,9 +20,12 @@ import {
 } from '../../../shared/shipInterior';
 import {
   CABIN_KEYPAD_INTERACT_ID,
+  CABIN_KEYPAD_IN_INTERACT_ID,
   cabinDoorExtraObstacles,
   cabinDoorPanelPose,
   cabinDoorSlideBasis,
+  cabinKeypadInInteractPosition,
+  cabinKeypadInProp,
   cabinKeypadInteractPosition,
 } from '../../../shared/cabinDoor';
 import type { CabinDoorState } from '../../../shared/protocol';
@@ -299,6 +302,7 @@ export class ShipInterior {
   private cabinDoorOpenFrac = 0;
   private cabinDoorTargetFrac = 0;
   private keypadGlow: THREE.Mesh | null = null;
+  private keypadInGlow: THREE.Mesh | null = null;
 
   constructor() {
     this.buildEnvironment();
@@ -317,7 +321,10 @@ export class ShipInterior {
   setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
     this.questTerminals.setHighlight(interactId);
     this.memoryStations.setHighlight(memoryStationIds);
-    if (this.keypadGlow) this.keypadGlow.visible = interactId === CABIN_KEYPAD_INTERACT_ID;
+    // The set-code objective points at the corridor keypad; a Captain who resumes inside the cabin sees the inside one lit too.
+    const keypadLit = interactId === CABIN_KEYPAD_INTERACT_ID;
+    if (this.keypadGlow) this.keypadGlow.visible = keypadLit;
+    if (this.keypadInGlow) this.keypadInGlow.visible = keypadLit;
   }
 
   setBerthOwners(owners: Map<number, BerthOwner>) {
@@ -732,6 +739,47 @@ export class ShipInterior {
       this.root.add(this.keypadGlow);
     }
 
+    // The same keypad on the cabin side of that door: flush against the inside of the round hull, facing into the room.
+    const cabin = this.spaces.get('cabin');
+    if (cabin) {
+      const kp = cabinKeypadInProp();
+      const b = new Batch();
+      const ry = kp.yaw;
+      // Local +x is the hull normal (outward); the face plate sits inward (-normal) of the body.
+      const place = (w: number, h: number, d: number, along: number, y: number, side: number, mat: 'dark' | 'glowCyan' | 'glowRed') => {
+        const tx = -kp.nz;
+        const tz = kp.nx;
+        b.box(w, h, d, kp.x + kp.nx * along + tx * side, y, kp.z + kp.nz * along + tz * side, mat, ry);
+      };
+      place(0.1, 0.55, 0.4, 0, kp.y - 0.15, 0, 'dark');
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) place(0.04, 0.07, 0.07, -0.06, kp.y - 0.3 + r * 0.1, -0.12 + c * 0.12, 'glowCyan');
+      place(0.04, 0.06, 0.28, -0.06, kp.y + 0.18, 0, 'glowRed');
+      b.build(cabin.group);
+      const k = labelSprite('CABIN DOOR · KEYPAD', 'warn', 0.22);
+      k.position.set(kp.x - kp.nx * 0.35, kp.y + 0.55, kp.z - kp.nz * 0.35);
+      cabin.group.add(k);
+      cabin.sprites.push(k);
+
+      const pick = new THREE.Mesh(
+        new THREE.BoxGeometry(0.55, 0.7, 0.45),
+        new THREE.MeshBasicMaterial({ visible: false }),
+      );
+      pick.position.set(kp.x, kp.y, kp.z);
+      pick.rotation.y = ry;
+      pick.userData.interactId = CABIN_KEYPAD_IN_INTERACT_ID;
+      cabin.group.add(pick);
+
+      const stand = cabinKeypadInInteractPosition();
+      this.keypadInGlow = new THREE.Mesh(
+        new THREE.RingGeometry(0.22, 0.38, 32),
+        new THREE.MeshBasicMaterial({ color: 0x5fd8ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+      );
+      this.keypadInGlow.rotation.x = -Math.PI / 2;
+      this.keypadInGlow.position.set(stand.x, 0.04, stand.z);
+      this.keypadInGlow.visible = false;
+      this.root.add(this.keypadInGlow);
+    }
+
     const cabinDoor = SHIP_LAYOUT.doors.find((d) => d.id === 'cabin-in');
     if (cabinDoor && cabinDoor.level === 0 && !cabinDoor.sealed) {
       const basis = cabinDoorSlideBasis();
@@ -866,9 +914,9 @@ export class ShipInterior {
       this.cabinDoorPanel.position.set(pose.x, 0, pose.z);
       this.cabinDoorPanel.rotation.y = pose.yaw;
     }
-    if (this.keypadGlow?.visible) {
-      const pulse = 0.5 + 0.35 * Math.sin(this.time * 3.2);
-      (this.keypadGlow.material as THREE.MeshBasicMaterial).opacity = pulse;
+    for (const glow of [this.keypadGlow, this.keypadInGlow]) {
+      if (!glow?.visible) continue;
+      (glow.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.35 * Math.sin(this.time * 3.2);
     }
     this.sun.position.set(focus.x + 4, 12, focus.z + 7);
     this.sun.target.position.copy(focus);

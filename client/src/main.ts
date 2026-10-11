@@ -6,7 +6,7 @@ import { LabScene } from './scene/lab';
 import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
-import { CabinKeypadOverlay, CABIN_KEYPAD_INTERACT_ID } from './cabinKeypad';
+import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
@@ -283,12 +283,9 @@ async function startLab() {
     onSpace: (space) => hud?.setSpace(space),
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (id, prompt) => {
-      if (id === CABIN_KEYPAD_INTERACT_ID && shipMeta) {
+      if (isCabinKeypadId(id) && shipMeta) {
         const me = players.get(selfId);
-        const inCabin = lab?.currentSpaceId() === 'cabin';
-        hud?.setInteractPrompt(
-          cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null, inCabin),
-        );
+        hud?.setInteractPrompt(cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
         return;
       }
       const berth = id === null ? null : berthFromMemoryStationId(id);
@@ -301,24 +298,25 @@ async function startLab() {
     },
     onInteract: (id) => {
       const { x, z } = lab!.localPos();
-      if (id === CABIN_KEYPAD_INTERACT_ID) {
+      if (isCabinKeypadId(id)) {
         const me = players.get(selfId);
         if (!me?.character || !shipMeta) return;
         if (!shipMeta.cabinDoor.codeSet && me.character.job !== 'Captain') {
           toast('Locked. The captain has not set a code.');
           return;
         }
+        const keypad = id;
         cabinKeypad?.destroy();
         cabinKeypad = new CabinKeypadOverlay({
-          onSubmitSet: (code, confirm) => net?.send({ t: 'cabinKeypad', action: 'set', code, confirm, x, z }),
-          onSubmitEnter: (code) => net?.send({ t: 'cabinKeypad', action: 'enter', code, x, z }),
+          onSubmitSet: (code, confirm) => net?.send({ t: 'cabinKeypad', action: 'set', code, confirm, x, z, keypad }),
+          onSubmitEnter: (code) => net?.send({ t: 'cabinKeypad', action: 'enter', code, x, z, keypad }),
           onSubmitChange: (current, code, confirm) =>
-            net?.send({ t: 'cabinKeypad', action: 'change', current, code, confirm, x, z }),
+            net?.send({ t: 'cabinKeypad', action: 'change', current, code, confirm, x, z, keypad }),
           onClose: () => {
             cabinKeypad = null;
           },
         });
-        cabinKeypad.open(shipMeta, me.character.job, lab?.currentSpaceId() === 'cabin');
+        cabinKeypad.open(shipMeta, me.character.job);
         return;
       }
       net?.send({ t: 'interact', id, x, z });

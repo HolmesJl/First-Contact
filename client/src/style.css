@@ -565,6 +565,14 @@ kbd {
   color: var(--muted);
 }
 
+/* Exactly one of trigger / confirm shows. `display: flex` above would otherwise beat the `hidden` attribute. */
+.logout-row:not(.confirming) .logout-confirm,
+.logout-row.confirming [data-act='logout'],
+.logout-confirm[hidden],
+.logout-row .btn[hidden] {
+  display: none;
+}
+
 .crew-count {
   font: 600 12px var(--display);
   color: var(--muted);
@@ -1287,6 +1295,27 @@ kbd {
   grid-column: span 1;
   font-size: 11px;
   letter-spacing: 0.08em;
+}
+
+.keypad-change-row {
+  margin-top: 2px;
+}
+
+.keypad-change {
+  background: none;
+  border: 0;
+  padding: 4px 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.keypad-change:hover {
+  color: var(--accent);
 }
 
 .memory-upload-overlay {
