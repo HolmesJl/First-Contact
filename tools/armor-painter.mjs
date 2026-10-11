@@ -3,17 +3,19 @@
  *   colour   RGBA: plates in a neutral primary, dark ribbed underlay at the joints; alpha = armor coverage
  *   normal   RGBA: tangent-space normals (plate bevels, panel grooves, ribbing); alpha = same coverage
  *   primary  mask: where the primary colour applies (the game tints these texels: pixel *= primary / PRIMARY)
- *   accent   mask: trim painted in ACCENT, recoloured to the job colour exactly like the jumpsuit's accent
+ *   accent   mask: the job-colour band on each upper arm, painted in ACCENT and recoloured like the jumpsuit's accent
  */
 import sharp from 'sharp';
-import { SC_COUNT, band, clamp, hash, heightToNormal, line, padIslands, rasterise, readBody, smooth } from './body-raster.mjs';
+import { SC_ARM, SC_COUNT, band, clamp, hash, heightToNormal, line, padIslands, rasterise, readBody, seg, smooth } from './body-raster.mjs';
 import { armorFrame, armorRegions } from './armor-regions.mjs';
 
 const RES = 1024;
 /** Neutral value the plates are painted in; the runtime multiplies by primary / PRIMARY. Keep in sync with client bodyArmor.ts. */
 export const PRIMARY = [204, 204, 206];
-/** Trim colour, same as the jumpsuit accent so the client recolours both with one rule. */
+/** Job-colour band colour, same as the jumpsuit accent so the client recolours both with one rule. */
 export const ACCENT = [232, 119, 46];
+/** The job-colour band: where it sits along the upper arm bone (0 = shoulder, 1 = elbow) and its soft edge. */
+const ARM_BAND = { from: 0.4, to: 0.72, edge: 0.03 };
 
 const UNDERLAY = [38, 40, 45];
 const EDGE = [96, 98, 104];
@@ -22,7 +24,7 @@ const GROOVE = [120, 122, 128];
 export async function paintArmor({ glbPath, meshName = 'Body' }) {
   const body = await readBody(glbPath, meshName);
   const f = armorFrame(body);
-  const { H, J, neckY, pelvisY, bootTop, ankleY } = f;
+  const { H, J, pelvisY, bootTop, ankleY } = f;
   const raster = rasterise(body, RES);
   const { N, P, NR, SC, cov, dist } = raster;
 
@@ -70,12 +72,6 @@ export async function paintArmor({ glbPath, meshName = 'Body' }) {
       col = col.map((c, k) => c + (GROOVE[k] - c) * g * shade);
       h -= depth * g;
     };
-    const stripe = (s) => {
-      if (s <= 0) return;
-      accentMask[o] = Math.max(accentMask[o], s);
-      col = col.map((c, k) => c + (ACCENT[k] - c) * s);
-      h += 0.0005 * s;
-    };
     if (r.cuirass > 0.5) {
       const c = smooth(0.5, 0.7, r.cuirass);
       const sternumY = pelvisY + 0.165 * H;
@@ -85,21 +81,13 @@ export async function paintArmor({ glbPath, meshName = 'Body' }) {
       for (const ay of [pelvisY + 0.1 * H, pelvisY + 0.04 * H]) groove(line(y - ay, 0.003 * H) * frontish * c * (1 - smooth(0.09, 0.12, Math.abs(u))), 0.001, 0.35);
       const backish = smooth(0.1, 0.5, -n[2]);
       groove(line(u, 0.004) * backish * c, 0.0014, 0.4);
-      // job-colour chevron across the upper chest and shoulder blades
-      const chev = band(y - (neckY - 0.075 * H) + Math.abs(u) * 0.12 * H, 0.0055 * H, 0.0012 * H) * c * (1 - smooth(0.1, 0.13, Math.abs(u)));
-      stripe(chev * Math.max(frontish, backish) * 0.95);
-    }
-    if (r.pauldron > 0.5) {
-      const c = smooth(0.5, 0.7, r.pauldron);
-      // rim stripe just inside the pauldron edge
-      stripe(band(r.pauldron - 0.78, 0.07, 0.04) * c * 0.9);
     }
     if (r.boot > 0.5) {
       const c = smooth(0.5, 0.7, r.boot);
       const toe = line(y - (ankleY * 0.45 + 0.01 * H), 0.004 * H) * c;
       groove(toe, 0.0012, 0.5);
-      // job-colour band at the boot top
-      stripe(band(y - (bootTop - 0.012 * H), 0.005 * H, 0.0012 * H) * c * 0.95);
+      // boot top: a shallow lip where the boot meets the shin
+      groove(line(y - (bootTop - 0.004 * H), 0.003 * H) * c, 0.001, 0.3);
       // sole: dark and grooved
       const sole = smooth(ankleY * 0.5 + 0.006 * H, ankleY * 0.5 - 0.004 * H, y) * c;
       col = col.map((c2, k) => c2 + (UNDERLAY[k] * 0.9 - c2) * sole);
@@ -108,7 +96,6 @@ export async function paintArmor({ glbPath, meshName = 'Body' }) {
     }
     if (r.shin > 0.5) {
       const c = smooth(0.5, 0.7, r.shin);
-      stripe(band(y - (J[`calf_${r.side}`].p[1] - 0.045 * H), 0.004 * H, 0.001 * H) * c * frontish * 0.9);
       groove(line(x - J[`calf_${r.side}`].p[0], 0.0045) * c * frontish, 0.001, 0.35);
     }
     if (r.thigh > 0.5) {
@@ -119,12 +106,20 @@ export async function paintArmor({ glbPath, meshName = 'Body' }) {
     if (r.bracer > 0.5) {
       const c = smooth(0.5, 0.7, r.bracer);
       const wristY = J[`hand_${r.side}`].p[1];
-      stripe(band(y - (wristY + 0.045 * H), 0.004 * H, 0.001 * H) * c * 0.9);
+      groove(line(y - (wristY + 0.045 * H), 0.003 * H) * c, 0.001, 0.3);
     }
-    if (r.upperarm > 0.5) {
-      const c = smooth(0.5, 0.7, r.upperarm);
-      const midY = (J[`upperarm_${r.side}`].p[1] + J[`lowerarm_${r.side}`].p[1]) / 2;
-      groove(line(y - midY, 0.0028 * H) * c, 0.001, 0.35);
+    // the only secondary colour: one thick job-colour band right round each upper arm, raised like a sleeve plate
+    if (sc[SC_ARM] > 0.3 && r.cover > 0) {
+      const up = seg(p, J[`upperarm_${r.side}`].p, J[`lowerarm_${r.side}`].p);
+      if (up.t > 0 && up.t < 1) {
+        const armBand = smooth(ARM_BAND.from - ARM_BAND.edge, ARM_BAND.from + ARM_BAND.edge, up.t) * smooth(ARM_BAND.to + ARM_BAND.edge, ARM_BAND.to - ARM_BAND.edge, up.t) * smooth(0.3, 0.6, sc[SC_ARM]) * r.cover;
+        if (armBand > 0) {
+          accentMask[o] = Math.max(accentMask[o], armBand);
+          primaryMask[o] *= 1 - armBand;
+          col = col.map((c, k) => c + (ACCENT[k] * (0.96 + 0.08 * weave) - c) * armBand);
+          h += 0.0025 * armBand;
+        }
+      }
     }
 
     // seams of the underlay along the UV island borders
