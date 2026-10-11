@@ -10,8 +10,11 @@ import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
+import { InventoryOverlay } from './inventory';
 import { objectiveInteractId, questObjective } from '../../shared/opening';
-import type { ClientMsg, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
+import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt, stockPanelById } from '../../shared/items';
+import { scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
+import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -65,6 +68,7 @@ let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
+let inventory: InventoryOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let shipMeta: ShipMeta | null = null;
@@ -295,10 +299,34 @@ async function startLab() {
         hud?.setInteractPrompt(memoryStationHoverPrompt(berth, owner, players.get(selfId) ?? null));
         return;
       }
+      if (id !== null && isItemInteractId(id)) {
+        hud?.setInteractPrompt(itemInteractPrompt(id, players.get(selfId)?.berth ?? null));
+        return;
+      }
       hud?.setInteractPrompt(prompt);
     },
     onInteract: (id) => {
       const { x, z } = lab!.localPos();
+      if (isItemInteractId(id)) {
+        const me = players.get(selfId);
+        if (!me?.character) return;
+        const panel = stockPanelById(id);
+        if (panel) {
+          // The panel opens locally; the click is reported so the quest hears about it (the materials pad task).
+          inventory?.open({ panel });
+          net?.send({ t: 'interact', id, x, z });
+          return;
+        }
+        const closetBerth = berthFromClosetId(id);
+        if (closetBerth !== null) {
+          if (me.berth === null) return toast('Claim a bunk first: upload your memories at its pad.');
+          if (me.berth !== closetBerth) return toast(`${closetBerth === 0 ? "The Captain's trunk" : `Closet ${closetBerth}`} is not yours.`);
+          return inventory?.open({ closet: closetBerth });
+        }
+        // World Files: the server copies the File into a carry slot.
+        if (isWorldFileId(id)) net?.send({ t: 'interact', id, x, z });
+        return;
+      }
       if (isCabinKeypadId(id)) {
         const me = players.get(selfId);
         if (!me?.character || !shipMeta) return;
@@ -346,6 +374,15 @@ async function startLab() {
   hud.onLogout = logout;
   hud.onRosterDelete = (characterId) => net?.send({ t: 'deleteCharacter', characterId });
   hud.render(players);
+  inventory?.destroy();
+  inventory = new InventoryOverlay({
+    send: (action: InventoryAction) => {
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'inv', action, x, z });
+    },
+    playerPos: () => lab?.localPos() ?? null,
+  });
+  if (shipMeta) inventory.setStock(shipMeta.stock);
   syncHudSelf();
 
   const me = players.get(selfId)!;
@@ -365,9 +402,22 @@ function syncHudSelf() {
   hud.setHasPad(me.hasPad);
   hud.setBerth(me.berth, me.lastUploadAt);
   hud.syncPlayerQuest(me.character?.job ?? null, me.questStep, me.isClone, me.hasPad, players, selfId, me.berth);
-  const terminal = me.character ? objectiveInteractId(me.questStep, me.character.job, me.isClone, me.berth) : null;
+  // After the opening, the HUD line and the lit station belong to the scavenger hunt (or the prompt to fetch it).
+  const scavenging = !!me.character && me.questStep === 'done';
+  if (scavenging) hud.setObjective(scavengerObjective(me.scavenger));
+  const terminal = !me.character ? null : scavenging ? scavengerHighlightId(me.scavenger) : objectiveInteractId(me.questStep, me.character.job, me.isClone, me.berth);
   const stations = me.character && me.questStep === 'upload-memories' ? uploadObjectiveStationIds(me, players.values()) : [];
   lab?.setQuestHighlight(terminal, stations);
+  lab?.setOwnBerth(me.berth);
+  inventory?.setInventory(me.inventory);
+  if (pad && shipMeta) pad.render(shipMeta, me, players);
+}
+
+function toggleInventory() {
+  const me = players.get(selfId);
+  if (!me?.character || !lab || !inventory) return;
+  if (inventory.isOpen) inventory.close();
+  else inventory.open();
 }
 
 function enterWalk(me: PlayerState) {
@@ -404,6 +454,8 @@ async function logout() {
 function openPad() {
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !shipMeta) return;
+  // Opening the pad on the Bridge once the opening quest is done is how the Captain's scavenger hunt is handed out.
+  if (!scavengerIssueBlock(me, lab?.currentSpaceId() ?? null)) net?.send({ t: 'scavengerIssue' });
   pad?.destroy();
   pad = new DataPadOverlay(shipMeta, me, players, {
     onReportIn: () => net?.send({ t: 'reportIn' }),
@@ -415,10 +467,16 @@ function openPad() {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+  if ((e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (!players.get(selfId)?.character || !lab) return;
+    e.preventDefault();
+    toggleInventory();
+    return;
+  }
   if (e.key !== 'p' && e.key !== 'P' && e.key !== 'Tab') return;
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !lab) return;
-  if (e.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
   e.preventDefault();
   if (pad) {
     pad.destroy();
@@ -475,7 +533,17 @@ function handle(m: ServerMsg) {
     case 'shipState':
       shipMeta = m.ship;
       lab?.setCabinDoor(m.ship.cabinDoor);
+      inventory?.setStock(m.ship.stock);
       wakeIntro?.enableContinue(() => beginCreator());
+      break;
+    case 'closet':
+      inventory?.setCloset(m.slots);
+      break;
+    case 'invResult':
+      if (m.message) toast(m.message);
+      // Loot and quest hand-outs open the inventory so the player sees what arrived; opened Files show their text.
+      if (m.ok && m.gained && inventory && !inventory.isOpen) inventory.open();
+      if (m.ok && m.file) inventory?.showFile(m.file.name, m.file.text);
       break;
     case 'notice':
       toast(m.message);

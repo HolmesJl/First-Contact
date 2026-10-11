@@ -1481,3 +1481,458 @@ kbd {
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+/* ---------------------------------------------------------------- inventory */
+
+.inv-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.inv-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.inv-window {
+  width: min(94vw, 760px);
+  max-height: 86vh;
+  overflow: auto;
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.inv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.inv-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.inv-body {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+.inv-carry {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inv-side {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 22px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inv-side[hidden] {
+  display: none;
+}
+
+.inv-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.inv-count {
+  font: 600 12px var(--display);
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.inv-grid.closet {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.inv-slot {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 210, 255, 0.18);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+
+.inv-slot:hover {
+  border-color: rgba(140, 220, 255, 0.55);
+  background: rgba(94, 231, 255, 0.08);
+}
+
+.inv-slot.filled {
+  background: rgba(94, 231, 255, 0.06);
+  border-color: rgba(140, 210, 255, 0.32);
+}
+
+.inv-slot.lifted {
+  border-style: dashed;
+  border-color: rgba(255, 210, 120, 0.8);
+}
+
+.inv-slot.lifted .glyph {
+  opacity: 0.3;
+}
+
+.inv-slot .glyph,
+.inv-ghost .glyph,
+.inv-equipped .glyph,
+.inv-row .glyph {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.inv-slot .qty,
+.inv-ghost .qty {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  font: 700 12px var(--display);
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+
+.inv-slot .tag {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 3px;
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inv-equipped {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inv-equipped li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+  font-size: 13px;
+}
+
+.inv-equipped .who {
+  flex: 1;
+}
+
+.inv-equipped .ac,
+.inv-row .n,
+.inv-materials .n {
+  font: 700 12px var(--display);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.inv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inv-cursor-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.inv-stock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inv-row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 210, 255, 0.2);
+  background: rgba(94, 231, 255, 0.05);
+  color: var(--text);
+  font: 500 14px var(--body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.inv-row:hover:not(:disabled) {
+  background: rgba(94, 231, 255, 0.14);
+  border-color: rgba(140, 220, 255, 0.5);
+}
+
+.inv-row:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.inv-row .who {
+  flex: 1;
+}
+
+.inv-materials {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.inv-materials li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+}
+
+.inv-materials .who {
+  flex: 0 0 110px;
+}
+
+.inv-materials .recipe {
+  flex: 1;
+  font-size: 12px;
+}
+
+.inv-note {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inv-viewer {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border-color: rgba(94, 231, 255, 0.35);
+}
+
+.inv-file-name {
+  font: 700 15px var(--display);
+  letter-spacing: 0.08em;
+}
+
+.inv-file-text,
+.pad-file-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.inv-ghost {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(10, 24, 36, 0.9);
+  border: 1px solid rgba(255, 210, 120, 0.8);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 700px) {
+  .inv-body {
+    flex-direction: column;
+  }
+
+  .inv-carry {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .inv-side {
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ---------------------------------------------------------------- data pad: quest list and saved files */
+
+.pad-quest-intro {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pad-tasks {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pad-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+}
+
+.pad-task.current {
+  border-color: rgba(255, 196, 107, 0.6);
+  background: rgba(255, 196, 107, 0.08);
+}
+
+.pad-task.done {
+  opacity: 0.75;
+}
+
+.pad-task.done .pad-task-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(125, 255, 184, 0.6);
+}
+
+.pad-task-n {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 12px var(--display);
+  background: rgba(94, 231, 255, 0.12);
+  color: var(--accent);
+}
+
+.pad-task.done .pad-task-n {
+  background: rgba(125, 255, 184, 0.18);
+  color: #7dffb8;
+}
+
+.pad-task-text {
+  flex: 1;
+}
+
+.pad-task-state {
+  flex: 0 0 auto;
+  font: 700 11px var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7dffb8;
+}
+
+.pad-task-state.now {
+  color: #ffc46b;
+}
+
+.pad-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pad-file-row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 210, 255, 0.14);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font: 500 14px var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pad-file-row:hover {
+  border-color: rgba(140, 220, 255, 0.5);
+}
+
+.pad-file-time {
+  flex: 0 0 auto;
+  font: 600 11px var(--display);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.pad-file-name {
+  flex: 1;
+}
+
+.pad-file .pad-file-text {
+  display: none;
+  padding: 8px 12px 4px;
+}
+
+.pad-file.open .pad-file-text {
+  display: block;
+}
