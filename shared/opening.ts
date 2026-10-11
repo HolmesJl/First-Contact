@@ -36,6 +36,9 @@ export const JOB_STATION_INTERACT: Record<Job, string> = {
   Botanist: 'botanist-station',
 };
 
+/** Where crew report in to the bridge: the comms console's quest terminal (any job; the star map stays the Captain's). */
+export const REPORT_IN_INTERACT_ID = 'bridge-comms';
+
 const STATION_BY_KIND = new Map(STATIONS.map((s) => [s.kind, s]));
 
 export function stationForJob(job: Job) {
@@ -97,6 +100,8 @@ export function objectiveInteractId(
       return berth === null ? null : memoryStationId(berth);
     case 'job-station':
       return JOB_STATION_INTERACT[job];
+    case 'report':
+      return REPORT_IN_INTERACT_ID;
     case 'captain-helm':
       return 'star-map';
     default:
@@ -148,8 +153,10 @@ export function questObjective(
       const t = terminalMeta(id)!;
       return `Go to the ${t.room} and log in at the ${t.object}.`;
     }
-    case 'report':
-      return 'Open your data pad (P) and report in to the bridge.';
+    case 'report': {
+      const t = terminalMeta(REPORT_IN_INTERACT_ID)!;
+      return `Go to the ${t.room} and report in at the ${t.object}.`;
+    }
     case 'captain-helm': {
       const t = terminalMeta('star-map')!;
       return `Go to the ${t.room} and log in at the ${t.object}.`;
@@ -174,6 +181,8 @@ export function interactPrompt(interactId: string): string | null {
       return 'Pick up data pad';
     case 'star-map':
       return 'Log in at the helm';
+    case REPORT_IN_INTERACT_ID:
+      return 'Report in';
     case 'lab-bench':
       return 'Check in with the doctor';
     case 'botanist-station':
@@ -225,6 +234,9 @@ export function nextQuestStep(step: QuestStep, job: Job, isClone: boolean): Ques
     case 'captain-helm':
       return 'captain-comms';
     case 'report':
+      // HOOK: the Captain's follow-up assignments go here. Reporting in at the bridge comms console is where crew
+      // receive their next quest; until that exists, reporting in ends the opening.
+      return 'done';
     case 'captain-comms':
       return 'done';
     default:

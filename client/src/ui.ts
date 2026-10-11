@@ -229,10 +229,14 @@ export class DataPadOverlay {
       <div class="pad panel">
         <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
         <div class="pad-scroll"></div>
-        <footer>
-          <button class="btn primary report-in" ${me.questStep === 'report' || canOpenComms ? '' : 'disabled'}>${isCaptainComms ? 'Open comms channel' : 'Report in to bridge'}</button>
-          ${isCaptainComms && !canOpenComms ? '<p class="muted pad-hint">Opens when at least one crew member reports in.</p>' : ''}
-        </footer>
+        ${
+          isCaptainComms
+            ? `<footer>
+          <button class="btn primary report-in" ${canOpenComms ? '' : 'disabled'}>Open comms channel</button>
+          ${canOpenComms ? '' : '<p class="muted pad-hint">Opens when at least one crew member reports in at the bridge.</p>'}
+        </footer>`
+            : ''
+        }
       </div>`;
     this.body = this.el.querySelector('.pad-scroll')!;
     this.body.innerHTML = `
@@ -245,7 +249,8 @@ export class DataPadOverlay {
       <h4>Your task</h4>
       <p>${esc(task)}</p>`;
     this.el.querySelector('.pad-close')!.addEventListener('click', () => handlers.onClose());
-    this.el.querySelector('.report-in')!.addEventListener('click', () => handlers.onReportIn());
+    // Crew report in at the bridge comms console, not from the pad; only the Captain's comms step has a pad action.
+    this.el.querySelector('.report-in')?.addEventListener('click', () => handlers.onReportIn());
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el) handlers.onClose();
     });

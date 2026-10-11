@@ -91,6 +91,15 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
   };
 }
 
+/** Once every awake crew member has reported in at the bridge, the Captain's comms step completes on its own. */
+function announceCaptainComplete(ship: ShipRecord) {
+  const captain = maybeCompleteCaptain(ship);
+  if (!captain) return;
+  store.save();
+  broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, captain) });
+  broadcast(ship.code, { t: 'notice', message: 'All crew have reported in. The Captain may resume the journey.' });
+}
+
 function sanitizeCharacter(c: Character): Character {
   return {
     sex: c.sex,
@@ -259,6 +268,7 @@ wss.on('connection', (ws) => {
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
         if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
+        announceCaptainComplete(ship);
         break;
       }
       case 'cabinKeypad': {
@@ -303,12 +313,7 @@ wss.on('connection', (ws) => {
         broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
         if (res.notice) broadcast(ship.code, { t: 'notice', message: res.notice });
         if (res.nextHint) broadcast(ship.code, { t: 'notice', message: res.nextHint });
-        const captainDone = maybeCompleteCaptain(ship);
-        if (captainDone) {
-          store.save();
-          broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, captainDone) });
-          broadcast(ship.code, { t: 'notice', message: 'All crew have reported in. The Captain may resume the journey.' });
-        }
+        announceCaptainComplete(ship);
         break;
       }
       case 'move': {
