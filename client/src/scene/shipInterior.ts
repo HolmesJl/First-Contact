@@ -726,10 +726,6 @@ export class ShipInterior {
       for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.box(0.04, 0.07, 0.07, kFace, y - 0.3 + r * 0.1, z - 0.12 + c * 0.12, 'glowCyan');
       b.box(0.04, 0.06, 0.28, kFace, y + 0.18, z, 'glowRed');
       b.build(cab.group);
-      const k = labelSprite("CAPTAIN'S CABIN · KEYPAD", 'warn', 0.22);
-      k.position.set(kx + doorWall.nx * 0.35, y + 0.55, z);
-      cab.group.add(k);
-      cab.sprites.push(k);
 
       const pick = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.7, 0.45),
@@ -766,10 +762,6 @@ export class ShipInterior {
       for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) place(0.04, 0.07, 0.07, -0.06, kp.y - 0.3 + r * 0.1, -0.12 + c * 0.12, 'glowCyan');
       place(0.04, 0.06, 0.28, -0.06, kp.y + 0.18, 0, 'glowRed');
       b.build(cabin.group);
-      const k = labelSprite('CABIN DOOR · KEYPAD', 'warn', 0.22);
-      k.position.set(kp.x - kp.nx * 0.35, kp.y + 0.55, kp.z - kp.nz * 0.35);
-      cabin.group.add(k);
-      cabin.sprites.push(k);
 
       const pick = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.7, 0.45),
@@ -916,7 +908,7 @@ export class ShipInterior {
     this.time += dt;
     this.questTerminals.update(this.time);
     this.memoryStations.update(this.time, camera);
-    this.itemStations.update(camera, dt);
+    this.itemStations.update(dt);
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;

@@ -97,8 +97,9 @@ export class MemoryStationLayer {
     const v = this.views.get(interactId);
     if (!v || (v.labelText === text && v.owned === owned)) return;
     v.label?.removeFromParent();
-    v.label = labelSprite(text, owned ? 'station' : 'prop', 0.16);
-    v.label.position.set(0, 0.3, 0.1);
+    // Compact owner tag (the only floating label left on a prop): who holds the berth, or FREE.
+    v.label = labelSprite(text, owned ? 'station' : 'prop', 0.1);
+    v.label.position.set(0, 0.26, 0.1);
     v.group.add(v.label);
     v.labelText = text;
     v.owned = owned;
@@ -120,7 +121,7 @@ export class MemoryStationLayer {
       }
       if (v.label) {
         const d = v.label.getWorldPosition(this.anchor).distanceTo(camera.position);
-        v.label.visible = d < 9;
+        v.label.visible = d < 7;
       }
     }
   }

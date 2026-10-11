@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { CLOSETS, STOCK_PANELS, WORLD_FILES, itemInteractPosition } from '../../../shared/items';
 import { FACE_OUT } from '../../../shared/shipInterior';
-import { labelSprite } from './interior/kit';
 
 const HANDLE_IDLE = new THREE.Color(0x2a8cb8);
 const HANDLE_OWNED = new THREE.Color(0x2fa868);
@@ -9,13 +8,12 @@ const HANDLE_OWNED = new THREE.Color(0x2fa868);
 /**
  * Item interactables in the ship: stock control panels (Eatery, Printer, Refinery, Cargo Hold shelves) as amber
  * screens on their props, one closet handle per berth tier on the bunk-room cabinets and the Captain's trunk, and the
- * world Files: identical read-me pads lying on prop tops. Placement comes from shared/items.ts.
+ * world Files: identical read-me pads lying on prop tops. Placement comes from shared/items.ts. None carries a floating
+ * name tag: the hover prompt and the quest glow identify them.
  */
 export class ItemStationLayer {
   private readonly root = new THREE.Group();
   private closetHandles = new Map<number, THREE.MeshStandardMaterial>();
-  private labels: THREE.Sprite[] = [];
-  private anchor = new THREE.Vector3();
   /** Floor ring at the stand point of the quest's current item station. */
   private glow: THREE.Mesh;
   private time = 0;
@@ -47,10 +45,7 @@ export class ItemStationLayer {
       const pick = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.35), new THREE.MeshBasicMaterial({ visible: false }));
       pick.position.z = 0.05;
       pick.userData.interactId = p.interactId;
-      const label = labelSprite(p.title.toUpperCase(), 'station', 0.16);
-      label.position.set(0, 0.34, 0.1);
-      this.labels.push(label);
-      g.add(arm, panel, pick, label);
+      g.add(arm, panel, pick);
       this.root.add(g);
     }
 
@@ -66,10 +61,7 @@ export class ItemStationLayer {
       const pick = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.3), new THREE.MeshBasicMaterial({ visible: false }));
       pick.position.z = 0.08;
       pick.userData.interactId = c.interactId;
-      const label = labelSprite(c.berth === 0 ? "CAPTAIN'S TRUNK" : `CLOSET ${c.berth}`, 'prop', 0.11);
-      label.position.set(0, 0.17, 0.08);
-      this.labels.push(label);
-      g.add(plate, handle, pick, label);
+      g.add(plate, handle, pick);
       this.root.add(g);
       this.closetHandles.set(c.berth, mat);
     }
@@ -91,10 +83,7 @@ export class ItemStationLayer {
       const pick = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.45), new THREE.MeshBasicMaterial({ visible: false }));
       pick.position.y = 0.1;
       pick.userData.interactId = w.interactId;
-      const label = labelSprite(`FILE · ${w.name.toUpperCase()}`, 'prop', 0.12);
-      label.position.set(0, 0.3, 0);
-      this.labels.push(label);
-      g.add(body, strip, tab, pick, label);
+      g.add(body, strip, tab, pick);
       this.root.add(g);
     }
   }
@@ -115,12 +104,8 @@ export class ItemStationLayer {
     if (p) this.glow.position.set(p.x, 0.04, p.z);
   }
 
-  update(camera: THREE.Camera, dt = 0) {
+  update(dt = 0) {
     this.time += dt;
     if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.35 * Math.sin(this.time * 3.2);
-    for (const l of this.labels) {
-      const d = l.getWorldPosition(this.anchor).distanceTo(camera.position);
-      l.visible = d < 7;
-    }
   }
 }
