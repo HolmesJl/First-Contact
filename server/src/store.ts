@@ -77,6 +77,10 @@ export class ShipStore {
     return this.ships.get(code);
   }
 
+  all(): Iterable<ShipRecord> {
+    return this.ships.values();
+  }
+
   create(hostId: string): ShipRecord {
     let code = '';
     do {

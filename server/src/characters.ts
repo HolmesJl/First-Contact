@@ -4,9 +4,9 @@
  * quarters; deleting it frees its crew slot, job and berth.
  */
 import { homeSpawnFor } from '../../shared/bunks';
-import { MAX_CREW, type SavedCharacter } from '../../shared/protocol';
+import { MAX_CREW, type ProfileCharacter, type SavedCharacter } from '../../shared/protocol';
 import { TUBE_COUNT, spawnFor } from '../../shared/lab';
-import { assignCloneTank, normalizeMember } from './opening';
+import { assignCloneTank, normalizeMember, normalizeShip } from './opening';
 import type { MemberRecord, ShipRecord } from './store';
 
 export function ownedCharacters(ship: ShipRecord, clientId: string): MemberRecord[] {
@@ -30,6 +30,18 @@ export function savedCharacters(ship: ShipRecord, clientId: string, isOnline: (i
       online: isOnline(m.id),
     };
   });
+}
+
+/** Every character this browser owns on any ship, most recently played first; the landing screen's Continue list. */
+export function profileCharacters(ships: Iterable<ShipRecord>, clientId: string, isOnline: (code: string, id: string) => boolean): ProfileCharacter[] {
+  const out: ProfileCharacter[] = [];
+  for (const ship of ships) {
+    normalizeShip(ship);
+    for (const c of savedCharacters(ship, clientId, (id) => isOnline(ship.code, id))) {
+      out.push({ ...c, shipCode: ship.code, shipName: ship.shipName! });
+    }
+  }
+  return out.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
 }
 
 /**

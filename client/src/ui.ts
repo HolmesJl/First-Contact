@@ -15,6 +15,7 @@ import {
   type Character,
   type Job,
   type PlayerState,
+  type ProfileCharacter,
   type SavedCharacter,
 } from '../../shared/protocol';
 import type { Gait } from '../../shared/movement';
@@ -42,8 +43,14 @@ export class TitleScreen {
   readonly el = h('div', 'title-screen');
   private error: HTMLElement;
   private buttons: HTMLButtonElement[];
+  private continueSection: HTMLElement;
+  private continueNote: HTMLElement;
+  private saved: CharacterList<ProfileCharacter>;
 
-  constructor(invite: string | null, handlers: { onHost(): void; onJoin(code: string): void }) {
+  constructor(
+    invite: string | null,
+    handlers: { onHost(): void; onJoin(code: string): void; onBoard(c: ProfileCharacter): void; onDelete(c: ProfileCharacter): void },
+  ) {
     this.el.innerHTML = `
       <div class="brand">
         <div class="kicker">Invite-only co-op · 1–6 crew</div>
@@ -52,6 +59,12 @@ export class TitleScreen {
       </div>
       <div class="card panel">
         ${invite ? `<div class="invite-banner">You've been invited aboard ship <b>${esc(invite)}</b></div>` : ''}
+        <section class="continue" hidden>
+          <h2>Continue</h2>
+          <p class="muted continue-note">Your saved characters. Boarding wakes them in their quarters.</p>
+          <ul class="pick-list"></ul>
+        </section>
+        <div class="divider continue-divider" hidden><span>or</span></div>
         <section>
           <h2>Host a voyage</h2>
           <p class="muted">Commission a new ship server and share the invite code with up to five crewmates.</p>
@@ -69,6 +82,19 @@ export class TitleScreen {
       </div>`;
     this.error = this.el.querySelector('.error')!;
     this.buttons = [...this.el.querySelectorAll('button')];
+    this.continueSection = this.el.querySelector('.continue')!;
+    this.continueNote = this.el.querySelector('.continue-note')!;
+    this.saved = new CharacterList<ProfileCharacter>(this.el.querySelector('.continue .pick-list')!, {
+      showShip: true,
+      onPick: (c) => {
+        this.setBusy(true);
+        handlers.onBoard(c);
+      },
+      onDelete: (c) => {
+        this.setBusy(true);
+        handlers.onDelete(c);
+      },
+    });
     const input = this.el.querySelector<HTMLInputElement>('input.code')!;
     input.addEventListener('input', () => (input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
     this.el.querySelector('[data-act=host]')!.addEventListener('click', () => handlers.onHost());
@@ -82,12 +108,24 @@ export class TitleScreen {
     if (invite) input.focus();
   }
 
+  /** Saved characters across ships (server-authoritative list). `null` while loading, `[]` when there are none. */
+  setSaved(characters: ProfileCharacter[] | null, note?: string) {
+    const show = characters === null || characters.length > 0;
+    this.continueSection.hidden = !show;
+    this.el.querySelector<HTMLElement>('.continue-divider')!.hidden = !show;
+    this.el.classList.toggle('has-saved', show);
+    this.continueNote.textContent = note ?? 'Your saved characters. Boarding wakes them in their quarters.';
+    this.saved.render(characters ?? [], characters === null ? 'Looking for your crew…' : '');
+  }
+
+  /** Disable everything while a connection is in flight. `label` goes on the host/join buttons. */
   setBusy(busy: boolean, label?: string) {
     this.buttons.forEach((b) => {
       b.disabled = busy;
       if (!b.dataset.label) b.dataset.label = b.textContent ?? '';
       b.textContent = busy && label ? label : b.dataset.label;
     });
+    this.saved.setDisabled(busy);
     if (busy) this.error.textContent = '';
   }
 
@@ -117,19 +155,108 @@ export function formatLastPlayed(at: number, now = Date.now()) {
 }
 
 /**
- * Returning players pick a saved character or start a new one. Deleting asks for confirmation inline on the row.
- * The list is whatever the server says this browser owns; it re-renders when the server sends a fresh list.
+ * Rows of saved characters with Board and Delete (inline confirm). Used by the landing screen's Continue section
+ * (rows name their ship) and by the per-ship pick screen. The list is whatever the server says this browser owns.
+ */
+export class CharacterList<T extends SavedCharacter> {
+  private items: T[] = [];
+  private emptyText = '';
+  private confirming: string | null = null;
+  private busy = false;
+
+  constructor(
+    private ul: HTMLElement,
+    private opts: { showShip?: boolean; onPick(c: T): void; onDelete(c: T): void },
+  ) {
+    ul.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
+      if (!b || this.busy) return;
+      const id = b.closest<HTMLElement>('[data-id]')!.dataset.id!;
+      const item = this.items.find((c) => c.id === id);
+      if (!item) return;
+      switch (b.dataset.act) {
+        case 'pick':
+          this.lock(b, 'Boarding…');
+          this.opts.onPick(item);
+          break;
+        case 'delete':
+          this.confirming = id;
+          this.renderRows();
+          break;
+        case 'cancel':
+          this.confirming = null;
+          this.renderRows();
+          break;
+        case 'confirm':
+          this.confirming = null;
+          this.lock(b, 'Deleting…');
+          this.opts.onDelete(item);
+          break;
+      }
+    });
+  }
+
+  render(items: T[], emptyText = '') {
+    this.items = items;
+    this.emptyText = emptyText;
+    this.busy = false;
+    if (this.confirming && !items.some((c) => c.id === this.confirming)) this.confirming = null;
+    this.renderRows();
+  }
+
+  setDisabled(disabled: boolean) {
+    this.busy = disabled;
+    this.ul.querySelectorAll('button').forEach((b) => (b.disabled = disabled));
+  }
+
+  private lock(button: HTMLButtonElement, label: string) {
+    this.setDisabled(true);
+    button.textContent = label;
+  }
+
+  private renderRows() {
+    if (this.items.length === 0) {
+      this.ul.innerHTML = this.emptyText ? `<li class="pick-empty muted">${esc(this.emptyText)}</li>` : '';
+      return;
+    }
+    this.ul.innerHTML = this.items
+      .map((c) => {
+        const ch = c.character;
+        const color = JOB_INFO[ch.job].color;
+        const name = `${esc(ch.firstName)} ${esc(ch.lastName)}`;
+        const shipCode = this.opts.showShip && 'shipCode' in c ? esc(String((c as unknown as ProfileCharacter).shipCode)) : null;
+        const ship = shipCode ? ` · ship ${shipCode}` : '';
+        if (this.confirming === c.id) {
+          return `<li class="pick-row confirm" data-id="${esc(c.id)}">
+            <div class="pick-who"><b>Delete ${name}?</b><div class="muted">Their ${esc(ch.job)} post${c.berth !== null ? ` and ${esc(berthLabel(c.berth))}` : ''}${shipCode ? ` on ship ${shipCode}` : ''} are freed for someone else. This cannot be undone.</div></div>
+            <div class="pick-actions"><button type="button" class="btn small danger" data-act="confirm">Delete</button><button type="button" class="btn small" data-act="cancel">Keep</button></div>
+          </li>`;
+        }
+        const where = ch.job === 'Captain' ? "Captain's cabin" : c.berth !== null ? berthLabel(c.berth) : 'bunk room, no bunk claimed';
+        const quest = c.questStep === 'done' ? 'opening tasks complete' : 'opening tasks in progress';
+        const tags = [c.isClone ? '<span class="tag-off">clone</span>' : '', c.online ? '<span class="tag-you">in play</span>' : ''].join('');
+        return `<li class="pick-row" data-id="${esc(c.id)}">
+          <span class="dot" style="background:${color}"></span>
+          <div class="pick-who"><b style="color:${color}">${esc(ch.job)}</b> ${name}${tags}<div class="muted">Last played ${esc(formatLastPlayed(c.lastPlayedAt))}${ship} · ${esc(where)} · ${quest}</div></div>
+          <div class="pick-actions"><button type="button" class="btn small primary" data-act="pick">${c.online ? 'Take over' : 'Board'}</button><button type="button" class="btn small ghost" data-act="delete" title="Delete this character">Delete</button></div>
+        </li>`;
+      })
+      .join('');
+  }
+}
+
+/**
+ * Per-ship pick list, shown after joining a ship this browser already has characters on (for example via an invite
+ * link): pick one, delete one, or start a new character. Re-renders when the server sends a fresh list.
  */
 export class CharacterPickScreen {
   readonly el = h('div', 'pick-screen');
-  private list: HTMLElement;
+  private list: CharacterList<SavedCharacter>;
   private error: HTMLElement;
   private newBtn: HTMLButtonElement;
   private count: HTMLElement;
   private characters: SavedCharacter[] = [];
   private crewCount = 0;
-  private confirming: string | null = null;
-  private busy = false;
 
   constructor(
     code: string,
@@ -146,38 +273,23 @@ export class CharacterPickScreen {
         <button class="btn big pick-new">New character</button>
         <div class="error" role="alert"></div>
       </div>`;
-    this.list = this.el.querySelector('.pick-list')!;
     this.error = this.el.querySelector('.error')!;
     this.newBtn = this.el.querySelector('.pick-new')!;
     this.count = this.el.querySelector('.pick-count')!;
-    this.newBtn.addEventListener('click', () => {
-      if (this.busy) return;
-      this.setBusy(this.newBtn, 'Preparing a clone tank…');
-      this.handlers.onNew();
+    this.list = new CharacterList<SavedCharacter>(this.el.querySelector('.pick-list')!, {
+      onPick: (c) => {
+        this.lockNew();
+        this.handlers.onPick(c.id);
+      },
+      onDelete: (c) => {
+        this.lockNew();
+        this.handlers.onDelete(c.id);
+      },
     });
-    this.list.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
-      if (!b || this.busy) return;
-      const id = b.closest<HTMLElement>('[data-id]')!.dataset.id!;
-      switch (b.dataset.act) {
-        case 'pick':
-          this.setBusy(b, 'Boarding…');
-          this.handlers.onPick(id);
-          break;
-        case 'delete':
-          this.confirming = id;
-          this.renderList();
-          break;
-        case 'cancel':
-          this.confirming = null;
-          this.renderList();
-          break;
-        case 'confirm':
-          this.confirming = null;
-          this.setBusy(b, 'Deleting…');
-          this.handlers.onDelete(id);
-          break;
-      }
+    this.newBtn.addEventListener('click', () => {
+      this.lockNew('Preparing a clone tank…');
+      this.list.setDisabled(true);
+      this.handlers.onNew();
     });
     this.render(characters, crewCount);
     ui.appendChild(this.el);
@@ -187,48 +299,17 @@ export class CharacterPickScreen {
   render(characters: SavedCharacter[], crewCount: number) {
     this.characters = characters;
     this.crewCount = crewCount;
-    this.busy = false;
-    if (this.confirming && !characters.some((c) => c.id === this.confirming)) this.confirming = null;
     this.count.textContent = `crew ${crewCount}/${MAX_CREW}`;
     const full = crewCount >= MAX_CREW;
     this.newBtn.disabled = full;
     this.newBtn.textContent = full ? `New character · crew full (${MAX_CREW}/${MAX_CREW})` : 'New character';
-    this.renderList();
+    this.list.render(characters, 'No saved characters on this ship.');
   }
 
-  private renderList() {
-    if (this.characters.length === 0) {
-      this.list.innerHTML = `<li class="pick-empty muted">No saved characters on this ship.</li>`;
-      return;
-    }
-    this.list.innerHTML = this.characters
-      .map((c) => {
-        const ch = c.character;
-        const color = JOB_INFO[ch.job].color;
-        const name = `${esc(ch.firstName)} ${esc(ch.lastName)}`;
-        if (this.confirming === c.id) {
-          return `<li class="pick-row confirm" data-id="${esc(c.id)}">
-            <div class="pick-who"><b>Delete ${name}?</b><div class="muted">Their ${esc(ch.job)} post${c.berth !== null ? ` and ${esc(berthLabel(c.berth))}` : ''} are freed for someone else. This cannot be undone.</div></div>
-            <div class="pick-actions"><button type="button" class="btn small danger" data-act="confirm">Delete</button><button type="button" class="btn small" data-act="cancel">Keep</button></div>
-          </li>`;
-        }
-        const where = ch.job === 'Captain' ? "Captain's cabin" : c.berth !== null ? berthLabel(c.berth) : 'bunk room, no bunk claimed';
-        const quest = c.questStep === 'done' ? 'opening tasks complete' : 'opening tasks in progress';
-        const tags = [c.isClone ? '<span class="tag-off">clone</span>' : '', c.online ? '<span class="tag-you">in play</span>' : ''].join('');
-        return `<li class="pick-row" data-id="${esc(c.id)}">
-          <span class="dot" style="background:${color}"></span>
-          <div class="pick-who"><b style="color:${color}">${esc(ch.job)}</b> ${name}${tags}<div class="muted">Last played ${esc(formatLastPlayed(c.lastPlayedAt))} · ${esc(where)} · ${quest}</div></div>
-          <div class="pick-actions"><button type="button" class="btn small primary" data-act="pick">${c.online ? 'Take over' : 'Board'}</button><button type="button" class="btn small ghost" data-act="delete" title="Delete this character">Delete</button></div>
-        </li>`;
-      })
-      .join('');
-  }
-
-  private setBusy(button: HTMLButtonElement, label: string) {
-    this.busy = true;
+  private lockNew(label?: string) {
     this.error.textContent = '';
-    this.el.querySelectorAll('button').forEach((b) => (b.disabled = true));
-    button.textContent = label;
+    this.newBtn.disabled = true;
+    if (label) this.newBtn.textContent = label;
   }
 
   showError(msg: string) {
@@ -418,6 +499,8 @@ export class Hud {
   private objective = h('div', 'objective-line');
   private inventory = h('div', 'inventory-strip');
   private interactPrompt = h('div', 'interact-prompt');
+  /** Set by the app: save the character, disconnect and go back to the landing screen. */
+  onLogout: (() => void) | null = null;
 
   constructor(
     private code: string,
@@ -433,8 +516,27 @@ export class Hud {
         </div>
         <div class="crew-head"><span class="label">Crew</span><span class="crew-count"></span></div>
         <ul class="crew"></ul>
+        <div class="logout-row">
+          <button class="btn small ghost" data-act="logout" title="Save and return to the landing screen">Log out</button>
+          <span class="logout-confirm" hidden>Back to quarters? <button class="btn small primary" data-act="logout-yes">Log out</button><button class="btn small ghost" data-act="logout-no">Stay</button></span>
+        </div>
       </div>`;
     this.crew = this.el.querySelector('.crew')!;
+    const logoutBtn = this.el.querySelector<HTMLButtonElement>('[data-act=logout]')!;
+    const confirm = this.el.querySelector<HTMLElement>('.logout-confirm')!;
+    logoutBtn.addEventListener('click', () => {
+      logoutBtn.hidden = true;
+      confirm.hidden = false;
+    });
+    this.el.querySelector('[data-act=logout-no]')!.addEventListener('click', () => {
+      confirm.hidden = true;
+      logoutBtn.hidden = false;
+    });
+    this.el.querySelector<HTMLButtonElement>('[data-act=logout-yes]')!.addEventListener('click', (e) => {
+      (e.currentTarget as HTMLButtonElement).textContent = 'Saving…';
+      confirm.querySelectorAll('button').forEach((b) => (b.disabled = true));
+      this.onLogout?.();
+    });
     this.el.querySelector('[data-act=copy]')!.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(link);

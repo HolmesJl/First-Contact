@@ -13,7 +13,7 @@ import {
   spawnAfterCreate,
   startGame,
 } from './opening';
-import { adoptLegacyMember, deleteCharacter, dropFormingMember, newMember, pickCharacter, savedCharacters } from './characters';
+import { adoptLegacyMember, deleteCharacter, dropFormingMember, newMember, pickCharacter, profileCharacters, savedCharacters } from './characters';
 import {
   jobCheck,
   parseClientMsg,
@@ -171,8 +171,13 @@ wss.on('connection', (ws) => {
     if (!msg) return;
 
     if (!ship || !clientId) {
-      if (msg.t !== 'host' && msg.t !== 'join') return;
+      if (msg.t !== 'hello' && msg.t !== 'host' && msg.t !== 'join') return;
       if (!validId(msg.clientId)) return send(ws, { t: 'error', message: 'Invalid client id.' });
+
+      if (msg.t === 'hello') {
+        const isOnlineOn = (code: string, id: string) => online.get(code)?.has(id) ?? false;
+        return send(ws, { t: 'profile', characters: profileCharacters(store.all(), msg.clientId, isOnlineOn) });
+      }
 
       let target: ShipRecord | undefined;
       if (msg.t === 'host') {
@@ -232,6 +237,14 @@ wss.on('connection', (ws) => {
     if (!me) return;
 
     switch (msg.t) {
+      case 'logout': {
+        // The close handler does the same bookkeeping; this just guarantees the save hits disk before the ack.
+        me.lastPlayedAt = Date.now();
+        store.flush();
+        send(ws, { t: 'loggedOut' });
+        console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} logged out`);
+        break;
+      }
       case 'startGame': {
         if (me.character) return;
         if (startGame(ship)) {

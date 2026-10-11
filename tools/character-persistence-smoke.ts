@@ -212,7 +212,27 @@ async function main() {
   assert(Object.values(shipOnDisk.members).every((m) => m.character && m.ownerId), 'members on disk have characters and owners');
   await startServer();
 
-  // -- 5. Captain picks: welcome, spawned in the cabin, quest step intact.
+  // -- 5. Reopened browser: the landing screen asks `hello` and gets every character it owns, with its ship, even
+  //       though nobody is online and the server has just restarted.
+  {
+    const c = new Client();
+    await c.open();
+    c.send({ t: 'hello', clientId: HOST });
+    const p = await c.wait(is('profile'));
+    assert(p.characters.length === 1, `host profile lists one character (${p.characters.length})`);
+    const s = p.characters[0];
+    assert(s.id === cap.you && s.shipCode === code && s.shipName === 'First Contact', 'profile entry names the ship');
+    assert(!s.online && s.character.job === 'Captain', 'profile entry is offline captain');
+    c.close();
+    const other = new Client();
+    await other.open();
+    other.send({ t: 'hello', clientId: STRANGER });
+    const op = await other.wait(is('profile'));
+    assert(op.characters.length === 0, 'a browser with nothing saved gets an empty profile');
+    other.close();
+  }
+
+  // -- 5b. Continue → Board: join the ship from the profile entry and pick; spawned in the cabin, quest step intact.
   const host2 = await connect({ t: 'join', clientId: HOST, code });
   assert(host2.chars.characters.length === 1 && host2.chars.characters[0].id === cap.you, 'pick list survives restart');
   host2.c.send({ t: 'pickCharacter', characterId: cap.you });
@@ -239,6 +259,34 @@ async function main() {
   assert(me3.questStep === engBefore.questStep && me3.berth === 2 && me3.lastUploadAt === engBefore.lastUploadAt, 'engineer state resumed');
   // The captain saw the engineer come back online.
   await host2.c.wait((m) => m.t === 'playerUpdated' && m.player.id === eng.you && m.player.connected);
+
+  // -- 6b. Log out: the server acks after writing the save, the profile shows the character offline with a fresh
+  //        lastPlayedAt, and boarding again works (back in the cabin).
+  {
+    await sleep(1100);
+    const before = fs.statSync(DATA_FILE).mtimeMs;
+    host2.c.send({ t: 'logout' });
+    await host2.c.wait(is('loggedOut'));
+    assert(fs.statSync(DATA_FILE).mtimeMs > before, 'logout wrote the save file before acknowledging');
+    host2.c.close();
+    await crew2.c.wait((m) => m.t === 'playerUpdated' && m.player.id === cap.you && !m.player.connected);
+
+    const c = new Client();
+    await c.open();
+    c.send({ t: 'hello', clientId: HOST });
+    const p = await c.wait(is('profile'));
+    assert(p.characters.length === 1 && !p.characters[0].online, 'logged-out character listed as offline');
+    assert(Date.now() - p.characters[0].lastPlayedAt < 3000, 'lastPlayedAt refreshed by logout');
+    c.close();
+
+    const again = await connect({ t: 'join', clientId: HOST, code });
+    again.c.send({ t: 'pickCharacter', characterId: cap.you });
+    const w = await again.c.wait(is('welcome'));
+    const me = w.players.find((pl) => pl.id === cap.you)!;
+    assert(spaceAt(me.x, me.z)?.id === 'cabin' && me.questStep === 'captain-set-code', 'boarding again after logout lands in the cabin');
+    host2.c = again.c;
+    host2.c.inbox.length = 0;
+  }
 
   // -- 7. Server is authoritative about ownership: a stranger cannot pick or delete someone else's character.
   {

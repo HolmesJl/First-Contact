@@ -200,6 +200,27 @@ kbd {
   pointer-events: none;
 }
 
+.title-screen.has-saved {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
+}
+
+.title-screen .card {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.card .continue .pick-list {
+  margin-bottom: 4px;
+}
+
+.card .continue .pick-row {
+  padding: 10px 12px;
+}
+
+.card .continue .pick-who {
+  font-size: 14px;
+}
+
 .brand h1 {
   font-family: var(--display);
   font-weight: 900;
@@ -526,6 +547,22 @@ kbd {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+}
+
+.logout-row {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: flex-end;
+  font-size: 12.5px;
+}
+
+.logout-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
 }
 
 .crew-count {

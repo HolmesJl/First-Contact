@@ -156,6 +156,12 @@ export interface SavedCharacter {
   online: boolean;
 }
 
+/** A saved character as listed on the landing screen: the same record plus the ship it lives on. */
+export interface ProfileCharacter extends SavedCharacter {
+  shipCode: string;
+  shipName: string;
+}
+
 export interface PlayerState {
   id: string;
   tube: number;
@@ -182,6 +188,8 @@ export interface PlayerState {
 export type SnapEntry = [string, number, number, number, 0 | 1];
 
 export type ClientMsg =
+  /** Landing screen: list every character this browser owns, on any ship. Answered with `profile`. */
+  | { t: 'hello'; clientId: string }
   /** `clientId` is the browser's stable id (localStorage); saved characters are tied to it. */
   | { t: 'host'; clientId: string }
   /** `legacyPlayerId` is the per-tab id older clients used; a character it owns is adopted by `clientId`. */
@@ -191,6 +199,8 @@ export type ClientMsg =
   /** Start the creation flow for a fresh character. */
   | { t: 'newCharacter' }
   | { t: 'deleteCharacter'; characterId: string }
+  /** Save and leave the world; the server answers `loggedOut` once the save file is written. */
+  | { t: 'logout' }
   | { t: 'startGame' }
   | { t: 'create'; character: Character }
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
@@ -201,6 +211,8 @@ export type ClientMsg =
   | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number };
 
 export type ServerMsg =
+  | { t: 'profile'; characters: ProfileCharacter[] }
+  | { t: 'loggedOut' }
   /**
    * Reply to `host` / `join` (and to `deleteCharacter`): the ship and this browser's saved characters on it. The
    * client answers with `pickCharacter` or `newCharacter`; `welcome` follows.
@@ -262,8 +274,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Record<string, unknown>;
   switch (m.t) {
+    case 'hello':
     case 'host':
-      return typeof m.clientId === 'string' ? { t: 'host', clientId: m.clientId } : null;
+      return typeof m.clientId === 'string' ? { t: m.t, clientId: m.clientId } : null;
     case 'join':
       if (typeof m.clientId !== 'string') return null;
       return {
@@ -278,6 +291,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'startGame':
     case 'reportIn':
     case 'newCharacter':
+    case 'logout':
       return { t: m.t };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
