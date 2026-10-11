@@ -402,8 +402,9 @@ export function buildRig(app: (Appearance & { job?: Job }) | null): Rig {
 }
 
 /**
- * Puts Lite Body Armor on over the jumpsuit (`{ primary: '#ffffff' }`), or takes it off (`null`). The trim always
- * takes the character's job colour, like the jumpsuit accent. Safe to call repeatedly; no-op for unformed clones.
+ * Puts Lite Body Armor on over the jumpsuit (`{}` for the default grey, `{ primary: '#hex' }` for another plate
+ * colour), or takes it off (`null`). The upper-arm bands always take the character's job colour, like the jumpsuit
+ * accent. Safe to call repeatedly; no-op for unformed clones.
  */
 export function setBodyArmor(rig: Rig, options: ArmorOptions | null) {
   if (!rig.look || !rig.body || !bodies) return;

@@ -322,7 +322,10 @@ export class LabScene implements View {
     return this.space?.id ?? null;
   }
 
-  /** Equips (`{ primary }`) or removes (`null`) Lite Body Armor on a player. The trim follows their job colour. */
+  /**
+   * Equips Lite Body Armor on a player (`{}` = the starter armor's grey, `{ primary: '#hex' }` for another plate
+   * colour) or removes it (`null`). The upper-arm bands follow their job colour. This is the hook for inventory equip.
+   */
   setPlayerArmor(id: string, armor: ArmorOptions | null) {
     const e = this.entities.get(id);
     if (!e) return;

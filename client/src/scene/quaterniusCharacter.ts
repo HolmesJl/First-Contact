@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { armorBodyMaterial, attachArmorShells, detachArmorShells, loadBodyArmor } from './bodyArmor';
+import { DEFAULT_ARMOR_PRIMARY, armorBodyMaterial, attachArmorShells, detachArmorShells, loadBodyArmor } from './bodyArmor';
 import { loadUniforms } from './uniform';
 
 /**
@@ -106,8 +106,8 @@ export function setHairColor(rig: Pick<Rig, 'meshes'>, hex: string) {
   if (rig.meshes.Brows) (rig.meshes.Brows.material as THREE.MeshStandardMaterial).color.set(hex).multiplyScalar(0.7);
 }
 
-/** `accentHex`: the job colour for the armor trim (the painted jumpsuit keeps its baked accent in this viewer). */
-export function applyOutfit(rig: Rig, outfit: Outfit, accentHex = '#e8772e', primaryHex = '#ffffff') {
+/** `accentHex`: the job colour for the armor's arm bands (the painted jumpsuit keeps its baked accent in this viewer). */
+export function applyOutfit(rig: Rig, outfit: Outfit, accentHex = '#e8772e', primaryHex = DEFAULT_ARMOR_PRIMARY) {
   rig.outfit = outfit;
   const info = manifest.characters[rig.sex];
   detachArmorShells(rig.armorShells);

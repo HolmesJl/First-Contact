@@ -3,7 +3,7 @@
  * The Quaternius male and female carrying retargeted ACCAD motion capture (gendered styling or raw performer
  * motion), in the crew uniform or bare. Not used by the game.
  *
- *   /characters.html?motion=walk&gait=raw&outfit=bare|uniform|armor&armor=ffffff&jobs=Military,Doctor&cam=front|males|females|top&facing=front|profile|back&clean=1&manual=1
+ *   /characters.html?motion=walk&gait=raw&outfit=bare|uniform|armor&armor=8a8f96&jobs=Military,Doctor&cam=front|males|females|top&facing=front|profile|back&clean=1&manual=1
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -66,8 +66,8 @@ const entries: Entry[] = [];
 const labels = document.getElementById('labels')!;
 const OUTFITS: chars.Outfit[] = ['uniform', 'armor', 'bare'];
 let outfit: chars.Outfit = OUTFITS.find((o) => o === params.get('outfit')) ?? 'uniform';
-/** Armor primary colour and the job whose colour the trim takes, per character (male, female). */
-const armorPrimary = `#${params.get('armor') ?? 'ffffff'}`;
+/** Armor primary colour (default: the starter grey) and the job whose colour the arm bands take, per character (male, female). */
+const armorPrimary = params.has('armor') ? `#${params.get('armor')}` : undefined;
 const jobs = (params.get('jobs') ?? 'Military,Doctor').split(',').map((j) => (j in JOB_INFO ? (j as Job) : 'Engineer'));
 
 const SEXES = ['male', 'female'] as const;

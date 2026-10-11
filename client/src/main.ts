@@ -236,8 +236,8 @@ async function startLab() {
         const { x, z } = lab!.localPos();
         net?.send({ t: 'interact', id, x, z });
       },
-      // __fc.armor(true) puts white Lite Body Armor on yourself; pass a hex for another primary, false/null to remove.
-      armor: (on, playerId = selfId) => lab?.setPlayerArmor(playerId, on ? { primary: typeof on === 'string' ? on : '#ffffff' } : null),
+      // __fc.armor(true) puts the grey Lite Body Armor on yourself; pass a hex for another primary, false/null to remove.
+      armor: (on, playerId = selfId) => lab?.setPlayerArmor(playerId, on ? (typeof on === 'string' ? { primary: on } : {}) : null),
     };
   resize();
   hud = new Hud(shipCode, selfId, hostId);

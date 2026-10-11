@@ -13,11 +13,14 @@ import { canvasTexture, hexToRgb, recolour, uniformImage, uniformNormalImage } f
  */
 
 export interface ArmorOptions {
-  /** Plate colour, e.g. '#ffffff' for the starter quest's white armor. */
-  primary: string;
+  /** Plate colour; defaults to DEFAULT_ARMOR_PRIMARY (the starter armor's medium grey). */
+  primary?: string;
 }
 
-/** The painted trim colour (the jumpsuit accent); recolouring replaces it with the job colour. */
+/** Plate colour of the starter-quest armor: a medium grey that still reads as plate under the ship lighting. */
+export const DEFAULT_ARMOR_PRIMARY = '#8a8f96';
+
+/** The painted band colour (the jumpsuit accent); recolouring replaces it with the job colour. */
 const PAINTED_ACCENT = [232, 119, 46];
 /** Neutral value the plates are painted in (tools/armor-painter.mjs PRIMARY); the tint multiplies by primary / this. */
 const PAINTED_PRIMARY = [204, 204, 206];
@@ -108,10 +111,10 @@ function armorNormal(sex: Sex) {
 }
 
 /**
- * The body material wearing the armor: the armor layer (plates tinted to `primaryHex`, trim recoloured to
- * `accentHex`) over the jumpsuit in the same job colour. Shared between characters with the same look.
+ * The body material wearing the armor: the armor layer (plates tinted to `primaryHex`, the upper-arm bands
+ * recoloured to `accentHex`) over the jumpsuit in the same job colour. Shared between characters with the same look.
  */
-export function armorBodyMaterial(skin: THREE.MeshStandardMaterial, sex: Sex, shaven: boolean, accentHex: string, primaryHex: string) {
+export function armorBodyMaterial(skin: THREE.MeshStandardMaterial, sex: Sex, shaven: boolean, accentHex: string, primaryHex = DEFAULT_ARMOR_PRIMARY) {
   const key = `${sex}|${shaven}|${accentHex}|${primaryHex}`;
   let m = materials.get(key);
   if (m) return m;
