@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { armorBodyMaterial, attachArmorShells, detachArmorShells, loadBodyArmor } from './bodyArmor';
+import { loadUniforms } from './uniform';
 
 /**
  * Dev-only loader for the Quaternius characters carrying retargeted ACCAD mocap clips (built by
@@ -11,6 +13,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export type Sex = 'male' | 'female';
 export type Motion = 'idle' | 'walk' | 'jog' | 'sprint';
+export type Outfit = 'uniform' | 'bare' | 'armor';
 export type ClipKey = Motion | `raw_${Motion}`;
 
 interface ClipInfo {
@@ -31,7 +34,9 @@ export interface Rig {
   styled: boolean;
   meshes: Record<string, THREE.SkinnedMesh>;
   skinMap: THREE.Texture | null;
-  uniform: boolean;
+  skinMat: THREE.MeshStandardMaterial;
+  outfit: Outfit;
+  armorShells: THREE.SkinnedMesh[];
 }
 
 const CLIPS: ClipKey[] = ['idle', 'walk', 'jog', 'sprint', 'raw_idle', 'raw_walk', 'raw_jog', 'raw_sprint'];
@@ -64,6 +69,7 @@ export async function loadCharacters(m: Manifest, resolve: (rel: string) => stri
     await tex(info.uniform.color, false);
     await tex(info.uniform.normal, true);
   }
+  await Promise.all([loadUniforms(publicUrl('')), loadBodyArmor(publicUrl(''))]);
 }
 
 export function buildCharacter(sex: Sex, hairColor: string): Rig {
@@ -89,8 +95,8 @@ export function buildCharacter(sex: Sex, hairColor: string): Rig {
   }
   actions.idle.play();
   const body = meshes.Body.material as THREE.MeshStandardMaterial;
-  const rig: Rig = { sex, root, mixer, actions, motion: 'idle', styled: true, meshes, skinMap: body.map, uniform: true };
-  applyOutfit(rig, true);
+  const rig: Rig = { sex, root, mixer, actions, motion: 'idle', styled: true, meshes, skinMap: body.map, skinMat: body, outfit: 'uniform', armorShells: [] };
+  applyOutfit(rig, 'uniform');
   return rig;
 }
 
@@ -100,11 +106,21 @@ export function setHairColor(rig: Pick<Rig, 'meshes'>, hex: string) {
   if (rig.meshes.Brows) (rig.meshes.Brows.material as THREE.MeshStandardMaterial).color.set(hex).multiplyScalar(0.7);
 }
 
-export function applyOutfit(rig: Rig, uniform: boolean) {
-  rig.uniform = uniform;
+/** `accentHex`: the job colour for the armor trim (the painted jumpsuit keeps its baked accent in this viewer). */
+export function applyOutfit(rig: Rig, outfit: Outfit, accentHex = '#e8772e', primaryHex = '#ffffff') {
+  rig.outfit = outfit;
   const info = manifest.characters[rig.sex];
-  const mat = rig.meshes.Body.material as THREE.MeshStandardMaterial;
-  if (uniform) {
+  detachArmorShells(rig.armorShells);
+  rig.armorShells = [];
+  if (outfit === 'armor') {
+    const m = armorBodyMaterial(rig.skinMat, rig.sex, false, accentHex, primaryHex);
+    rig.meshes.Body.material = m;
+    rig.armorShells = attachArmorShells(rig.meshes.Body, rig.sex, m);
+    return;
+  }
+  rig.meshes.Body.material = rig.skinMat;
+  const mat = rig.skinMat;
+  if (outfit === 'uniform') {
     mat.map = textures.get(info.uniform.color)!;
     mat.normalMap = textures.get(info.uniform.normal)!;
     mat.normalScale.set(1.4, 1.4);
