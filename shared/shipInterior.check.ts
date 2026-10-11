@@ -3,7 +3,8 @@ import { cabinDoorCenter, cabinDoorExtraObstacles, cabinDoorLaneTestPoint, cabin
 import { JOG_SPEED, SPRINT_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
 import { INTERACT_RADIUS } from './opening';
-import { MEMORY_STATIONS } from './bunks';
+import type { Job } from './protocol';
+import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import {
   BERTHS,
@@ -16,6 +17,7 @@ import {
   clampToShip,
   isWalkable,
   portClearZone,
+  spaceAt,
   thresholdRect,
   visiblePorts,
   type Prop,
@@ -194,6 +196,23 @@ if (!('rect' in half) || half.minZ < door.z - 0.2) fail('cabin door obstacle doe
 if (JSON.stringify(cabinDoorObstacle(0)) !== JSON.stringify(closedObs)) fail('re-closed cabin door obstacle differs from the closed one');
 const reclosed = clampMoveToShip(corridorSide.x, corridorSide.z, cabinSide.x, cabinSide.z, 0, cabinDoorExtraObstacles(0));
 if (reclosed.x - door.x < 0.3) fail('re-closed cabin door does not block the doorway');
+
+// Login spawns for saved characters: the Captain in the cabin (door closed), crew at each bunk or the bunk-room spot.
+const homeCases: [Job, number | null][] = [
+  ['Captain', null],
+  ['Captain', 0],
+  ['Engineer', null],
+  ['Doctor', 0],
+  ...BERTHS.filter((b) => b.index > 0).map((b): [Job, number] => ['Botanist', b.index]),
+];
+for (const [job, berth] of homeCases) {
+  const s = homeSpawnFor(job, berth);
+  const room = spaceAt(s.x, s.z)?.id;
+  const want = job === 'Captain' ? 'cabin' : 'bunks';
+  if (room !== want) fail(`home spawn for ${job} berth ${berth} is in ${room}, not ${want}`);
+  if (!isWalkable(s.x, s.z, 0, cabinDoorExtraObstacles(0))) fail(`home spawn for ${job} berth ${berth} is not walkable`);
+  if (!reachable(s.x, s.z, 0.3)) fail(`home spawn for ${job} berth ${berth} is cut off from the ship`);
+}
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${seen.size} reachable cells`);
 if (problems.length) {

@@ -27,6 +27,10 @@ export function shipMeta(ship: ShipRecord) {
 }
 
 export function normalizeMember(m: MemberRecord): MemberRecord {
+  m.ownerId ??= m.id;
+  m.uniform ??= 'crew';
+  m.createdAt ??= m.joinedAt;
+  m.lastPlayedAt ??= m.joinedAt;
   m.isClone ??= false;
   m.hasPad ??= false;
   m.reportedIn ??= false;

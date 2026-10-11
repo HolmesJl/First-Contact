@@ -15,6 +15,7 @@ import {
   type Character,
   type Job,
   type PlayerState,
+  type SavedCharacter,
 } from '../../shared/protocol';
 import type { Gait } from '../../shared/movement';
 import type { Space } from '../../shared/shipInterior';
@@ -100,6 +101,147 @@ export class TitleScreen {
   }
 }
 
+// ---------------------------------------------------------------- character pick list
+
+export function formatLastPlayed(at: number, now = Date.now()) {
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  if (d === 1) return 'yesterday';
+  if (d < 7) return `${d} days ago`;
+  return new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Returning players pick a saved character or start a new one. Deleting asks for confirmation inline on the row.
+ * The list is whatever the server says this browser owns; it re-renders when the server sends a fresh list.
+ */
+export class CharacterPickScreen {
+  readonly el = h('div', 'pick-screen');
+  private list: HTMLElement;
+  private error: HTMLElement;
+  private newBtn: HTMLButtonElement;
+  private count: HTMLElement;
+  private characters: SavedCharacter[] = [];
+  private crewCount = 0;
+  private confirming: string | null = null;
+  private busy = false;
+
+  constructor(
+    code: string,
+    characters: SavedCharacter[],
+    crewCount: number,
+    private handlers: { onPick(id: string): void; onNew(): void; onDelete(id: string): void },
+  ) {
+    this.el.innerHTML = `
+      <div class="pick-card panel">
+        <div class="kicker">Ship <b>${esc(code)}</b> · <span class="pick-count"></span></div>
+        <h2>Who is boarding?</h2>
+        <p class="muted">Your saved crew on this ship. A returning character wakes in their quarters: the Captain in the cabin, everyone else in the bunk room.</p>
+        <ul class="pick-list"></ul>
+        <button class="btn big pick-new">New character</button>
+        <div class="error" role="alert"></div>
+      </div>`;
+    this.list = this.el.querySelector('.pick-list')!;
+    this.error = this.el.querySelector('.error')!;
+    this.newBtn = this.el.querySelector('.pick-new')!;
+    this.count = this.el.querySelector('.pick-count')!;
+    this.newBtn.addEventListener('click', () => {
+      if (this.busy) return;
+      this.setBusy(this.newBtn, 'Preparing a clone tank…');
+      this.handlers.onNew();
+    });
+    this.list.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
+      if (!b || this.busy) return;
+      const id = b.closest<HTMLElement>('[data-id]')!.dataset.id!;
+      switch (b.dataset.act) {
+        case 'pick':
+          this.setBusy(b, 'Boarding…');
+          this.handlers.onPick(id);
+          break;
+        case 'delete':
+          this.confirming = id;
+          this.renderList();
+          break;
+        case 'cancel':
+          this.confirming = null;
+          this.renderList();
+          break;
+        case 'confirm':
+          this.confirming = null;
+          this.setBusy(b, 'Deleting…');
+          this.handlers.onDelete(id);
+          break;
+      }
+    });
+    this.render(characters, crewCount);
+    ui.appendChild(this.el);
+    requestAnimationFrame(() => this.el.classList.add('show'));
+  }
+
+  render(characters: SavedCharacter[], crewCount: number) {
+    this.characters = characters;
+    this.crewCount = crewCount;
+    this.busy = false;
+    if (this.confirming && !characters.some((c) => c.id === this.confirming)) this.confirming = null;
+    this.count.textContent = `crew ${crewCount}/${MAX_CREW}`;
+    const full = crewCount >= MAX_CREW;
+    this.newBtn.disabled = full;
+    this.newBtn.textContent = full ? `New character · crew full (${MAX_CREW}/${MAX_CREW})` : 'New character';
+    this.renderList();
+  }
+
+  private renderList() {
+    if (this.characters.length === 0) {
+      this.list.innerHTML = `<li class="pick-empty muted">No saved characters on this ship.</li>`;
+      return;
+    }
+    this.list.innerHTML = this.characters
+      .map((c) => {
+        const ch = c.character;
+        const color = JOB_INFO[ch.job].color;
+        const name = `${esc(ch.firstName)} ${esc(ch.lastName)}`;
+        if (this.confirming === c.id) {
+          return `<li class="pick-row confirm" data-id="${esc(c.id)}">
+            <div class="pick-who"><b>Delete ${name}?</b><div class="muted">Their ${esc(ch.job)} post${c.berth !== null ? ` and ${esc(berthLabel(c.berth))}` : ''} are freed for someone else. This cannot be undone.</div></div>
+            <div class="pick-actions"><button type="button" class="btn small danger" data-act="confirm">Delete</button><button type="button" class="btn small" data-act="cancel">Keep</button></div>
+          </li>`;
+        }
+        const where = ch.job === 'Captain' ? "Captain's cabin" : c.berth !== null ? berthLabel(c.berth) : 'bunk room, no bunk claimed';
+        const quest = c.questStep === 'done' ? 'opening tasks complete' : 'opening tasks in progress';
+        const tags = [c.isClone ? '<span class="tag-off">clone</span>' : '', c.online ? '<span class="tag-you">in play</span>' : ''].join('');
+        return `<li class="pick-row" data-id="${esc(c.id)}">
+          <span class="dot" style="background:${color}"></span>
+          <div class="pick-who"><b style="color:${color}">${esc(ch.job)}</b> ${name}${tags}<div class="muted">Last played ${esc(formatLastPlayed(c.lastPlayedAt))} · ${esc(where)} · ${quest}</div></div>
+          <div class="pick-actions"><button type="button" class="btn small primary" data-act="pick">${c.online ? 'Take over' : 'Board'}</button><button type="button" class="btn small ghost" data-act="delete" title="Delete this character">Delete</button></div>
+        </li>`;
+      })
+      .join('');
+  }
+
+  private setBusy(button: HTMLButtonElement, label: string) {
+    this.busy = true;
+    this.error.textContent = '';
+    this.el.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    button.textContent = label;
+  }
+
+  showError(msg: string) {
+    this.error.textContent = msg;
+    this.render(this.characters, this.crewCount);
+  }
+
+  destroy() {
+    this.el.classList.remove('show');
+    setTimeout(() => this.el.remove(), 400);
+  }
+}
+
 // ---------------------------------------------------------------- intro
 
 export class IntroOverlay {
@@ -177,13 +319,13 @@ export class WakeIntro {
     requestAnimationFrame(() => this.el.classList.add('show'));
   }
 
-  renderCrew(players: Map<string, PlayerState>, selfId: string, hostId: string) {
+  renderCrew(players: Map<string, PlayerState>, selfId: string) {
     const list = [...players.values()].sort((a, b) => a.tube - b.tube);
     this.list.innerHTML = list
       .map((p) => {
         const c = p.character;
         const who = c ? `${c.job} ${esc(c.firstName)} ${esc(c.lastName)}` : `Berth CL-0${p.tube + 1} (forming)`;
-        const tags = [p.id === selfId ? 'you' : '', p.id === hostId ? 'host' : '', p.isClone ? 'clone' : ''].filter(Boolean).join(' · ');
+        const tags = [p.id === selfId ? 'you' : '', p.isHost ? 'host' : '', p.isClone ? 'clone' : ''].filter(Boolean).join(' · ');
         return `<li><span>${who}</span><span class="muted">${tags}</span></li>`;
       })
       .join('');
@@ -280,7 +422,6 @@ export class Hud {
   constructor(
     private code: string,
     private selfId: string,
-    private hostId: string,
   ) {
     const link = inviteLink(code);
     this.el.innerHTML = `
@@ -401,7 +542,7 @@ export class Hud {
         const c = p.character;
         const color = c ? JOB_INFO[c.job].color : '#6b7a90';
         const name = c ? `<b style="color:${color}">${c.job}</b> ${esc(c.firstName)} ${esc(c.lastName)}` : `<i>Forming in CL-0${p.tube + 1}</i>`;
-        const tags = [p.id === this.selfId ? '<span class="tag-you">you</span>' : '', p.id === this.hostId ? '<span class="tag-host">host</span>' : '']
+        const tags = [p.id === this.selfId ? '<span class="tag-you">you</span>' : '', p.isHost ? '<span class="tag-host">host</span>' : '']
           .filter(Boolean)
           .join('');
         return `<li class="${p.connected ? '' : 'offline'}"><span class="dot" style="background:${color}"></span><span class="who">${name}</span>${tags}${p.connected ? '' : '<span class="tag-off">offline</span>'}</li>`;

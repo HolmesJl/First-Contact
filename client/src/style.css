@@ -147,6 +147,17 @@ kbd {
   background: rgba(0, 0, 0, 0.35);
 }
 
+.btn.danger {
+  background: rgba(255, 122, 122, 0.14);
+  border-color: rgba(255, 122, 122, 0.45);
+  color: #ffb3b3;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: rgba(255, 122, 122, 0.28);
+  border-color: rgba(255, 122, 122, 0.7);
+}
+
 .input {
   width: 100%;
   background: rgba(0, 0, 0, 0.35);
@@ -272,6 +283,122 @@ kbd {
   font: 700 18px var(--display);
   letter-spacing: 0.3em;
   text-align: center;
+}
+
+/* ---------- character pick list ---------- */
+
+.pick-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: radial-gradient(ellipse at 50% 40%, rgba(10, 20, 40, 0.6) 0%, rgba(2, 3, 10, 0.92) 70%);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.pick-screen.show {
+  opacity: 1;
+}
+
+.pick-card {
+  width: min(94vw, 600px);
+  max-height: 92vh;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pick-card h2 {
+  margin: 0;
+  font: 700 22px var(--display);
+  letter-spacing: 0.04em;
+}
+
+.pick-card > p {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pick-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(120, 200, 255, 0.12);
+}
+
+.pick-row.confirm {
+  border-color: rgba(255, 122, 122, 0.45);
+  background: rgba(255, 122, 122, 0.07);
+}
+
+.pick-row .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.pick-who {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.pick-who .tag-you,
+.pick-who .tag-off {
+  margin-left: 8px;
+  vertical-align: 2px;
+}
+
+.pick-who .muted {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.pick-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.pick-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 14px;
+  border: 1px dashed rgba(120, 200, 255, 0.2);
+  border-radius: 12px;
+}
+
+@media (max-width: 560px) {
+  .pick-row {
+    flex-wrap: wrap;
+  }
+
+  .pick-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* ---------- intro ---------- */
