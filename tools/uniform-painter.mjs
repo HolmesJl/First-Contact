@@ -6,67 +6,17 @@
  * skeleton (pelvis, neck_01, head, upperarm_l, lowerarm_l, hand_l, thigh_l, calf_l, foot_l, ...), which is the
  * Quaternius rig. Everything is derived from joint positions and skin weights, so the same code dresses both sexes.
  */
-import { NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import sharp from 'sharp';
+import { band, clamp, hash, heightToNormal, len, line, padIslands, rasterise, readBody, seg, smooth, sub } from './body-raster.mjs';
 
 const RES = 1024;
-const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
-const smooth = (e0, e1, x) => {
-  const t = clamp((x - e0) / (e1 - e0));
-  return t * t * (3 - 2 * t);
-};
-/** 1 inside |d| < half, soft edge. */
-const band = (d, half, soft) => 1 - smooth(half - soft, half + soft, Math.abs(d));
-/** Soft line: 1 on the line, fading to 0 at `width`. */
-const line = (d, width) => 1 - smooth(0, width, Math.abs(d));
-const hash = (x, y) => {
-  let h = (x * 374761393 + y * 668265263) | 0;
-  h = (h ^ (h >>> 13)) * 1274126177;
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
-};
 
 /** `chestLift`: raises the chest pocket and name tag (fraction of body height), so they clear a bust. */
 export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46], meshName = 'Body', chestLift = 0 }) {
-  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-  const doc = await io.read(glbPath);
-  const node = doc.getRoot().listNodes().find((n) => n.getMesh()?.getName() === meshName);
-  const prim = node.getMesh().listPrimitives()[0];
-  const pos = prim.getAttribute('POSITION').getArray();
-  const nrm = prim.getAttribute('NORMAL').getArray();
-  const uv = prim.getAttribute('TEXCOORD_0').getArray();
-  const jnt = prim.getAttribute('JOINTS_0').getArray();
-  const wgt = prim.getAttribute('WEIGHTS_0').getArray();
-  const idx = prim.getIndices().getArray();
-  const skin = node.getSkin();
-  const joints = skin.listJoints();
-  const J = {};
-  joints.forEach((j, i) => (J[j.getName()] = { i, p: j.getWorldTranslation() }));
-  const nVert = pos.length / 3;
-
-  let H = 0;
-  for (let i = 0; i < nVert; i++) H = Math.max(H, pos[i * 3 + 1]);
-  const leftSign = Math.sign(J.upperarm_l.p[0]) || 1;
-
-  const jointIsSkin = joints.map((j) => /^(head|neck_01|hand_|index_|middle_|ring_|pinky_|thumb_)/.test(j.getName()));
-  const jointIsBoot = joints.map((j) => /^(foot_|ball_)/.test(j.getName()));
-  const jointIsArm = joints.map((j) => /^(upperarm_|lowerarm_)/.test(j.getName()));
-  const jointIsLeg = joints.map((j) => /^(thigh_|calf_)/.test(j.getName()));
-  const jointIsNeck = joints.map((j) => j.getName() === 'neck_01');
-
-  // per-vertex scalars: skin (head, hands), neck, boot, arm, leg weights
-  const vs = new Float32Array(nVert * 5);
-  for (let v = 0; v < nVert; v++) {
-    for (let k = 0; k < 4; k++) {
-      const w = wgt[v * 4 + k];
-      const j = jnt[v * 4 + k];
-      if (jointIsSkin[j] && !jointIsNeck[j]) vs[v * 5] += w;
-      if (jointIsNeck[j]) vs[v * 5 + 1] += w;
-      if (jointIsBoot[j]) vs[v * 5 + 2] += w;
-      if (jointIsArm[j]) vs[v * 5 + 3] += w;
-      if (jointIsLeg[j]) vs[v * 5 + 4] += w;
-    }
-  }
+  const body = await readBody(glbPath, meshName);
+  const { J, H, leftSign } = body;
+  const raster = rasterise(body, RES);
+  const { N, P, NR, SC, cov, dist } = raster;
 
   const neckY = J.neck_01.p[1];
   const pelvisY = J.pelvis.p[1];
@@ -74,79 +24,8 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
   const bootTop = ankleY + 0.075 * H;
   const beltY = pelvisY + 0.022 * H;
 
-  // ---- rasterise attributes into UV space
-  const N = RES * RES;
-  const P = new Float32Array(N * 3);
-  const NR = new Float32Array(N * 3);
-  const SC = new Float32Array(N * 5);
-  const MP = new Float32Array(N * 2);
-  const cov = new Uint8Array(N);
-  for (let t = 0; t < idx.length; t += 3) {
-    const a = idx[t], b = idx[t + 1], c = idx[t + 2];
-    const vi = [a, b, c];
-    const px = vi.map((v) => [uv[v * 2] * (RES - 1), uv[v * 2 + 1] * (RES - 1)]);
-    const minX = Math.max(0, Math.floor(Math.min(px[0][0], px[1][0], px[2][0])));
-    const maxX = Math.min(RES - 1, Math.ceil(Math.max(px[0][0], px[1][0], px[2][0])));
-    const minY = Math.max(0, Math.floor(Math.min(px[0][1], px[1][1], px[2][1])));
-    const maxY = Math.min(RES - 1, Math.ceil(Math.max(px[0][1], px[1][1], px[2][1])));
-    const d = (px[1][1] - px[2][1]) * (px[0][0] - px[2][0]) + (px[2][0] - px[1][0]) * (px[0][1] - px[2][1]);
-    if (Math.abs(d) < 1e-9) continue;
-    // metres per pixel along image x / row from the triangle's UV Jacobian
-    const e1 = [0, 1, 2].map((k) => pos[b * 3 + k] - pos[a * 3 + k]);
-    const e2 = [0, 1, 2].map((k) => pos[c * 3 + k] - pos[a * 3 + k]);
-    const du1 = [uv[b * 2] - uv[a * 2], uv[b * 2 + 1] - uv[a * 2 + 1]];
-    const du2 = [uv[c * 2] - uv[a * 2], uv[c * 2 + 1] - uv[a * 2 + 1]];
-    const det = du1[0] * du2[1] - du2[0] * du1[1];
-    if (Math.abs(det) < 1e-14) continue;
-    const Tm = [0, 1, 2].map((k) => (e1[k] * du2[1] - e2[k] * du1[1]) / det);
-    const Bm = [0, 1, 2].map((k) => (e2[k] * du1[0] - e1[k] * du2[0]) / det);
-    const mx = Math.hypot(...Tm) / (RES - 1);
-    const my = Math.hypot(...Bm) / (RES - 1);
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const w0 = ((px[1][1] - px[2][1]) * (x - px[2][0]) + (px[2][0] - px[1][0]) * (y - px[2][1])) / d;
-        const w1 = ((px[2][1] - px[0][1]) * (x - px[2][0]) + (px[0][0] - px[2][0]) * (y - px[2][1])) / d;
-        const w2 = 1 - w0 - w1;
-        if (w0 < -0.03 || w1 < -0.03 || w2 < -0.03) continue;
-        const o = y * RES + x;
-        for (let k = 0; k < 3; k++) {
-          P[o * 3 + k] = w0 * pos[a * 3 + k] + w1 * pos[b * 3 + k] + w2 * pos[c * 3 + k];
-          NR[o * 3 + k] = w0 * nrm[a * 3 + k] + w1 * nrm[b * 3 + k] + w2 * nrm[c * 3 + k];
-        }
-        for (let k = 0; k < 5; k++) SC[o * 5 + k] = w0 * vs[a * 5 + k] + w1 * vs[b * 5 + k] + w2 * vs[c * 5 + k];
-        MP[o * 2] = Math.max(mx, 1e-5);
-        MP[o * 2 + 1] = Math.max(my, 1e-5);
-        cov[o] = 1;
-      }
-    }
-  }
-
-  // distance (px) to the nearest uncovered pixel: UV island borders are the garment's seams
-  const dist = new Float32Array(N).fill(99);
-  for (let i = 0; i < N; i++) if (!cov[i]) dist[i] = 0;
-  for (let y = 0; y < RES; y++) for (let x = 0; x < RES; x++) {
-    const o = y * RES + x;
-    if (x > 0) dist[o] = Math.min(dist[o], dist[o - 1] + 1);
-    if (y > 0) dist[o] = Math.min(dist[o], dist[o - RES] + 1);
-  }
-  for (let y = RES - 1; y >= 0; y--) for (let x = RES - 1; x >= 0; x--) {
-    const o = y * RES + x;
-    if (x < RES - 1) dist[o] = Math.min(dist[o], dist[o + 1] + 1);
-    if (y < RES - 1) dist[o] = Math.min(dist[o], dist[o + RES] + 1);
-  }
-
   // ---- source skin
   const base = await sharp(skinImage).removeAlpha().resize(RES, RES).raw().toBuffer();
-
-  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const len = (a) => Math.hypot(a[0], a[1], a[2]);
-  const seg = (p, a, b) => {
-    const ab = sub(b, a);
-    const t = dot(sub(p, a), ab) / dot(ab, ab);
-    const q = [a[0] + ab[0] * clamp(t, 0, 1), a[1] + ab[1] * clamp(t, 0, 1), a[2] + ab[2] * clamp(t, 0, 1)];
-    return { t, rad: sub(p, q) };
-  };
 
   const FABRIC = [88, 94, 103];
   const SEAM = [54, 57, 64];
@@ -293,54 +172,14 @@ export async function paintUniform({ glbPath, skinImage, accent = [232, 119, 46]
 
   // ---- compose colour over the skin and write tangent-space normals
   const out = Buffer.alloc(N * 3);
-  const nrmOut = Buffer.alloc(N * 3);
   for (let o = 0; o < N; o++) {
     const c = covered[o];
     for (let k = 0; k < 3; k++) out[o * 3 + k] = Math.round(base[o * 3 + k] * (1 - c) + colour[o * 3 + k] * c);
   }
-  const hAt = (x, y) => height[clamp(y, 0, RES - 1) * RES + clamp(x, 0, RES - 1)];
-  const GAIN = 1.0;
-  for (let y = 0; y < RES; y++) {
-    for (let x = 0; x < RES; x++) {
-      const o = y * RES + x;
-      let nx = 0, ny = 0;
-      if (cov[o]) {
-        const dx = (hAt(x + 1, y) - hAt(x - 1, y)) / (2 * MP[o * 2]);
-        const dr = (hAt(x, y + 1) - hAt(x, y - 1)) / (2 * MP[o * 2 + 1]);
-        nx = -dx * GAIN;
-        ny = dr * GAIN;
-      }
-      const l = Math.hypot(nx, ny, 1);
-      nrmOut[o * 3] = Math.round(((nx / l) * 0.5 + 0.5) * 255);
-      nrmOut[o * 3 + 1] = Math.round(((ny / l) * 0.5 + 0.5) * 255);
-      nrmOut[o * 3 + 2] = Math.round(((1 / l) * 0.5 + 0.5) * 255);
-    }
-  }
-  const pad = async (buf, fillPixel) => {
-    // push island colours outward by a few pixels so mip-mapping does not pull in empty texels
-    const filled = Uint8Array.from(cov);
-    for (let it = 0; it < 5; it++) {
-      const next = Uint8Array.from(filled);
-      for (let y = 0; y < RES; y++) for (let x = 0; x < RES; x++) {
-        const o = y * RES + x;
-        if (filled[o]) continue;
-        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const xx = x + ox, yy = y + oy;
-          if (xx < 0 || yy < 0 || xx >= RES || yy >= RES) continue;
-          const q = yy * RES + xx;
-          if (filled[q]) {
-            buf[o * 3] = buf[q * 3]; buf[o * 3 + 1] = buf[q * 3 + 1]; buf[o * 3 + 2] = buf[q * 3 + 2];
-            next[o] = 1;
-            break;
-          }
-        }
-      }
-      filled.set(next);
-    }
-    return sharp(buf, { raw: { width: RES, height: RES, channels: 3 } });
-  };
-  const color = await (await pad(out)).webp({ quality: 86, effort: 5 }).toBuffer();
-  const normal = await (await pad(nrmOut)).webp({ quality: 92, effort: 5 }).toBuffer();
+  const nrmOut = heightToNormal(height, raster, 1.0);
+  const pad = (buf) => sharp(padIslands(buf, raster, 3), { raw: { width: RES, height: RES, channels: 3 } });
+  const color = await pad(out).webp({ quality: 86, effort: 5 }).toBuffer();
+  const normal = await pad(nrmOut).webp({ quality: 92, effort: 5 }).toBuffer();
   // Accent coverage (0..255), so a viewer can swap the accent colour: pixel += mask * (new - accent).
   const maskBuf = Buffer.alloc(N);
   for (let o = 0; o < N; o++) maskBuf[o] = Math.round(clamp(accentMask[o] * covered[o]) * 255);

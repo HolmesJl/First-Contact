@@ -1,0 +1,70 @@
+{
+ "generated": "2026-10-11",
+ "primary": [
+  204,
+  204,
+  206
+ ],
+ "shells": {
+  "cuirass": 0.022,
+  "pauldron": 0.024,
+  "boot": 0.016,
+  "shin": 0.009,
+  "thigh": 0.009,
+  "bracer": 0.008
+ },
+ "vertices": {
+  "male": {
+   "cuirass": {
+    "vertices": 2125,
+    "faces": 2326
+   },
+   "pauldron": {
+    "vertices": 1058,
+    "faces": 948
+   },
+   "boot": {
+    "vertices": 1434,
+    "faces": 1988
+   },
+   "shin": {
+    "vertices": 846,
+    "faces": 700
+   },
+   "thigh": {
+    "vertices": 894,
+    "faces": 720
+   },
+   "bracer": {
+    "vertices": 922,
+    "faces": 824
+   }
+  },
+  "female": {
+   "cuirass": {
+    "vertices": 2268,
+    "faces": 2594
+   },
+   "pauldron": {
+    "vertices": 1022,
+    "faces": 952
+   },
+   "boot": {
+    "vertices": 1388,
+    "faces": 1960
+   },
+   "shin": {
+    "vertices": 766,
+    "faces": 632
+   },
+   "thigh": {
+    "vertices": 958,
+    "faces": 778
+   },
+   "bracer": {
+    "vertices": 986,
+    "faces": 910
+   }
+  }
+ }
+}
