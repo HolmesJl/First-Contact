@@ -1,4 +1,6 @@
 import type { QuestStep } from './opening';
+import { isItemId, validSlotRef, type EquipSlot, type Inventory, type ItemId, type ItemStack, type PadFile, type SlotRef, type Slots } from './items';
+import type { ScavengerState } from './scavenger';
 
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
 export type Job = (typeof JOBS)[number];
@@ -111,16 +113,15 @@ export interface CabinDoorState {
 }
 
 /**
- * What a clone restores after death: the state of the character at the last upload. Inventory does not exist yet, so
- * only the timestamp and quest progress are real; the inventory slots are reserved so the shape does not change when
- * carry slots, equipped gear and closets land (on-person items are lost on death, closet contents are kept).
+ * What a clone restores after death: the state of the character at the last upload. The on-person inventory at upload
+ * time is recorded for reference; the death rules (on-person lost, closet kept) are not built yet, so nothing reads it.
  */
 export interface MemorySnapshot {
   version: 1;
   /** Server time (ms) of the upload. */
   at: number;
   questStep: QuestStep;
-  inventory: { carry: unknown[]; equipped: unknown[] } | null;
+  inventory: Inventory | null;
 }
 
 export interface ShipMeta {
@@ -129,6 +130,8 @@ export interface ShipMeta {
   shipName: string;
   transitYears: number;
   cabinDoor: CabinDoorState;
+  /** Ship-wide item and material counts by id (Eatery food, Cargo Hold armor, printer and refinery materials). */
+  stock: Record<string, number>;
 }
 
 /** The only uniform so far; everyone starts with the crew jumpsuit equipped. */
@@ -180,6 +183,12 @@ export interface PlayerState {
   berth: number | null;
   /** Server time (ms) of the last memory upload, or null. */
   lastUploadAt: number | null;
+  /** On-person items: six carry slots and worn gear. The closet is private and sent to its owner only. */
+  inventory: Inventory;
+  /** Read Me Files opened from the inventory, saved to the data pad (newest first). */
+  padFiles: PadFile[];
+  /** Quest 2 progress, or null until the pad issues it on the Bridge. */
+  scavenger: ScavengerState | null;
 }
 
 /** [id, x, z, rot, moving] */
@@ -207,7 +216,29 @@ export type ClientMsg =
   /** `keypad` is which side's keypad is being used (defaults to the corridor one); the server range-checks against it. */
   | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number; keypad?: string }
   | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number; keypad?: string }
-  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string };
+  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string }
+  | { t: 'inv'; action: InventoryAction; x: number; z: number }
+  /** Opening the data pad on the Bridge after the opening quest: receive the scavenger hunt (server checks place and step). */
+  | { t: 'scavengerIssue' };
+
+/**
+ * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
+ * stands, synced like `interact`. Closet slots need the player beside their own berth's closet.
+ */
+export type InventoryAction =
+  /** Move `qty` (default: the whole stack) between two slots; a different kind at `to` swaps whole stacks. */
+  | { k: 'move'; from: SlotRef; to: SlotRef; qty?: number }
+  /** Right click: eat / equip. */
+  | { k: 'use'; loc: SlotRef }
+  /** Right click a File: the server saves it to the data pad and answers with the text (`invResult.file`). */
+  | { k: 'open'; loc: SlotRef }
+  /** Take worn gear off into a carry slot (`to`, or the first free one). */
+  | { k: 'unequip'; slot: EquipSlot; to?: SlotRef }
+  | { k: 'delete'; loc: SlotRef; qty?: number }
+  /** Take one `item` from a stock station (Eatery panel, Cargo Hold shelves). */
+  | { k: 'take'; station: string; item: ItemId }
+  /** Return `qty` of a stack to the stock of the station it came from. */
+  | { k: 'putBack'; loc: SlotRef; qty?: number };
 
 export type ServerMsg =
   | { t: 'profile'; characters: ProfileCharacter[] }
@@ -228,6 +259,13 @@ export type ServerMsg =
   | { t: 'snap'; p: SnapEntry[] }
   | { t: 'cabinDoor'; door: CabinDoorState }
   | { t: 'cabinKeypadResult'; ok: boolean; message?: string; flash?: 'green' | 'red'; dismissMs?: number; lockoutUntil?: number }
+  /** The player's own closet contents (on welcome and after every change); never broadcast. */
+  | { t: 'closet'; slots: Slots }
+  /**
+   * Result of an inventory action for the acting player: a use message, a refusal, or a pick-up note. `gained` is a
+   * stack that just landed in the carry slots (the client opens the inventory); `file` is an opened File's text.
+   */
+  | { t: 'invResult'; ok: boolean; message?: string; gained?: ItemStack; file?: { name: string; text: string } }
   /**
    * Sent to the uploading player only. `claimed` is true for their first berth; `from` is the berth they moved out of
    * when the upload also switched bunks, else null.
@@ -302,6 +340,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'reportIn':
     case 'newCharacter':
     case 'logout':
+    case 'scavengerIssue':
       return { t: m.t };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
@@ -326,6 +365,40 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number, keypad };
       return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number, keypad };
     }
+    case 'inv': {
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      const action = parseInventoryAction(m.action);
+      return action ? { t: 'inv', action, x: m.x as number, z: m.z as number } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+const qtyOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : undefined);
+const slotRef = (v: SlotRef): SlotRef => ({ c: v.c, i: v.i });
+
+export function parseInventoryAction(raw: unknown): InventoryAction | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  switch (a.k) {
+    case 'move':
+      if (!validSlotRef(a.from) || !validSlotRef(a.to)) return null;
+      return { k: 'move', from: slotRef(a.from), to: slotRef(a.to), qty: qtyOf(a.qty) };
+    case 'use':
+    case 'open':
+      return validSlotRef(a.loc) ? { k: a.k, loc: slotRef(a.loc) } : null;
+    case 'unequip':
+      if (a.slot !== 'suit' && a.slot !== 'armor') return null;
+      if (a.to !== undefined && !validSlotRef(a.to)) return null;
+      return { k: 'unequip', slot: a.slot, to: a.to ? slotRef(a.to as SlotRef) : undefined };
+    case 'delete':
+      return validSlotRef(a.loc) ? { k: 'delete', loc: slotRef(a.loc), qty: qtyOf(a.qty) } : null;
+    case 'take':
+      if (validateInteractId(a.station) || !isItemId(a.item)) return null;
+      return { k: 'take', station: a.station as string, item: a.item };
+    case 'putBack':
+      return validSlotRef(a.loc) ? { k: 'putBack', loc: slotRef(a.loc), qty: qtyOf(a.qty) } : null;
     default:
       return null;
   }

@@ -39,6 +39,11 @@ import {
   trackCabinDoorPass,
 } from './cabinDoor';
 import { MoveBudget } from '../../shared/movement';
+import { isItemInteractId, isWorldFileId, stockPanelById } from '../../shared/items';
+import { applyInventoryAction, applyOpenPanel, applyPickupFile, itemEvents, type InvResult } from './items';
+import { applyScavengerIssue, installScavengerQuest } from './scavenger';
+
+installScavengerQuest();
 
 const PORT = Number(process.env.PORT ?? 47322);
 const DATA_FILE = process.env.DATA_FILE ?? path.resolve(import.meta.dirname, '../data/ships.json');
@@ -95,6 +100,9 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     cloneTank: m.cloneTank ?? null,
     berth: m.berth ?? null,
     lastUploadAt: m.memory?.at ?? null,
+    inventory: m.inventory!,
+    padFiles: m.padFiles ?? [],
+    scavenger: m.scavenger ?? null,
   };
 }
 
@@ -185,8 +193,24 @@ wss.on('connection', (ws) => {
       ship: shipMeta(ship!),
       players: Object.values(ship!.members).map((m) => toState(ship!, m)),
     });
+    send(ws, { t: 'closet', slots: member.closet! });
     broadcast(ship!.code, { t: 'playerUpdated', player: toState(ship!, member) }, pid);
     console.log(`[ship ${ship!.code}] ${pid.slice(0, 8)} connected (${peers.size} online)`);
+  };
+
+  /**
+   * Apply an inventory result: persist, tell everyone about the on-person change, tell the owner the rest. Item events
+   * then go to the quest listeners, whose notices (task complete) follow as toasts.
+   */
+  const finishInventory = (me: MemberRecord, res: InvResult) => {
+    if (!res.ok) return send(ws, { t: 'invResult', ok: false, message: res.message });
+    const notices = (res.events ?? []).flatMap((ev) => itemEvents.emit(ev, { ship: ship!, member: me }));
+    store.save();
+    broadcast(ship!.code, { t: 'playerUpdated', player: toState(ship!, me) });
+    if (res.closet) send(ws, { t: 'closet', slots: me.closet! });
+    if (res.stock) broadcast(ship!.code, { t: 'shipState', ship: shipMeta(ship!) });
+    send(ws, { t: 'invResult', ok: true, message: res.message, gained: res.gained, file: res.file });
+    for (const n of notices) send(ws, { t: 'notice', message: n });
   };
 
   ws.on('message', (raw) => {
@@ -327,6 +351,17 @@ wss.on('connection', (ws) => {
           console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} uploaded memories at berth ${up.berth}${how}`);
           break;
         }
+        if (isWorldFileId(msg.id)) {
+          finishInventory(me, applyPickupFile(me, msg.id));
+          break;
+        }
+        // Stock panels open client-side; the click is still reported so the quest hears `panelOpened` (range-checked).
+        if (stockPanelById(msg.id)) {
+          finishInventory(me, applyOpenPanel(me, msg.id));
+          break;
+        }
+        // Closets open client-side; every action they lead to arrives as `inv` and is checked there.
+        if (isItemInteractId(msg.id)) break;
         const res = applyInteract(ship, me, msg.id);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
         store.save();
@@ -370,6 +405,23 @@ wss.on('connection', (ws) => {
           flash: res.flash,
           dismissMs: res.dismissMs,
         });
+        break;
+      }
+      case 'inv': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        finishInventory(me, applyInventoryAction(ship, me, msg.action));
+        break;
+      }
+      case 'scavengerIssue': {
+        const res = applyScavengerIssue(me);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+        send(ws, { t: 'notice', message: res.notice });
+        console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} received the scavenger hunt`);
         break;
       }
       case 'reportIn': {
