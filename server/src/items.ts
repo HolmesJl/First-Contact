@@ -85,9 +85,13 @@ export const itemEvents = {
   },
 };
 
+/**
+ * The member's containers, created if missing. Records are normalised on load and on every state broadcast, so this
+ * must not rebuild them here: an action holds references across several calls and a fresh copy would lose its edits.
+ */
 function ensure(member: MemberRecord) {
-  member.inventory = normalizeInventory(member.inventory);
-  member.closet = normalizeSlots(member.closet, CLOSET_SLOTS);
+  member.inventory ??= normalizeInventory(undefined);
+  member.closet ??= normalizeSlots(undefined, CLOSET_SLOTS);
   return { inv: member.inventory, closet: member.closet };
 }
 
