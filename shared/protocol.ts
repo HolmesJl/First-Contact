@@ -135,6 +135,27 @@ export interface ShipMeta {
   cabinDoor: CabinDoorState;
 }
 
+/** The only uniform so far; everyone starts with the crew jumpsuit equipped. */
+export const UNIFORMS = ['crew'] as const;
+export type Uniform = (typeof UNIFORMS)[number];
+
+/**
+ * A character saved on the server, as listed on the pick screen. Only the owner (same browser `clientId`) ever sees
+ * their characters; the server decides what goes in the list.
+ */
+export interface SavedCharacter {
+  id: string;
+  character: Character;
+  uniform: Uniform;
+  isClone: boolean;
+  questStep: QuestStep;
+  berth: number | null;
+  createdAt: number;
+  lastPlayedAt: number;
+  /** Another window is playing this character right now (picking it here takes over). */
+  online: boolean;
+}
+
 export interface PlayerState {
   id: string;
   tube: number;
@@ -144,6 +165,8 @@ export interface PlayerState {
   rot: number;
   moving: boolean;
   connected: boolean;
+  /** Owned by the browser that hosted the ship. */
+  isHost: boolean;
   isClone: boolean;
   hasPad: boolean;
   reportedIn: boolean;
@@ -159,8 +182,15 @@ export interface PlayerState {
 export type SnapEntry = [string, number, number, number, 0 | 1];
 
 export type ClientMsg =
-  | { t: 'host'; playerId: string }
-  | { t: 'join'; playerId: string; code: string }
+  /** `clientId` is the browser's stable id (localStorage); saved characters are tied to it. */
+  | { t: 'host'; clientId: string }
+  /** `legacyPlayerId` is the per-tab id older clients used; a character it owns is adopted by `clientId`. */
+  | { t: 'join'; clientId: string; code: string; legacyPlayerId?: string }
+  /** Resume a saved character; it spawns in its cabin or bunk room. */
+  | { t: 'pickCharacter'; characterId: string }
+  /** Start the creation flow for a fresh character. */
+  | { t: 'newCharacter' }
+  | { t: 'deleteCharacter'; characterId: string }
   | { t: 'startGame' }
   | { t: 'create'; character: Character }
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
@@ -171,10 +201,17 @@ export type ClientMsg =
   | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number };
 
 export type ServerMsg =
-  | { t: 'welcome'; code: string; you: string; hostId: string; ship: ShipMeta; players: PlayerState[] }
+  /**
+   * Reply to `host` / `join` (and to `deleteCharacter`): the ship and this browser's saved characters on it. The
+   * client answers with `pickCharacter` or `newCharacter`; `welcome` follows.
+   */
+  | { t: 'characters'; code: string; ship: ShipMeta; characters: SavedCharacter[]; crewCount: number }
+  | { t: 'welcome'; code: string; you: string; ship: ShipMeta; players: PlayerState[] }
   | { t: 'error'; message: string; fatal?: boolean }
   | { t: 'createError'; message: string }
   | { t: 'playerUpdated'; player: PlayerState }
+  /** A member left the crew for good: a deleted character, or a forming clone whose window closed. */
+  | { t: 'playerLeft'; id: string }
   | { t: 'shipState'; ship: ShipMeta }
   | { t: 'notice'; message: string }
   | { t: 'snap'; p: SnapEntry[] }
@@ -226,10 +263,21 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
   const m = raw as Record<string, unknown>;
   switch (m.t) {
     case 'host':
+      return typeof m.clientId === 'string' ? { t: 'host', clientId: m.clientId } : null;
     case 'join':
-      return typeof m.playerId === 'string' ? (m as ClientMsg) : null;
+      if (typeof m.clientId !== 'string') return null;
+      return {
+        t: 'join',
+        clientId: m.clientId,
+        code: typeof m.code === 'string' ? m.code : '',
+        legacyPlayerId: typeof m.legacyPlayerId === 'string' ? m.legacyPlayerId : undefined,
+      };
+    case 'pickCharacter':
+    case 'deleteCharacter':
+      return typeof m.characterId === 'string' ? { t: m.t, characterId: m.characterId } : null;
     case 'startGame':
     case 'reportIn':
+    case 'newCharacter':
       return { t: m.t };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;

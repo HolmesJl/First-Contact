@@ -5,7 +5,7 @@ import { IntroScene } from './scene/intro';
 import { LabScene } from './scene/lab';
 import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
-import { CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
+import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
 import { CabinKeypadOverlay, CABIN_KEYPAD_INTERACT_ID } from './cabinKeypad';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
@@ -42,34 +42,39 @@ renderer.setAnimationLoop((time) => {
   introOverlay?.setCaption(intro.caption());
 });
 
-function playerId() {
-  let id = sessionStorage.getItem('fc.playerId');
+/**
+ * Stable per-browser id; the server keys saved characters on it (friends-only game, no accounts). Older builds used a
+ * per-tab id in sessionStorage; it is sent once as `legacyPlayerId` so a character made before this change is adopted.
+ */
+function clientId() {
+  let id = localStorage.getItem('fc.clientId');
   if (!id) {
     id = crypto.randomUUID();
-    sessionStorage.setItem('fc.playerId', id);
+    localStorage.setItem('fc.clientId', id);
   }
   return id;
 }
+const legacyPlayerId = () => sessionStorage.getItem('fc.playerId') ?? undefined;
 
 let net: Net | null = null;
 let lab: LabScene | null = null;
 let hud: Hud | null = null;
 let creator: CreatorPanel | null = null;
+let picker: CharacterPickScreen | null = null;
 let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
 let selfId = '';
 let shipCode = '';
-let hostId = '';
 let shipMeta: ShipMeta | null = null;
 let hadPad = false;
 const players = new Map<string, PlayerState>();
 
 const invite = new URLSearchParams(location.search).get('ship')?.toUpperCase() ?? null;
 const title = new TitleScreen(invite, {
-  onHost: () => connect({ t: 'host', playerId: playerId() }),
-  onJoin: (code) => connect({ t: 'join', playerId: playerId(), code }),
+  onHost: () => connect({ t: 'host', clientId: clientId() }),
+  onJoin: (code) => connect({ t: 'join', clientId: clientId(), code, legacyPlayerId: legacyPlayerId() }),
 });
 resize();
 
@@ -84,13 +89,39 @@ async function connect(first: ClientMsg) {
     return;
   }
   const off = n.on((m) => {
-    if (m.t === 'welcome') {
+    if (m.t === 'characters') {
+      // The server lists this browser's saved characters on the ship. Nothing saved: straight into the lab as before.
+      if (picker) {
+        picker.render(m.characters, m.crewCount);
+      } else if (m.characters.length === 0) {
+        n.send({ t: 'newCharacter' });
+      } else {
+        title.destroy();
+        picker = new CharacterPickScreen(m.code, m.characters, m.crewCount, {
+          onPick: (characterId) => n.send({ t: 'pickCharacter', characterId }),
+          onNew: () => n.send({ t: 'newCharacter' }),
+          onDelete: (characterId) => n.send({ t: 'deleteCharacter', characterId }),
+        });
+      }
+    } else if (m.t === 'welcome') {
       off();
       net = n;
       net.on(handle);
       net.onClose = () => banner('Lost connection to the ship.', { label: 'Reconnect', run: () => location.reload() });
+      sessionStorage.removeItem('fc.playerId');
+      picker?.destroy();
+      picker = null;
       onWelcome(m);
     } else if (m.t === 'error') {
+      if (picker) {
+        if (!m.fatal) return picker.showError(m.message);
+        off();
+        n.close();
+        picker.destroy();
+        picker = null;
+        banner(m.message, { label: 'Reload', run: () => location.reload() });
+        return;
+      }
       off();
       n.close();
       title.setBusy(false);
@@ -103,7 +134,6 @@ async function connect(first: ClientMsg) {
 function onWelcome(m: Extract<ServerMsg, { t: 'welcome' }>) {
   selfId = m.you;
   shipCode = m.code;
-  hostId = m.hostId;
   shipMeta = m.ship;
   players.clear();
   m.players.forEach((p) => players.set(p.id, p));
@@ -137,7 +167,7 @@ function showWakeLobby() {
     onStart: () => net?.send({ t: 'startGame' }),
     onContinue: () => beginCreator(),
   });
-  wakeIntro.renderCrew(players, selfId, hostId);
+  wakeIntro.renderCrew(players, selfId);
   if (shipMeta.gameStarted) wakeIntro.enableContinue(() => beginCreator());
 }
 
@@ -237,7 +267,7 @@ async function startLab() {
       },
     };
   resize();
-  hud = new Hud(shipCode, selfId, hostId);
+  hud = new Hud(shipCode, selfId);
   hud.render(players);
   syncHudSelf();
 
@@ -304,7 +334,7 @@ function handle(m: ServerMsg) {
       players.set(p.id, p);
       hud?.render(players);
       if (p.id === selfId) syncHudSelf();
-      wakeIntro?.renderCrew(players, selfId, hostId);
+      wakeIntro?.renderCrew(players, selfId);
       if (!lab) return;
       lab.syncPlayer(p);
       syncBerthOwners();
@@ -329,6 +359,17 @@ function handle(m: ServerMsg) {
       if (prev && p.questStep === 'done' && prev.questStep !== 'done' && p.id === selfId) {
         toast('Objective complete.');
       }
+      break;
+    }
+    case 'playerLeft': {
+      // A deleted character or a forming clone whose window closed: their crew slot, job and bunk are free again.
+      players.delete(m.id);
+      hud?.render(players);
+      wakeIntro?.renderCrew(players, selfId);
+      lab?.removePlayer(m.id);
+      syncBerthOwners();
+      creator?.setTakenJobs(takenJobs());
+      syncHudSelf();
       break;
     }
     case 'shipState':
@@ -367,6 +408,7 @@ function handle(m: ServerMsg) {
       else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);
       break;
     case 'welcome':
+    case 'characters':
       break;
   }
 }

@@ -10,7 +10,8 @@
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
     "build": "npm run build -w client",
     "check:layout": "tsx shared/shipInterior.check.ts",
-    "check:controls": "tsx client/src/input/controlMath.check.ts"
+    "check:controls": "tsx client/src/input/controlMath.check.ts",
+    "smoke:characters": "tsx tools/character-persistence-smoke.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

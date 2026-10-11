@@ -1,16 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { upgradeLegacyCharacter, type Character, type MemorySnapshot } from '../../shared/protocol';
+import { upgradeLegacyCharacter, type Character, type MemorySnapshot, type Uniform } from '../../shared/protocol';
 import type { QuestStep } from '../../shared/opening';
 
+/**
+ * One crew slot on a ship: a saved character, or a clone still forming in the lab (`character === null`). Forming
+ * members are dropped when their window closes; saved characters stay until their owner deletes them.
+ */
 export interface MemberRecord {
+  /** Stable character id (server generated). Also the id other players see. */
   id: string;
+  /** Browser `clientId` that owns this character. Older records without one are owned by their old per-tab id. */
+  ownerId: string;
   tube: number;
   character: Character | null;
+  uniform?: Uniform;
   x: number;
   z: number;
   rot: number;
   joinedAt: number;
+  createdAt?: number;
+  lastPlayedAt?: number;
   isClone?: boolean;
   hasPad?: boolean;
   reportedIn?: boolean;
@@ -24,6 +34,7 @@ export interface MemberRecord {
 
 export interface ShipRecord {
   code: string;
+  /** `clientId` of the browser that launched the ship. */
   hostId: string;
   createdAt: number;
   members: Record<string, MemberRecord>;
@@ -46,7 +57,10 @@ export class ShipStore {
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { ships?: ShipRecord[] };
       for (const s of raw.ships ?? []) {
-        for (const m of Object.values(s.members)) if (m.character) upgradeLegacyCharacter(m.character as unknown as Record<string, unknown>);
+        for (const m of Object.values(s.members)) {
+          if (m.character) upgradeLegacyCharacter(m.character as unknown as Record<string, unknown>);
+          m.ownerId ??= m.id;
+        }
         this.ships.set(s.code, s);
       }
       console.log(`[store] loaded ${this.ships.size} ship(s) from ${file}`);

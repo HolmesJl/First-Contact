@@ -33,22 +33,27 @@ function send(ws, msg) {
   ws.send(JSON.stringify(msg));
 }
 
+/** Handshake: host/join answers with the browser's saved characters; a fresh browser asks for a new one. */
+async function enterNew(ws) {
+  await once(ws, (m) => m.t === 'characters');
+  send(ws, { t: 'newCharacter' });
+  return once(ws, (m) => m.t === 'welcome');
+}
+
 async function connectHost() {
   const ws = new WebSocket(WS);
   await waitOpen(ws);
-  const pid = id('host');
-  send(ws, { t: 'host', playerId: pid });
-  const w = await once(ws, (m) => m.t === 'welcome');
-  return { ws, pid, code: w.code };
+  send(ws, { t: 'host', clientId: id('host') });
+  const w = await enterNew(ws);
+  return { ws, pid: w.you, code: w.code };
 }
 
 async function join(code, label) {
   const ws = new WebSocket(WS);
   await waitOpen(ws);
-  const pid = id(label);
-  send(ws, { t: 'join', playerId: pid, code });
-  await once(ws, (m) => m.t === 'welcome');
-  return { ws, pid };
+  send(ws, { t: 'join', clientId: id(label), code });
+  const w = await enterNew(ws);
+  return { ws, pid: w.you };
 }
 
 async function startAndCreate(ws, pid, job, name, startVoyage = false) {
