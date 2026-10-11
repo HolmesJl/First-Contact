@@ -5,7 +5,6 @@ import { ShipStore, type MemberRecord, type ShipRecord } from './store';
 import {
   applyInteract,
   applyReportIn,
-  assignCloneTank,
   normalizeMember,
   normalizeShip,
   maybeCompleteCaptain,
@@ -14,8 +13,8 @@ import {
   spawnAfterCreate,
   startGame,
 } from './opening';
+import { adoptLegacyMember, deleteCharacter, dropFormingMember, newMember, pickCharacter, profileCharacters, savedCharacters } from './characters';
 import {
-  MAX_CREW,
   jobCheck,
   parseClientMsg,
   validateCharacter,
@@ -24,8 +23,7 @@ import {
   type ServerMsg,
   type SnapEntry,
 } from '../../shared/protocol';
-import { TUBE_COUNT, spawnFor } from '../../shared/lab';
-import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
+import { isCabinKeypadId } from '../../shared/cabinDoor';
 import { isMemoryStationId } from '../../shared/bunks';
 import { clampMoveToShip, clampToShip } from '../../shared/shipInterior';
 import { applyMemoryUpload } from './bunks';
@@ -36,6 +34,7 @@ import {
   applyCabinKeypadSet,
   cabinDoorObstaclesForShip,
   cabinDoorPublic,
+  resolveKeypadId,
   tickCabinDoors,
   trackCabinDoorPass,
 } from './cabinDoor';
@@ -59,6 +58,13 @@ const dirtyShips = new Set<string>();
 const key = (code: string, id: string) => `${code}:${id}`;
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id);
 
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+/** Ids of the players aboard a ship right now. */
+const onlineIds = (code: string): ReadonlySet<string> => {
+  const peers = online.get(code);
+  return peers ? new Set(peers.keys()) : EMPTY_IDS;
+};
+
 function send(ws: WebSocket, msg: ServerMsg) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
@@ -81,6 +87,7 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     rot: m.rot,
     moving: moving.get(key(ship.code, m.id)) ?? false,
     connected: online.get(ship.code)?.has(m.id) ?? false,
+    isHost: m.ownerId === ship.hostId,
     isClone: m.isClone ?? false,
     hasPad: m.hasPad ?? false,
     reportedIn: m.reportedIn ?? false,
@@ -127,7 +134,60 @@ const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 8
 
 wss.on('connection', (ws) => {
   let ship: ShipRecord | null = null;
+  let clientId: string | null = null;
   let pid: string | null = null;
+
+  const sendCharacters = () => {
+    const ids = onlineIds(ship!.code);
+    send(ws, {
+      t: 'characters',
+      code: ship!.code,
+      ship: shipMeta(ship!),
+      characters: savedCharacters(ship!, clientId!, ids),
+      aboard: ids.size,
+    });
+  };
+
+  /** Remove a deleted character from play: kick its window, forget its movement state, tell everyone it left. */
+  const removeFromPlay = (id: string, character: Character) => {
+    kick(id, 'This character was deleted from another window.');
+    const mk = key(ship!.code, id);
+    moving.delete(mk);
+    lastMoveMs.delete(mk);
+    budgets.delete(mk);
+    store.save();
+    broadcast(ship!.code, { t: 'playerLeft', id });
+    console.log(`[ship ${ship!.code}] deleted ${character.job} ${character.firstName} ${character.lastName}`);
+  };
+
+  /** Close another window's socket for this member (same character opened twice, or a delete while in play). */
+  const kick = (id: string, message: string) => {
+    const peers = online.get(ship!.code);
+    const prev = peers?.get(id);
+    if (!prev || prev === ws) return;
+    peers!.delete(id);
+    send(prev, { t: 'error', message, fatal: true });
+    prev.close();
+  };
+
+  /** Bind this socket to a member and bring it into the world. */
+  const enter = (member: MemberRecord) => {
+    pid = member.id;
+    kick(pid, 'You opened this character in another window.');
+    let peers = online.get(ship!.code);
+    if (!peers) online.set(ship!.code, (peers = new Map()));
+    peers.set(pid, ws);
+    budgets.delete(key(ship!.code, pid));
+    send(ws, {
+      t: 'welcome',
+      code: ship!.code,
+      you: pid,
+      ship: shipMeta(ship!),
+      players: Object.values(ship!.members).map((m) => toState(ship!, m)),
+    });
+    broadcast(ship!.code, { t: 'playerUpdated', player: toState(ship!, member) }, pid);
+    console.log(`[ship ${ship!.code}] ${pid.slice(0, 8)} connected (${peers.size} online)`);
+  };
 
   ws.on('message', (raw) => {
     let msg;
@@ -138,71 +198,57 @@ wss.on('connection', (ws) => {
     }
     if (!msg) return;
 
-    if (!ship || !pid) {
-      if (msg.t !== 'host' && msg.t !== 'join') return;
-      if (!validId(msg.playerId)) return send(ws, { t: 'error', message: 'Invalid player id.' });
+    if (!ship || !clientId) {
+      if (msg.t !== 'hello' && msg.t !== 'host' && msg.t !== 'join') return;
+      if (!validId(msg.clientId)) return send(ws, { t: 'error', message: 'Invalid client id.' });
+
+      if (msg.t === 'hello') {
+        return send(ws, { t: 'profile', characters: profileCharacters(store.all(), msg.clientId, onlineIds) });
+      }
 
       let target: ShipRecord | undefined;
       if (msg.t === 'host') {
-        target = normalizeShip(store.create(msg.playerId));
+        target = normalizeShip(store.create(msg.clientId));
         console.log(`[ship ${target.code}] hosted`);
       } else {
         const code = String(msg.code ?? '').toUpperCase().trim();
         target = store.get(code);
         if (!target) return send(ws, { t: 'error', message: `No ship found with invite code “${code}”.` });
         normalizeShip(target);
+        if (adoptLegacyMember(target, validId(msg.legacyPlayerId) ? msg.legacyPlayerId : undefined, msg.clientId)) store.save();
       }
-
-      let member = target.members[msg.playerId];
-      if (!member) {
-        if (Object.keys(target.members).length >= MAX_CREW) {
-          return send(ws, { t: 'error', message: `That crew is full (${MAX_CREW}/${MAX_CREW}).` });
-        }
-        const used = new Set(Object.values(target.members).map((m) => m.tube));
-        let tube = 0;
-        while (used.has(tube) && tube < TUBE_COUNT) tube++;
-        const spawn = spawnFor(tube);
-        member = normalizeMember({
-          id: msg.playerId,
-          tube,
-          character: null,
-          ...spawn,
-          joinedAt: Date.now(),
-          isClone: !!target.gameStarted,
-        });
-        if (member.isClone) assignCloneTank(target, member);
-        target.members[member.id] = member;
-        store.save();
-      } else {
-        normalizeMember(member);
-        if (target.gameStarted && !member.character && !member.isClone) {
-          member.isClone = true;
-          assignCloneTank(target, member);
-          store.save();
-        }
-      }
-
       ship = target;
-      pid = msg.playerId;
-      let peers = online.get(ship.code);
-      if (!peers) online.set(ship.code, (peers = new Map()));
-      const prev = peers.get(pid);
-      peers.set(pid, ws);
-      if (prev && prev !== ws) {
-        send(prev, { t: 'error', message: 'You opened this ship in another window.', fatal: true });
-        prev.close();
-      }
+      clientId = msg.clientId;
+      sendCharacters();
+      return;
+    }
 
-      send(ws, {
-        t: 'welcome',
-        code: ship.code,
-        you: pid,
-        hostId: ship.hostId,
-        ship: shipMeta(ship),
-        players: Object.values(ship.members).map((m) => toState(ship!, m)),
-      });
-      broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, member) }, pid);
-      console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} connected (${peers.size} online)`);
+    if (!pid) {
+      switch (msg.t) {
+        case 'pickCharacter': {
+          const res = pickCharacter(ship, clientId, msg.characterId, { onlineIds: onlineIds(ship.code) });
+          if (!res.ok) return send(ws, { t: 'error', message: res.message });
+          store.save();
+          enter(res.member);
+          const c = res.member.character!;
+          console.log(`[ship ${ship.code}] resumed ${c.job} ${c.firstName} ${c.lastName} in ${c.job === 'Captain' ? 'the cabin' : 'the bunk room'}`);
+          break;
+        }
+        case 'newCharacter': {
+          const res = newMember(ship, clientId, { onlineIds: onlineIds(ship.code) });
+          if (!res.ok) return send(ws, { t: 'error', message: res.message });
+          store.save();
+          enter(res.member);
+          break;
+        }
+        case 'deleteCharacter': {
+          const res = deleteCharacter(ship, clientId, msg.characterId);
+          if (!res.ok) return send(ws, { t: 'error', message: res.message });
+          removeFromPlay(msg.characterId, res.member.character!);
+          sendCharacters();
+          break;
+        }
+      }
       return;
     }
 
@@ -210,6 +256,22 @@ wss.on('connection', (ws) => {
     if (!me) return;
 
     switch (msg.t) {
+      case 'deleteCharacter': {
+        // Roster management from the HUD: the host or an online Captain may delete anyone's saved character.
+        if (msg.characterId === pid) return send(ws, { t: 'error', message: 'Log out first; delete your own character from the pick list.' });
+        const res = deleteCharacter(ship, clientId, msg.characterId, me);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        removeFromPlay(msg.characterId, res.member.character!);
+        break;
+      }
+      case 'logout': {
+        // The close handler does the same bookkeeping; this just guarantees the save hits disk before the ack.
+        me.lastPlayedAt = Date.now();
+        store.flush();
+        send(ws, { t: 'loggedOut' });
+        console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} logged out`);
+        break;
+      }
       case 'startGame': {
         if (me.character) return;
         if (startGame(ship)) {
@@ -225,13 +287,16 @@ wss.on('connection', (ws) => {
         const err = validateCharacter(msg.character);
         if (err) return send(ws, { t: 'createError', message: err });
         const character = sanitizeCharacter(msg.character);
-        const taken = Object.values(ship.members)
-          .filter((m) => m.id !== pid && m.character)
-          .map((m) => m.character!.job);
-        const jobErr = jobCheck(taken, character.job);
+        // Only who is aboard right now matters: a second Captain is refused, any other job may repeat.
+        const aboardJobs = [...onlineIds(ship.code)]
+          .filter((id) => id !== pid)
+          .map((id) => ship!.members[id]?.character?.job)
+          .filter((j): j is Character['job'] => !!j);
+        const jobErr = jobCheck(aboardJobs, character.job);
         if (jobErr) return send(ws, { t: 'createError', message: jobErr });
 
         me.character = character;
+        me.createdAt = me.lastPlayedAt = Date.now();
         onCharacterCreated(me, character);
         Object.assign(me, spawnAfterCreate(me));
         budgets.delete(key(ship.code, pid));
@@ -245,8 +310,8 @@ wss.on('connection', (ws) => {
         const p = clampToShip(msg.x, msg.z, 0, obs);
         me.x = p.x;
         me.z = p.z;
-        if (msg.id === CABIN_KEYPAD_INTERACT_ID) {
-          const k = applyCabinKeypadInteract(ship, me);
+        if (isCabinKeypadId(msg.id)) {
+          const k = applyCabinKeypadInteract(ship, me, msg.id);
           if (!k.ok) return send(ws, { t: 'error', message: k.message });
           return;
         }
@@ -277,10 +342,11 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         const now = Date.now();
+        const keypad = resolveKeypadId(msg.keypad);
         let res;
-        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now);
-        else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now);
-        else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now);
+        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now, keypad);
+        else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now, keypad);
+        else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now, keypad);
         if (!res.ok) {
           send(ws, {
             t: 'cabinKeypadResult',
@@ -354,7 +420,14 @@ wss.on('connection', (ws) => {
     lastMoveMs.delete(mk);
     budgets.delete(mk);
     const me = ship.members[pid];
-    if (me) broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+    if (me && dropFormingMember(ship, pid)) {
+      store.save();
+      broadcast(ship.code, { t: 'playerLeft', id: pid });
+    } else if (me) {
+      me.lastPlayedAt = Date.now();
+      store.save();
+      broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+    }
     console.log(`[ship ${ship.code}] ${pid.slice(0, 8)} disconnected (${peers.size} online)`);
   });
 });

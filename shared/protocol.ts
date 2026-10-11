@@ -3,14 +3,10 @@ import type { QuestStep } from './opening';
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
 export type Job = (typeof JOBS)[number];
 
-export const JOB_CAPS: Record<Job, number> = {
-  Captain: 1,
-  Engineer: 3,
-  Military: 3,
-  Doctor: 2,
-  Botanist: 4,
-};
-
+/**
+ * How many players may be aboard a ship at once. Saved characters do not hold a slot; only players online right now
+ * count, so a browser can keep as many characters as it likes and the cap bites only at boarding time.
+ */
 export const MAX_CREW = 6;
 
 export const JOB_INFO: Record<Job, { color: string; role: string; blurb: string }> = {
@@ -135,6 +131,35 @@ export interface ShipMeta {
   cabinDoor: CabinDoorState;
 }
 
+/** The only uniform so far; everyone starts with the crew jumpsuit equipped. */
+export const UNIFORMS = ['crew'] as const;
+export type Uniform = (typeof UNIFORMS)[number];
+
+/**
+ * A character saved on the server, as listed on the pick screen. Only the owner (same browser `clientId`) ever sees
+ * their characters; the server decides what goes in the list.
+ */
+export interface SavedCharacter {
+  id: string;
+  character: Character;
+  uniform: Uniform;
+  isClone: boolean;
+  questStep: QuestStep;
+  berth: number | null;
+  createdAt: number;
+  lastPlayedAt: number;
+  /** Another window is playing this character right now (picking it here takes over). */
+  online: boolean;
+  /** Why Board is unavailable at the moment (ship full, a Captain already aboard), or null. Re-checked on pick. */
+  blocked: string | null;
+}
+
+/** A saved character as listed on the landing screen: the same record plus the ship it lives on. */
+export interface ProfileCharacter extends SavedCharacter {
+  shipCode: string;
+  shipName: string;
+}
+
 export interface PlayerState {
   id: string;
   tube: number;
@@ -144,6 +169,8 @@ export interface PlayerState {
   rot: number;
   moving: boolean;
   connected: boolean;
+  /** Owned by the browser that hosted the ship. */
+  isHost: boolean;
   isClone: boolean;
   hasPad: boolean;
   reportedIn: boolean;
@@ -159,22 +186,43 @@ export interface PlayerState {
 export type SnapEntry = [string, number, number, number, 0 | 1];
 
 export type ClientMsg =
-  | { t: 'host'; playerId: string }
-  | { t: 'join'; playerId: string; code: string }
+  /** Landing screen: list every character this browser owns, on any ship. Answered with `profile`. */
+  | { t: 'hello'; clientId: string }
+  /** `clientId` is the browser's stable id (localStorage); saved characters are tied to it. */
+  | { t: 'host'; clientId: string }
+  /** `legacyPlayerId` is the per-tab id older clients used; a character it owns is adopted by `clientId`. */
+  | { t: 'join'; clientId: string; code: string; legacyPlayerId?: string }
+  /** Resume a saved character; it spawns in its cabin or bunk room. */
+  | { t: 'pickCharacter'; characterId: string }
+  /** Start the creation flow for a fresh character. */
+  | { t: 'newCharacter' }
+  | { t: 'deleteCharacter'; characterId: string }
+  /** Save and leave the world; the server answers `loggedOut` once the save file is written. */
+  | { t: 'logout' }
   | { t: 'startGame' }
   | { t: 'create'; character: Character }
   | { t: 'move'; x: number; z: number; rot: number; moving: boolean }
   | { t: 'interact'; id: string; x: number; z: number }
   | { t: 'reportIn' }
-  | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number }
-  | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number }
-  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number };
+  /** `keypad` is which side's keypad is being used (defaults to the corridor one); the server range-checks against it. */
+  | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number; keypad?: string }
+  | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number; keypad?: string }
+  | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string };
 
 export type ServerMsg =
-  | { t: 'welcome'; code: string; you: string; hostId: string; ship: ShipMeta; players: PlayerState[] }
+  | { t: 'profile'; characters: ProfileCharacter[] }
+  | { t: 'loggedOut' }
+  /**
+   * Reply to `host` / `join` (and to `deleteCharacter`): the ship and this browser's saved characters on it. The
+   * client answers with `pickCharacter` or `newCharacter`; `welcome` follows.
+   */
+  | { t: 'characters'; code: string; ship: ShipMeta; characters: SavedCharacter[]; aboard: number }
+  | { t: 'welcome'; code: string; you: string; ship: ShipMeta; players: PlayerState[] }
   | { t: 'error'; message: string; fatal?: boolean }
   | { t: 'createError'; message: string }
   | { t: 'playerUpdated'; player: PlayerState }
+  /** A member left the crew for good: a deleted character, or a forming clone whose window closed. */
+  | { t: 'playerLeft'; id: string }
   | { t: 'shipState'; ship: ShipMeta }
   | { t: 'notice'; message: string }
   | { t: 'snap'; p: SnapEntry[] }
@@ -201,17 +249,28 @@ export function upgradeLegacyCharacter(c: Record<string, unknown>) {
   }
 }
 
-/** Returns a reason the job can't be taken, or null if it's available. */
-export function jobCheck(takenJobs: Job[], job: Job): string | null {
+/**
+ * Why a job cannot be taken given the jobs of the players aboard right now, or null. Only the Captain is unique (one
+ * aboard at a time); any number of players may share the other jobs.
+ */
+export function jobCheck(onlineJobs: Job[], job: Job): string | null {
   if (!JOBS.includes(job)) return 'Unknown job.';
-  const count = takenJobs.filter((j) => j === job).length;
-  if (count >= JOB_CAPS[job]) return `All ${JOB_CAPS[job]} ${job} berths are taken.`;
-  if (takenJobs.length >= MAX_CREW) return 'The crew is full.';
-  const hasCaptain = takenJobs.includes('Captain');
-  if (!hasCaptain && job !== 'Captain' && takenJobs.length >= MAX_CREW - 1) {
-    return 'The last berth is reserved for the Captain.';
-  }
+  if (job === 'Captain' && onlineJobs.includes('Captain')) return 'Captain is aboard right now.';
   return null;
+}
+
+export function shipFullMessage() {
+  return `The ship is full right now (${MAX_CREW}/${MAX_CREW} aboard). Try again when someone logs out.`;
+}
+
+/**
+ * Why a saved character cannot board right now, or null. Taking over a character that is already aboard never
+ * needs a slot or a job check: it replaces that window.
+ */
+export function boardCheck(aboard: number, onlineJobs: Job[], job: Job, selfOnline: boolean): string | null {
+  if (selfOnline) return null;
+  if (aboard >= MAX_CREW) return shipFullMessage();
+  return jobCheck(onlineJobs, job);
 }
 
 const INTERACT_ID = /^[a-z0-9][a-z0-9-]{0,48}$/;
@@ -225,11 +284,24 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Record<string, unknown>;
   switch (m.t) {
+    case 'hello':
     case 'host':
+      return typeof m.clientId === 'string' ? { t: m.t, clientId: m.clientId } : null;
     case 'join':
-      return typeof m.playerId === 'string' ? (m as ClientMsg) : null;
+      if (typeof m.clientId !== 'string') return null;
+      return {
+        t: 'join',
+        clientId: m.clientId,
+        code: typeof m.code === 'string' ? m.code : '',
+        legacyPlayerId: typeof m.legacyPlayerId === 'string' ? m.legacyPlayerId : undefined,
+      };
+    case 'pickCharacter':
+    case 'deleteCharacter':
+      return typeof m.characterId === 'string' ? { t: m.t, characterId: m.characterId } : null;
     case 'startGame':
     case 'reportIn':
+    case 'newCharacter':
+    case 'logout':
       return { t: m.t };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
@@ -249,9 +321,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       const code = typeof m.code === 'string' ? m.code : '';
       const confirm = typeof m.confirm === 'string' ? m.confirm : '';
       const current = typeof m.current === 'string' ? m.current : '';
-      if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number };
-      if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number };
-      return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number };
+      const keypad = typeof m.keypad === 'string' ? m.keypad : undefined;
+      if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number, keypad };
+      if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number, keypad };
+      return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number, keypad };
     }
     default:
       return null;

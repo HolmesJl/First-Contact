@@ -5,13 +5,13 @@ import { IntroScene } from './scene/intro';
 import { LabScene } from './scene/lab';
 import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
-import { CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
-import { CabinKeypadOverlay, CABIN_KEYPAD_INTERACT_ID } from './cabinKeypad';
+import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
+import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
 import { objectiveInteractId, questObjective } from '../../shared/opening';
-import type { ClientMsg, Job, PlayerState, ServerMsg, ShipMeta } from '../../shared/protocol';
+import type { ClientMsg, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -42,38 +42,111 @@ renderer.setAnimationLoop((time) => {
   introOverlay?.setCaption(intro.caption());
 });
 
-function playerId() {
-  let id = sessionStorage.getItem('fc.playerId');
+/**
+ * Stable per-browser id; the server keys saved characters on it (friends-only game, no accounts). Older builds used a
+ * per-tab id in sessionStorage; it is sent once as `legacyPlayerId` so a character made before this change is adopted.
+ */
+function clientId() {
+  let id = localStorage.getItem('fc.clientId');
   if (!id) {
     id = crypto.randomUUID();
-    sessionStorage.setItem('fc.playerId', id);
+    localStorage.setItem('fc.clientId', id);
   }
   return id;
 }
+const legacyPlayerId = () => sessionStorage.getItem('fc.playerId') ?? undefined;
 
 let net: Net | null = null;
 let lab: LabScene | null = null;
 let hud: Hud | null = null;
 let creator: CreatorPanel | null = null;
+let picker: CharacterPickScreen | null = null;
 let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
 let selfId = '';
 let shipCode = '';
-let hostId = '';
 let shipMeta: ShipMeta | null = null;
 let hadPad = false;
 const players = new Map<string, PlayerState>();
 
 const invite = new URLSearchParams(location.search).get('ship')?.toUpperCase() ?? null;
 const title = new TitleScreen(invite, {
-  onHost: () => connect({ t: 'host', playerId: playerId() }),
-  onJoin: (code) => connect({ t: 'join', playerId: playerId(), code }),
+  onHost: () => connect({ t: 'host', clientId: clientId() }),
+  onJoin: (code) => connect({ t: 'join', clientId: clientId(), code, legacyPlayerId: legacyPlayerId() }),
+  onBoard: (c) => connect({ t: 'join', clientId: clientId(), code: c.shipCode }, c.id),
+  onDelete: (c) =>
+    deleteSaved(c)
+      .catch((err: Error) => title.showError(err.message))
+      .finally(() => {
+        title.setBusy(false);
+        void refreshSaved();
+      }),
 });
 resize();
+void refreshSaved();
 
-async function connect(first: ClientMsg) {
+/** One request on a throwaway socket: send `first`, resolve with the first reply `pick` accepts, close. */
+function lobbyRequest<T>(first: ClientMsg, pick: (m: ServerMsg, send: (msg: ClientMsg) => void) => T | undefined, ms = 6000): Promise<T> {
+  const n = new Net();
+  return n.ready.then(
+    () =>
+      new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          n.close();
+          reject(new Error('The ship server did not answer.'));
+        }, ms);
+        n.onClose = () => {
+          clearTimeout(timer);
+          reject(new Error('Lost connection to the ship server.'));
+        };
+        n.on((m) => {
+          if (m.t === 'error') {
+            clearTimeout(timer);
+            n.close();
+            reject(new Error(m.message));
+            return;
+          }
+          const out = pick(m, (msg) => n.send(msg));
+          if (out === undefined) return;
+          clearTimeout(timer);
+          n.close();
+          resolve(out);
+        });
+        n.send(first);
+      }),
+  );
+}
+
+/** The landing screen's Continue list: every character this browser owns, on any ship, as the server sees it. */
+async function refreshSaved() {
+  title.setSaved(null);
+  try {
+    const characters = await lobbyRequest({ t: 'hello', clientId: clientId() }, (m) => (m.t === 'profile' ? m.characters : undefined));
+    title.setSaved(characters);
+  } catch {
+    title.setSaved([]);
+  }
+}
+
+/** Delete from the landing screen: join the character's ship just long enough to delete it. */
+function deleteSaved(c: ProfileCharacter) {
+  let asked = false;
+  return lobbyRequest({ t: 'join', clientId: clientId(), code: c.shipCode }, (m, send) => {
+    if (m.t !== 'characters') return undefined;
+    if (asked) return true;
+    asked = true;
+    send({ t: 'deleteCharacter', characterId: c.id });
+    return undefined;
+  });
+}
+
+/**
+ * Connect and enter a ship. With `boardId` (landing-screen Board) the saved character is picked as soon as the server
+ * confirms it is still ours; otherwise the per-ship pick list or the new-character flow takes over.
+ */
+async function connect(first: ClientMsg, boardId?: string) {
   title.setBusy(true, 'Connecting…');
   const n = new Net();
   try {
@@ -84,13 +157,47 @@ async function connect(first: ClientMsg) {
     return;
   }
   const off = n.on((m) => {
-    if (m.t === 'welcome') {
+    if (m.t === 'characters') {
+      // The server lists this browser's saved characters on the ship. Nothing saved: straight into the lab as before.
+      if (picker) {
+        picker.render(m.characters, m.aboard);
+      } else if (boardId && m.characters.some((c) => c.id === boardId)) {
+        n.send({ t: 'pickCharacter', characterId: boardId });
+      } else if (boardId) {
+        off();
+        n.close();
+        title.setBusy(false);
+        title.showError('That character is no longer on the ship.');
+        void refreshSaved();
+      } else if (m.characters.length === 0) {
+        n.send({ t: 'newCharacter' });
+      } else {
+        title.destroy();
+        picker = new CharacterPickScreen(m.code, m.characters, m.aboard, {
+          onPick: (characterId) => n.send({ t: 'pickCharacter', characterId }),
+          onNew: () => n.send({ t: 'newCharacter' }),
+          onDelete: (characterId) => n.send({ t: 'deleteCharacter', characterId }),
+        });
+      }
+    } else if (m.t === 'welcome') {
       off();
       net = n;
       net.on(handle);
       net.onClose = () => banner('Lost connection to the ship.', { label: 'Reconnect', run: () => location.reload() });
+      sessionStorage.removeItem('fc.playerId');
+      picker?.destroy();
+      picker = null;
       onWelcome(m);
     } else if (m.t === 'error') {
+      if (picker) {
+        if (!m.fatal) return picker.showError(m.message);
+        off();
+        n.close();
+        picker.destroy();
+        picker = null;
+        banner(m.message, { label: 'Reload', run: () => location.reload() });
+        return;
+      }
       off();
       n.close();
       title.setBusy(false);
@@ -103,7 +210,6 @@ async function connect(first: ClientMsg) {
 function onWelcome(m: Extract<ServerMsg, { t: 'welcome' }>) {
   selfId = m.you;
   shipCode = m.code;
-  hostId = m.hostId;
   shipMeta = m.ship;
   players.clear();
   m.players.forEach((p) => players.set(p.id, p));
@@ -137,7 +243,7 @@ function showWakeLobby() {
     onStart: () => net?.send({ t: 'startGame' }),
     onContinue: () => beginCreator(),
   });
-  wakeIntro.renderCrew(players, selfId, hostId);
+  wakeIntro.renderCrew(players, selfId);
   if (shipMeta.gameStarted) wakeIntro.enableContinue(() => beginCreator());
 }
 
@@ -160,8 +266,9 @@ function beginCreator() {
   creator.setTakenJobs(taken);
 }
 
+/** Jobs of the players aboard right now (the only ones the Captain rule looks at). */
 function takenJobs(): Job[] {
-  return [...players.values()].filter((p) => p.id !== selfId && p.character).map((p) => p.character!.job);
+  return [...players.values()].filter((p) => p.id !== selfId && p.connected && p.character).map((p) => p.character!.job);
 }
 
 async function startLab() {
@@ -177,12 +284,9 @@ async function startLab() {
     onSpace: (space) => hud?.setSpace(space),
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (id, prompt) => {
-      if (id === CABIN_KEYPAD_INTERACT_ID && shipMeta) {
+      if (isCabinKeypadId(id) && shipMeta) {
         const me = players.get(selfId);
-        const inCabin = lab?.currentSpaceId() === 'cabin';
-        hud?.setInteractPrompt(
-          cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null, inCabin),
-        );
+        hud?.setInteractPrompt(cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
         return;
       }
       const berth = id === null ? null : berthFromMemoryStationId(id);
@@ -195,24 +299,25 @@ async function startLab() {
     },
     onInteract: (id) => {
       const { x, z } = lab!.localPos();
-      if (id === CABIN_KEYPAD_INTERACT_ID) {
+      if (isCabinKeypadId(id)) {
         const me = players.get(selfId);
         if (!me?.character || !shipMeta) return;
         if (!shipMeta.cabinDoor.codeSet && me.character.job !== 'Captain') {
           toast('Locked. The captain has not set a code.');
           return;
         }
+        const keypad = id;
         cabinKeypad?.destroy();
         cabinKeypad = new CabinKeypadOverlay({
-          onSubmitSet: (code, confirm) => net?.send({ t: 'cabinKeypad', action: 'set', code, confirm, x, z }),
-          onSubmitEnter: (code) => net?.send({ t: 'cabinKeypad', action: 'enter', code, x, z }),
+          onSubmitSet: (code, confirm) => net?.send({ t: 'cabinKeypad', action: 'set', code, confirm, x, z, keypad }),
+          onSubmitEnter: (code) => net?.send({ t: 'cabinKeypad', action: 'enter', code, x, z, keypad }),
           onSubmitChange: (current, code, confirm) =>
-            net?.send({ t: 'cabinKeypad', action: 'change', current, code, confirm, x, z }),
+            net?.send({ t: 'cabinKeypad', action: 'change', current, code, confirm, x, z, keypad }),
           onClose: () => {
             cabinKeypad = null;
           },
         });
-        cabinKeypad.open(shipMeta, me.character.job, lab?.currentSpaceId() === 'cabin');
+        cabinKeypad.open(shipMeta, me.character.job);
         return;
       }
       net?.send({ t: 'interact', id, x, z });
@@ -237,7 +342,9 @@ async function startLab() {
       },
     };
   resize();
-  hud = new Hud(shipCode, selfId, hostId);
+  hud = new Hud(shipCode, selfId);
+  hud.onLogout = logout;
+  hud.onRosterDelete = (characterId) => net?.send({ t: 'deleteCharacter', characterId });
   hud.render(players);
   syncHudSelf();
 
@@ -269,6 +376,29 @@ function enterWalk(me: PlayerState) {
   hadPad = me.hasPad;
   syncHudSelf();
   if (matchMedia('(pointer: coarse)').matches) joystick((x, y) => lab?.setJoystick(x, y));
+}
+
+/**
+ * Save and leave: the server writes the save file before acknowledging, then the page reloads without the invite
+ * parameter. A fresh page is the cleanest way back to the landing screen (scene, controls, HUD and overlays all go),
+ * and the Continue list is the first thing it shows.
+ */
+async function logout() {
+  if (!net) return;
+  const n = net;
+  n.onClose = null;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 2500);
+    const off = n.on((m) => {
+      if (m.t !== 'loggedOut') return;
+      clearTimeout(timer);
+      off();
+      resolve();
+    });
+    n.send({ t: 'logout' });
+  });
+  n.close();
+  location.replace(location.pathname);
 }
 
 function openPad() {
@@ -304,7 +434,7 @@ function handle(m: ServerMsg) {
       players.set(p.id, p);
       hud?.render(players);
       if (p.id === selfId) syncHudSelf();
-      wakeIntro?.renderCrew(players, selfId, hostId);
+      wakeIntro?.renderCrew(players, selfId);
       if (!lab) return;
       lab.syncPlayer(p);
       syncBerthOwners();
@@ -329,6 +459,17 @@ function handle(m: ServerMsg) {
       if (prev && p.questStep === 'done' && prev.questStep !== 'done' && p.id === selfId) {
         toast('Objective complete.');
       }
+      break;
+    }
+    case 'playerLeft': {
+      // A deleted character or a forming clone whose window closed: their crew slot, job and bunk are free again.
+      players.delete(m.id);
+      hud?.render(players);
+      wakeIntro?.renderCrew(players, selfId);
+      lab?.removePlayer(m.id);
+      syncBerthOwners();
+      creator?.setTakenJobs(takenJobs());
+      syncHudSelf();
       break;
     }
     case 'shipState':
@@ -367,6 +508,9 @@ function handle(m: ServerMsg) {
       else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);
       break;
     case 'welcome':
+    case 'characters':
+    case 'profile':
+    case 'loggedOut':
       break;
   }
 }

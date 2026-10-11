@@ -1,5 +1,5 @@
 import type { Job } from './protocol';
-import { CABIN_KEYPAD_INTERACT_ID, cabinKeypadInteractPosition } from './cabinDoor';
+import { CABIN_KEYPAD_INTERACT_ID, cabinKeypadStand, isCabinKeypadId } from './cabinDoor';
 import { berthFromMemoryStationId, berthLabel, memoryStationFor, memoryStationId } from './bunks';
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 
@@ -173,9 +173,8 @@ export function questObjective(
 export function interactPrompt(interactId: string): string | null {
   const berth = berthFromMemoryStationId(interactId);
   if (berth !== null) return `Upload memories · ${berthLabel(berth)}`;
+  if (isCabinKeypadId(interactId)) return 'Use cabin keypad';
   switch (interactId) {
-    case CABIN_KEYPAD_INTERACT_ID:
-      return 'Use cabin keypad';
     case 'captain-desk':
     case 'bunk-desk-pad':
       return 'Pick up data pad';
@@ -197,13 +196,13 @@ export function interactPrompt(interactId: string): string | null {
 }
 
 export function interactIdForProp(propId: string): string | null {
-  if (propId === CABIN_KEYPAD_INTERACT_ID) return propId;
+  if (isCabinKeypadId(propId)) return propId;
   if (berthFromMemoryStationId(propId) !== null) return propId;
   return INTERACT_IDS.has(propId) ? propId : null;
 }
 
 export function positionForInteract(interactId: string): { x: number; z: number } | null {
-  if (interactId === CABIN_KEYPAD_INTERACT_ID) return cabinKeypadInteractPosition();
+  if (isCabinKeypadId(interactId)) return cabinKeypadStand(interactId);
   const berth = berthFromMemoryStationId(interactId);
   if (berth !== null) return memoryStationFor(berth)?.stand ?? null;
   const t = terminalMeta(interactId);

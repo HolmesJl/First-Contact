@@ -1,5 +1,5 @@
-import { CABIN_KEYPAD_INTERACT_ID } from '../../shared/cabinDoor';
-import { cabinKeypadUiMode } from '../../shared/cabinDoorUi';
+import { CABIN_KEYPAD_INTERACT_ID, CABIN_KEYPAD_IN_INTERACT_ID, isCabinKeypadId } from '../../shared/cabinDoor';
+import { cabinKeypadUiMode, canChangeCabinCode, type CabinKeypadMode } from '../../shared/cabinDoorUi';
 import type { Job } from '../../shared/protocol';
 import type { ShipMeta } from '../../shared/protocol';
 
@@ -18,7 +18,7 @@ export interface CabinKeypadHandlers {
   onClose(): void;
 }
 
-type Mode = 'set' | 'enter' | 'change' | 'locked';
+type Mode = CabinKeypadMode;
 
 export class CabinKeypadOverlay {
   readonly el = h('div', 'cabin-keypad-overlay');
@@ -26,17 +26,25 @@ export class CabinKeypadOverlay {
   private message = h('div', 'keypad-message');
   private grid = h('div', 'keypad-grid');
   private title = h('div', 'keypad-title');
+  private changeRow = h('div', 'keypad-change-row');
+  private changeBtn = h('button', 'keypad-change');
   private mode: Mode = 'enter';
   private buf = '';
   private confirmBuf = '';
   private phase: 'code' | 'confirm' | 'current' = 'code';
   private lockoutUntil = 0;
   private currentCode = '';
+  private canChange = false;
 
   constructor(
     private handlers: CabinKeypadHandlers,
   ) {
-    this.el.append(this.title, this.digits, this.message, this.grid);
+    this.changeBtn.type = 'button';
+    this.changeBtn.textContent = 'Change code…';
+    this.changeBtn.dataset.act = 'change-code';
+    this.changeBtn.addEventListener('click', () => this.setMode('change'));
+    this.changeRow.append(this.changeBtn);
+    this.el.append(this.title, this.digits, this.message, this.grid, this.changeRow);
     ui.append(this.el);
     this.buildGrid();
     window.addEventListener('keydown', this.onKey);
@@ -47,24 +55,37 @@ export class CabinKeypadOverlay {
     this.el.remove();
   }
 
-  open(ship: ShipMeta, job: Job | null, inCabin: boolean) {
-    this.mode = cabinKeypadUiMode(ship.cabinDoor.codeSet, job, inCabin);
+  /**
+   * Same screen on either side of the door: set (Captain, no code yet), enter (anyone, code set) or locked. The
+   * Captain can switch an `enter` screen to the change-code flow; it is never the default.
+   */
+  open(ship: ShipMeta, job: Job | null) {
+    this.canChange = canChangeCabinCode(ship.cabinDoor.codeSet, job);
+    this.setMode(cabinKeypadUiMode(ship.cabinDoor.codeSet, job));
+    this.el.classList.add('show');
+  }
+
+  private setMode(mode: Mode) {
+    this.mode = mode;
     this.buf = '';
     this.confirmBuf = '';
-    this.phase = this.mode === 'change' ? 'current' : 'code';
+    this.currentCode = '';
+    this.phase = mode === 'change' ? 'current' : 'code';
     this.lockoutUntil = 0;
     this.message.textContent = '';
     this.message.className = 'keypad-message';
-    if (this.mode === 'locked') {
+    this.el.dataset.mode = mode;
+    this.changeRow.hidden = !(mode === 'enter' && this.canChange);
+    if (mode === 'locked') {
       this.title.textContent = "Captain's cabin";
       this.message.textContent = 'Locked. The captain has not set a code.';
       this.grid.hidden = true;
       this.digits.hidden = true;
-    } else if (this.mode === 'set') {
+    } else if (mode === 'set') {
       this.title.textContent = 'Set cabin code';
       this.grid.hidden = false;
       this.digits.hidden = false;
-    } else if (this.mode === 'change') {
+    } else if (mode === 'change') {
       this.title.textContent = 'Change cabin code';
       this.grid.hidden = false;
       this.digits.hidden = false;
@@ -74,7 +95,6 @@ export class CabinKeypadOverlay {
       this.digits.hidden = false;
     }
     this.renderDigits();
-    this.el.classList.add('show');
   }
 
   showResult(ok: boolean, message?: string, flash?: 'green' | 'red', dismissMs = 1200, lockoutUntil?: number) {
@@ -227,4 +247,4 @@ export class CabinKeypadOverlay {
   }
 }
 
-export { CABIN_KEYPAD_INTERACT_ID };
+export { CABIN_KEYPAD_INTERACT_ID, CABIN_KEYPAD_IN_INTERACT_ID, isCabinKeypadId };
