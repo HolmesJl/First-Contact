@@ -106,6 +106,7 @@ npm run check:controls  # unit check of the camera/movement math in client/src/i
 npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
 npm run smoke:characters  # starts its own server: create, disconnect, restart, landing profile, board, log out, take-over, delete
 npm run smoke:items  # starts its own server: stock panels, Files, closets, equip rules, the full scavenger hunt, persistence across a restart
+npm run smoke:steer  # browser smoke (needs Chromium, see tools/steer-smoke.mjs): right-drag steers / left-drag orbits with the inventory closed, the modal takes the mouse when open
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).

@@ -1497,6 +1497,12 @@ kbd {
   transition: opacity 0.2s;
 }
 
+/* The inventory stays mounted in #ui while closed; `#ui > *` (id specificity) would otherwise turn its pointer
+   events back on and the invisible full-screen backdrop would swallow every canvas drag. */
+#ui > .inv-overlay:not(.show) {
+  pointer-events: none;
+}
+
 .inv-overlay.show {
   opacity: 1;
   pointer-events: auto;

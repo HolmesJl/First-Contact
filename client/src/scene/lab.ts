@@ -335,6 +335,12 @@ export class LabScene implements View {
     return { x: this.local.x, z: this.local.z };
   }
 
+  /** A modal is taking the mouse: end any camera or steering drag and stop the character. */
+  releaseInput() {
+    this.controls.clear(true);
+    this.flushMove();
+  }
+
   setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
     this.interior.setQuestHighlight(interactId, memoryStationIds);
   }

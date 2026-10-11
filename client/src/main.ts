@@ -381,6 +381,7 @@ async function startLab() {
       net?.send({ t: 'inv', action, x, z });
     },
     playerPos: () => lab?.localPos() ?? null,
+    onOpen: () => lab?.releaseInput(),
   });
   if (shipMeta) inventory.setStock(shipMeta.stock);
   syncHudSelf();

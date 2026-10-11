@@ -52,6 +52,8 @@ export interface InventoryHandlers {
   /** Send an inventory action to the server (the app adds the player's position). */
   send(action: InventoryAction): void;
   playerPos(): { x: number; z: number } | null;
+  /** The modal is taking the mouse: the game should drop any drag or held keys so nothing is left stuck. */
+  onOpen?(): void;
   onClose?(): void;
 }
 
@@ -162,6 +164,7 @@ export class InventoryOverlay {
       this.panel = side.panel ?? null;
       if (this.panel) this.closetBerth = null;
     }
+    if (!this.shown) this.handlers.onOpen?.();
     this.shown = true;
     this.el.classList.add('show');
     this.render();
