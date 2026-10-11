@@ -89,6 +89,8 @@ Classic third-person MMO scheme. The mouse cursor stays free and visible; there 
 | Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
 | Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view). On release the camera eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s) |
 | Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
+| `I` | Open / close the **personal inventory** (see below) |
+| `P` / `Tab` | Open the personal data pad (tasks, saved Files, crew) |
 | `Space`, `Enter`, `Esc` | Skip the intro |
 
 Letting go of every key stops you; switching windows or tabs releases all keys. `Space`, `Tab` and the arrow keys do not scroll or move focus while you are playing. On touch devices an on-screen joystick appears after you create your character (it moves relative to the camera), and dragging the view orbits it.
@@ -103,6 +105,7 @@ npm run build       # production build of the client into client/dist
 npm run check:controls  # unit check of the camera/movement math in client/src/input/
 npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
 npm run smoke:characters  # starts its own server: create, disconnect, restart, landing profile, board, log out, take-over, delete
+npm run smoke:items  # starts its own server: stock panels, Files, closets, equip rules, the full scavenger hunt, persistence across a restart
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).
@@ -115,11 +118,17 @@ shared/     protocol types, job caps and validation, ship layout and interior da
   shipInterior.ts         interior data derived from it: walk shapes, props, stations, spawns, berths, `clampToShip`
   shipInterior.check.ts   `npm run check:layout`: overlaps, blocked doors and ports, reachability from the pods
   bunks.ts                memory upload stations derived from the bunk and bed props; berth claim rules, hover text
+  items.ts                item definitions, inventory/closet rules, stock panels, closets and world Files derived from the props, item events
+  scavenger.ts            the Captain's scavenger hunt: tasks, progress state, HUD objective, which item event completes which task
   movement.ts             walk/jog/sprint speeds, the stamina rule, and the server's per-player movement budget
   lab.ts                  the bay's pod constants and `spawnFor` (the bay is the world origin)
 server/     Node WebSocket server: ships, membership, character creation, movement relay, JSON persistence
   src/bunks.ts            berth claims and memory upload snapshots (server-authoritative, one player per berth)
+  src/items.ts            inventory actions (move, use, open, equip, take, put back, delete), closets, ship stock, the item event hook
+  src/scavenger.ts        issues the scavenger hunt on the Bridge and advances it from item events
 client/     Vite + TypeScript + Three.js
+  src/inventory.ts        the inventory modal: carry slots, equipped list, closet or stock panel beside it, File viewer
+  src/scene/itemStations.ts   panel screens, closet handles, File pads and the quest highlight ring in the ship
   src/scene/intro.ts      Earth, Moon, rocket launch and rendezvous cinematic (also the title backdrop)
   src/scene/ship.ts       the First Contact ship model
   src/scene/lab.ts        the ship scene: players, movement, camera
@@ -154,7 +163,27 @@ The interior is generated from two shared data files, so the client and server c
 
 Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, a memory upload pad on every bunk, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0 with its own upload pad, trunk, desk with data pad, a locked sliding door with a keypad on each side), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
 
-Dev helper: `npm run check:layout` fails on overlapping props, props blocking a door lane or a free port, and any station, spawn, berth or door that cannot be reached from the first pod.
+Dev helper: `npm run check:layout` fails on overlapping props, props blocking a door lane or a free port, and any station, spawn, berth or door that cannot be reached from the first pod. It also checks every item station: stock panels and closets must be on a reachable, walkable stand point inside their room and within interact range, world Files must sit on top of their prop, and the scavenger hunt's targets must resolve.
+
+## Items, inventory and the scavenger hunt
+
+Everything a character owns lives on their persisted member record in `ships.json` (next to the character itself), so it survives reconnects, server restarts and a reclone. The server is authoritative for every item action and range-checks the player against the station (2.5 m, the same rule as the opening-quest stations); the client only sends intents and redraws from the echoed state. Trust model is friends-only, same as the rest of the server.
+
+**Item table** (`shared/items.ts`). Each item has a name, glyph, whether it persists through a reclone, whether it is usable (and how many uses), uniqueness (`none` / one per player), stackability, an equip slot, where it can be put back, and whether it can be deleted. Starters: **Jumpsuit** (equipped suit, AC 1, never removed or deleted), **Fruit** (usable, stackable, from the Eatery), **File** (named, viewable, unique by name per person), **Lite Body Armor** (armor slot, AC 2, from the Cargo Hold shelves; several sets may be carried but it cannot be deleted, only put back at the shelves). Equipped items take no carry slot.
+
+**Personal inventory** (`I`). Six carry slots and an Equipped list with the total armor class. Left click lifts a stack onto the cursor and drops it on the next slot (merge or swap); `Ctrl`+click lifts one; right click uses, wears or opens. **Delete** destroys the lifted stack anywhere (refused for undeletable items); **Put back** returns it to its source panel and is enabled only when you stand near that panel. The modal opens by itself whenever something is put into it (taking from a panel, picking up a File).
+
+**Closets.** Each bunk room closet prop is a station with 20 slots, locked to the berth's owner by default; it is sent privately to its owner only and follows the character to a new body. Open it by clicking the handle (green on your own closet) with the inventory beside it, and move stacks either way.
+
+**Stock panels** (ship-wide counts in `ShipMeta.stock`, saved with the ship): the **Eatery control panel** lists seven foods, only Fruit is stocked (25); click a row to take one, blocked at 0. **Printer** shows Ship Materials with their recipes (15 each, view only). **Refining** shows Raw Materials (20 each, view only). The **Cargo Hold shelves** hold 6 Lite Body Armor (take, put back). A **materials data pad** on a Cargo Hold wall shows the Ship Materials list.
+
+**Files.** Named Read Me Files sit on desks around the ship with one shared graphic. Clicking one picks it up (unique by name per person); right-clicking it in the inventory opens a text window, keeps the File, and saves a timestamped copy to the data pad's Files section.
+
+**Item events.** `server/src/items.ts` exposes `itemEvents.on(listener)`; the server emits `used`, `fileOpened` (by name), `taken` (from a panel), `equipped`, `panelOpened` and `gained`. Quests subscribe to these rather than reaching into inventory code; the listener returns notices the player sees as toasts.
+
+**Scavenger hunt** (`shared/scavenger.ts`, `server/src/scavenger.ts`). Once a player's opening quest is `done`, opening the data pad on the Bridge issues the Captain's hunt: four tasks in order (eat a Fruit from the Eatery; collect and open the Science Lab's "Read Me: module replicator" File; check the materials data pad in the Cargo Hold; take and equip Lite Body Armor from the shelves). The data pad lists them with Complete / Current markers, the HUD shows the current task as the objective with an amber ring on its target, and progress is stored in the member record.
+
+Body armor on the character is applied through a guarded `setBodyArmor(character, { primary } | null)` hook in `client/src/scene/character.ts`; until that exists the equipped armor only shows in the inventory.
 
 ## Characters
 
