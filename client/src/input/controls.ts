@@ -5,7 +5,8 @@
  *   A/D            strafe left / right (facing is unchanged)
  *   Shift, C       sprint (stamina) / toggle walk, handled by the scene from `sample()` and `walkMode`
  *   right-drag     turns the character; the camera stays behind it
- *   left-drag      orbits the camera around the character without turning it, then eases back behind on release
+ *   left-drag      orbits the camera around the character without turning it; the yaw eases back behind on release,
+ *                  the pitch (look up / down) stays where the player left it
  *   wheel          zoom
  *
  * State machine, all of it in this file:
@@ -13,12 +14,12 @@
  *   drag        { button, id, lastX, lastY } | null, one drag at a time (steer = 2, orbit = 0)
  *   facing      where the character looks (the only thing the server and other players see)
  *   orbitOffset camera yaw relative to "behind the character" (0 = behind); never touches facing
- *   pitch/dist  camera elevation and zoom
- *   ret         the return tween that eases orbitOffset (and pitch) back to 0 / default
+ *   pitch/dist  camera elevation and zoom; pitch only changes under left-drag and on `reset()`
+ *   ret         the return tween that eases orbitOffset back to 0
  *
  * The camera yaw is always `cameraYaw(facing, orbitOffset)` and "behind" is defined once, in `behindYaw()`.
  */
-import { axesFromKeys, behindYaw, cameraYaw, moveVector, returnOffset, smoothstep, wrapAngle } from './controlMath';
+import { axesFromKeys, behindYaw, cameraYaw, moveVector, returnOffset, wrapAngle } from './controlMath';
 
 export const DEFAULT_PITCH = 0.2;
 /** Negative pitch drops the camera below the eye line so it can look up (about -30 degrees). */
@@ -65,7 +66,6 @@ interface Drag {
 
 interface Return {
   from: number;
-  fromPitch: number;
   t: number;
   dur: number;
 }
@@ -144,12 +144,10 @@ export class Controls {
     r.t += dt;
     if (r.t >= r.dur) {
       this.orbitOffset = 0;
-      this.pitch = DEFAULT_PITCH;
       this.ret = null;
       return;
     }
     this.orbitOffset = returnOffset(r.from, r.t, r.dur);
-    this.pitch = r.fromPitch + (DEFAULT_PITCH - r.fromPitch) * smoothstep(r.t / r.dur);
   }
 
   /** Movement intent for this frame. Keys move relative to the facing; the touch stick moves relative to the camera. */
@@ -186,8 +184,9 @@ export class Controls {
     return Math.hypot(this.joy.x, this.joy.y) > 0.08;
   }
 
+  /** The camera yaw is off "behind". Pitch is deliberately not part of this: looking up or down is kept. */
   private orbitActive() {
-    return Math.abs(this.orbitOffset) > EPS || Math.abs(this.pitch - DEFAULT_PITCH) > EPS;
+    return Math.abs(this.orbitOffset) > EPS;
   }
 
   private setFacingKeepingCamera(next: number, yaw: number) {
@@ -198,12 +197,11 @@ export class Controls {
   private startReturn(dur: number) {
     if (!this.orbitActive()) {
       this.orbitOffset = 0;
-      this.pitch = DEFAULT_PITCH;
       this.ret = null;
       return;
     }
     if (this.ret && this.ret.dur <= dur) return;
-    this.ret = { from: wrapAngle(this.orbitOffset), fromPitch: this.pitch, t: 0, dur };
+    this.ret = { from: wrapAngle(this.orbitOffset), t: 0, dur };
   }
 
   private endDrag(returnCamera: boolean) {

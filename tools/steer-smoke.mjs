@@ -7,8 +7,10 @@
  * with a temp data file, boards a saved Captain, then checks with real pointer events that:
  *   - inventory closed: right-drag steers (facing changes) and left-drag orbits the camera;
  *   - inventory open: no drag reaches the canvas;
- *   - opening the inventory mid-drag ends the drag cleanly, and steering works again once it is closed.
- * Regression guard for the hidden inventory backdrop swallowing canvas pointer events.
+ *   - opening the inventory mid-drag ends the drag cleanly, and steering works again once it is closed;
+ *   - a vertical left-drag changes the camera pitch (up looks up, down looks down, within MIN/MAX_PITCH) and the
+ *     pitch holds after release while the yaw eases back behind the character.
+ * Regression guard for the hidden inventory backdrop swallowing canvas pointer events and for pitch snapping back.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -123,7 +125,7 @@ async function main() {
     const read = () =>
       page.evaluate(() => {
         const c = globalThis.__fc.lab.controls;
-        return { facing: c.facing, orbit: c.orbitOffset, dragging: c.dragging, invOpen: !!document.querySelector('.inv-overlay.show') };
+        return { facing: c.facing, orbit: c.orbitOffset, pitch: c.pitch, dragging: c.dragging, invOpen: !!document.querySelector('.inv-overlay.show') };
       });
     const under = () => page.evaluate(() => document.elementFromPoint(640, 400)?.tagName ?? null);
     const toggleInventory = async () => {
@@ -141,6 +143,19 @@ async function main() {
       const mid = await read();
       await page.mouse.up({ button });
       await page.waitForTimeout(60);
+      return { mid, after: await read() };
+    };
+    /** Left-press at the screen centre, drag `dy` px vertically (negative = up), release, then wait out the yaw return. */
+    const dragVertical = async (dy) => {
+      await page.mouse.move(640, 400);
+      await page.mouse.down({ button: 'left' });
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse.move(640, 400 + (dy * i) / 10);
+        await page.waitForTimeout(16);
+      }
+      const mid = await read();
+      await page.mouse.up({ button: 'left' });
+      await page.waitForTimeout(700);
       return { mid, after: await read() };
     };
 
@@ -190,6 +205,29 @@ async function main() {
     // 4. Closed again: steering works as before.
     r = await drag('right');
     assert(r.mid.dragging === 'steer' && !close(r.mid.facing, opened.facing) && r.after.dragging === null, 'steering works again after the modal cycle');
+
+    // 5. Pitch: a vertical left-drag looks up / down, and the pitch holds after release (only the yaw eases back).
+    const MIN_PITCH = -0.55;
+    const MAX_PITCH = 1.2;
+    const level = await read();
+    r = await dragVertical(-200);
+    assert(r.mid.dragging === 'orbit', `vertical left-drag should orbit, got ${r.mid.dragging}`);
+    assert(r.mid.pitch < level.pitch - 0.1, `dragging up should look up (pitch ${level.pitch} -> ${r.mid.pitch})`);
+    assert(r.mid.pitch >= MIN_PITCH - 1e-6, `pitch must not go below MIN_PITCH, got ${r.mid.pitch}`);
+    assert(r.after.dragging === null, 'vertical left-drag should end on release');
+    assert(close(r.after.pitch, r.mid.pitch), `pitch must hold after release (${r.mid.pitch} -> ${r.after.pitch})`);
+    assert(Math.abs(r.after.orbit) < 1e-3, `yaw should still ease back behind the character, got ${r.after.orbit}`);
+    const lookedUp = r.after.pitch;
+    r = await dragVertical(400);
+    assert(r.mid.pitch > lookedUp + 0.1, `dragging down should look down (pitch ${lookedUp} -> ${r.mid.pitch})`);
+    assert(r.mid.pitch <= MAX_PITCH + 1e-6, `pitch must not go above MAX_PITCH, got ${r.mid.pitch}`);
+    assert(close(r.after.pitch, r.mid.pitch), `pitch must hold after release (${r.mid.pitch} -> ${r.after.pitch})`);
+    assert(Math.abs(r.after.orbit) < 1e-3, 'yaw eases back after a downward drag too');
+    const lookedDown = r.after.pitch;
+    // Yaw-only orbit and release must leave the held pitch alone.
+    r = await drag('right');
+    r = await dragVertical(0);
+    assert(close(r.after.pitch, lookedDown), `steering and an idle left click must not reset the pitch (${lookedDown} -> ${r.after.pitch})`);
     console.log('steer-smoke ok');
   } finally {
     await browser.close();
