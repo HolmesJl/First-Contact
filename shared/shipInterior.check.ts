@@ -12,7 +12,7 @@ import {
 } from './cabinDoor';
 import { JOG_SPEED, SPRINT_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
-import { INTERACT_RADIUS } from './opening';
+import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, positionForInteract } from './opening';
 import type { Job } from './protocol';
 import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
@@ -107,6 +107,28 @@ for (const t of QUEST_TERMINALS) {
   const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
   if (dist > INTERACT_RADIUS)
     fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+}
+
+// Crew report-in terminal: on the Bridge, reachable, its stand point derived from the comms console (not the Captain's
+// star map), and not sharing a spot with the helm terminal.
+{
+  const t = QUEST_TERMINALS.find((q) => q.interactId === REPORT_IN_INTERACT_ID);
+  const stand = positionForInteract(REPORT_IN_INTERACT_ID);
+  if (!t || !stand) fail(`report-in terminal ${REPORT_IN_INTERACT_ID} is not a quest terminal`);
+  else {
+    const prop = PROPS.find((p) => p.id === t.propId)!;
+    if (prop.room !== 'bridge') fail(`report-in terminal prop ${t.propId} is in ${prop.room}, not the bridge`);
+    if (t.propId === 'star-map' || prop.job === 'captain') fail(`report-in terminal uses the Captain-only prop ${t.propId}`);
+    if (spaceAt(stand.x, stand.z)?.id !== 'bridge') fail(`report-in stand (${stand.x.toFixed(2)}, ${stand.z.toFixed(2)}) is not on the bridge`);
+    if (!isWalkable(stand.x, stand.z)) fail('report-in stand is not walkable');
+    if (!reachable(stand.x, stand.z, 0.3)) fail('report-in stand unreachable from pod 1');
+    const b = bounds(prop);
+    const gap = Math.hypot(stand.x - Math.min(b.maxX, Math.max(b.minX, stand.x)), stand.z - Math.min(b.maxZ, Math.max(b.minZ, stand.z)));
+    if (gap > 1.0) fail(`report-in stand is ${gap.toFixed(2)}m from the ${t.propId} footprint (max 1.0m)`);
+    if (Math.hypot(stand.x - prop.x, stand.z - prop.z) > INTERACT_RADIUS) fail('report-in stand out of interact range of its console');
+    const helm = positionForInteract('star-map')!;
+    if (Math.hypot(stand.x - helm.x, stand.z - helm.z) < 1.0) fail('report-in stand coincides with the helm terminal');
+  }
 }
 
 // Memory upload stations: one per berth, pad inside interact range of a walkable, reachable stand point, and no two

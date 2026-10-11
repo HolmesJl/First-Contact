@@ -330,6 +330,7 @@ export const QUEST_TERMINAL_PROP_IDS = [
   'botanist-station',
   'teleporter-pad',
   'armory',
+  'bridge-comms',
 ] as const;
 
 export const NPC_PANEL = { room: 'bunks' as RoomId, x: -57.95, z: 6, text: 'NPC DORM' };
@@ -471,6 +472,7 @@ const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], st
   'botanist-station': 'Botanist terminal',
   'teleporter-pad': 'Engineer terminal',
   armory: 'Operations terminal',
+  'bridge-comms': 'comms console',
 };
 
 export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {

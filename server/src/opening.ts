@@ -1,6 +1,7 @@
 import {
   JOB_STATION_INTERACT,
   JOB_STATION_KIND,
+  REPORT_IN_INTERACT_ID,
   SHIP_DISPLAY_NAME,
   TRANSIT_YEARS,
   inRange,
@@ -103,6 +104,13 @@ function wrongOrderHint(member: MemberRecord, interactId: string): string | null
 
   if (step === 'clone-doctor' && kind === 'lab-bench') return null;
 
+  if (interactId === REPORT_IN_INTERACT_ID) {
+    if (job === 'Captain') return 'Open the comms channel from your data pad once your crew has reported in.';
+    if (step === 'report') return null;
+    if (step === 'done') return 'You already reported in.';
+    if (step === 'job-station') return 'Log in at your job station first.';
+  }
+
   if (step === 'captain-set-code') {
     return 'Set your cabin door code at the keypad first.';
   }
@@ -195,7 +203,28 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
     return { ok: true, quest: 'report', nextHint: questStepCompleteNotice(prev, job, isClone) ?? undefined };
   }
 
+  if (job !== 'Captain' && member.questStep === 'report' && interactId === REPORT_IN_INTERACT_ID) {
+    return reportInAtBridge(member);
+  }
+
   return { ok: false, message: hint ?? 'Nothing happens yet.' };
+}
+
+/**
+ * Crew reporting in at the bridge comms console: the only way to set `reportedIn`, which the Captain's `captain-comms`
+ * step counts. The caller runs `maybeCompleteCaptain` afterwards so the Captain's update is broadcast too.
+ *
+ * HOOK: this is where the Captain will hand out the next quests. When post-report assignments exist, set the member's
+ * next step here (and in `nextQuestStep`) instead of finishing the opening.
+ */
+function reportInAtBridge(member: MemberRecord): InteractResult {
+  const job = member.character!.job;
+  const isClone = !!member.isClone;
+  member.reportedIn = true;
+  member.questStep = 'done';
+  const notice = `${job} ${member.character!.firstName} ${member.character!.lastName} reported in.`;
+  const nextHint = questStepCompleteNotice('report', job, isClone);
+  return { ok: true, quest: member.questStep, notice, nextHint: nextHint ?? undefined };
 }
 
 function otherCrew(ship: ShipRecord, captainId: string) {
@@ -207,7 +236,6 @@ export function applyReportIn(ship: ShipRecord, member: MemberRecord): InteractR
   if (!member.hasPad) return { ok: false, message: 'You need your data pad.' };
 
   const job = member.character.job;
-  const isClone = !!member.isClone;
 
   if (job === 'Captain' && member.questStep === 'captain-comms') {
     const others = otherCrew(ship, member.id);
@@ -223,13 +251,8 @@ export function applyReportIn(ship: ShipRecord, member: MemberRecord): InteractR
     return { ok: true, quest: member.questStep, notice };
   }
 
-  if (member.questStep !== 'report') return { ok: false, message: 'Report in when your pad says to.' };
-  member.reportedIn = true;
-  member.questStep = 'done';
-  const notice = `${job} ${member.character.firstName} ${member.character.lastName} reported in.`;
-  maybeCompleteCaptain(ship);
-  const nextHint = questStepCompleteNotice('report', job, isClone);
-  return { ok: true, quest: member.questStep, notice, nextHint: nextHint ?? undefined };
+  if (member.questStep === 'report') return { ok: false, message: 'Report in at the comms console on the Bridge.' };
+  return { ok: false, message: 'Nothing to report from the pad.' };
 }
 
 export function maybeCompleteCaptain(ship: ShipRecord): MemberRecord | null {
