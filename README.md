@@ -10,7 +10,7 @@ This repo is the **first playable slice**:
 - **Character creation in the clone lab.** You start as an unformed figure in a horizontal cloning tube. Pick body (male/female), face (neutral, smiling, serious, angry, flirty), a hairstyle (male: parted, buzzed; female: buzzed, buns, long), facial hair for men (none, stubble, full beard), hair color (12), eye color (12), starting job (respecting caps), and a first and last name. The preview updates live in the tube.
 - **Spawn and walk.** After you click Create, your clone steps out next to the tube in underwear with a floating `Job Firstname Lastname` nameplate. Everyone sees each other move in real time.
 - **The seed ship, walkable.** The whole hub-and-spoke ship is one continuous level-0 greybox: the Commons, bunk room, Captain's cabin, medical lab, hibernation and cloning bay, greenhouse, hold, science lab, operations, bridge, fore and aft nodes, octagonal corridors and the engine room. See [The ship interior](#the-ship-interior).
-- **Persistence.** Ships and characters are saved to `server/data/ships.json` (gitignored) and survive server restarts. A character belongs to the browser that made it (a stable id in `localStorage`; no accounts). Come back with the invite link and you get a pick list of your saved characters on that ship (name, job, last played) plus **New character**; boarding one wakes them in their quarters, the Captain in the cabin and crew in the bunk room, wherever they were when they left. Characters can be deleted from the list (with a confirm step), which frees their job and bunk. The server decides what each browser is shown.
+- **Persistence.** Ships and characters are saved to `server/data/ships.json` (gitignored) and survive server restarts. A character belongs to the browser that made it (a stable id in `localStorage`; no accounts). Open the game again and the landing screen starts with a **Continue** list of your saved characters across ships (name, job, ship, last played) above *Launch a new ship* and *Join a crew*; boarding one wakes them in their quarters, the Captain in the cabin and crew in the bunk room, wherever they were when they left, and works with nobody else online or after a server restart. Joining a ship by invite link where you already have characters shows that ship's pick list plus **New character**. Characters can be deleted from either list (with a confirm step), which frees their job and bunk. **Log out** in the HUD crew card saves and returns to the landing screen. The server decides what each browser is shown.
 
 ## Run it
 
@@ -101,7 +101,7 @@ npm run typecheck   # server + client
 npm run build       # production build of the client into client/dist
 npm run check:controls  # unit check of the camera/movement math in client/src/input/
 npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
-npm run smoke:characters  # starts its own server: create, disconnect, restart, pick list, spawn in quarters, take-over, delete
+npm run smoke:characters  # starts its own server: create, disconnect, restart, landing profile, board, log out, take-over, delete
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).
