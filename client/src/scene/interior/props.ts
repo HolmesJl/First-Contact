@@ -4,7 +4,7 @@ import type { Facing } from '../../../../shared/shipLayout';
 import { BUNK_SLAB_Y, type Prop } from '../../../../shared/shipInterior';
 import { canvasTexture } from '../common';
 import { buildShip } from '../ship';
-import { Batch, MAT, labelSprite, screenMaterial } from './kit';
+import { Batch, MAT, screenMaterial } from './kit';
 
 export const FACE_VEC: Record<Facing, [number, number]> = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
 
@@ -64,7 +64,6 @@ export function buildProp(p: Prop, ctx: PropContext) {
   const [fx, fz] = FACE_VEC[f];
   const b = ctx.batch;
   const y0 = p.y ?? 0;
-  const label = p.label && p.kind !== 'pod';
 
   switch (p.kind) {
     case 'pod':
@@ -264,14 +263,8 @@ export function buildProp(p: Prop, ctx: PropContext) {
     }
   }
 
-  if (label) {
-    const kind = p.kind === 'lift' ? 'warn' : p.station ? 'station' : 'prop';
-    const s = labelSprite(p.label!, kind, p.station ? 0.26 : 0.22);
-    const top = y0 + p.h;
-    s.position.set(p.x, Math.min(Math.max(top + 0.32, 1.25), 3.3), p.z);
-    ctx.group.add(s);
-    ctx.sprites.push(s);
-  }
+  // Props carry no floating name tag: rooms are named by their door signs and the HUD, and stations by the hover
+  // prompt and quest glow (`p.label` still names screens and the hover text).
 }
 
 // ---------------------------------------------------------------- animated props

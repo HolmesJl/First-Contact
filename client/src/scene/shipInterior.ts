@@ -5,6 +5,8 @@ import { Batch, MAT, labelSprite, screenMaterial, type MatKey } from './interior
 import { buildProp, type PodFx, type PropAnim, type PropContext } from './interior/props';
 import { QuestTerminalLayer } from './questTerminals';
 import { MemoryStationLayer } from './memoryStations';
+import { ItemStationLayer } from './itemStations';
+import { isItemInteractId } from '../../../shared/items';
 import type { BerthOwner } from '../../../shared/bunks';
 import { SHIP_LAYOUT, type Corridor, type Door, type Obstacle, type Rect, type Room } from '../../../shared/shipLayout';
 import {
@@ -298,6 +300,7 @@ export class ShipInterior {
   private cameraAnchor = new THREE.Vector3();
   private questTerminals = new QuestTerminalLayer();
   private memoryStations = new MemoryStationLayer();
+  private itemStations = new ItemStationLayer();
   private cabinDoorPanel: THREE.Group | null = null;
   private cabinDoorOpenFrac = 0;
   private cabinDoorTargetFrac = 0;
@@ -314,13 +317,16 @@ export class ShipInterior {
     this.buildSealedDoors();
     this.questTerminals.attach(this.root);
     this.memoryStations.attach(this.root);
+    this.itemStations.attach(this.root);
     this.setFocus(null);
   }
 
   /** `interactId` is the single objective terminal; `memoryStationIds` are the bunk pads to light for the upload step. */
   setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
-    this.questTerminals.setHighlight(interactId);
+    const itemTarget = interactId !== null && isItemInteractId(interactId);
+    this.questTerminals.setHighlight(itemTarget ? null : interactId);
     this.memoryStations.setHighlight(memoryStationIds);
+    this.itemStations.setHighlight(itemTarget ? interactId : null);
     // The set-code objective points at the corridor keypad; a Captain who resumes inside the cabin sees the inside one lit too.
     const keypadLit = interactId === CABIN_KEYPAD_INTERACT_ID;
     if (this.keypadGlow) this.keypadGlow.visible = keypadLit;
@@ -329,6 +335,11 @@ export class ShipInterior {
 
   setBerthOwners(owners: Map<number, BerthOwner>) {
     this.memoryStations.setOwners(owners);
+  }
+
+  /** The local player's claimed berth: its closet handle lights green. */
+  setOwnBerth(berth: number | null) {
+    this.itemStations.setOwnBerth(berth);
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {
@@ -715,10 +726,6 @@ export class ShipInterior {
       for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.box(0.04, 0.07, 0.07, kFace, y - 0.3 + r * 0.1, z - 0.12 + c * 0.12, 'glowCyan');
       b.box(0.04, 0.06, 0.28, kFace, y + 0.18, z, 'glowRed');
       b.build(cab.group);
-      const k = labelSprite("CAPTAIN'S CABIN · KEYPAD", 'warn', 0.22);
-      k.position.set(kx + doorWall.nx * 0.35, y + 0.55, z);
-      cab.group.add(k);
-      cab.sprites.push(k);
 
       const pick = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.7, 0.45),
@@ -755,10 +762,6 @@ export class ShipInterior {
       for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) place(0.04, 0.07, 0.07, -0.06, kp.y - 0.3 + r * 0.1, -0.12 + c * 0.12, 'glowCyan');
       place(0.04, 0.06, 0.28, -0.06, kp.y + 0.18, 0, 'glowRed');
       b.build(cabin.group);
-      const k = labelSprite('CABIN DOOR · KEYPAD', 'warn', 0.22);
-      k.position.set(kp.x - kp.nx * 0.35, kp.y + 0.55, kp.z - kp.nz * 0.35);
-      cabin.group.add(k);
-      cabin.sprites.push(k);
 
       const pick = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.7, 0.45),
@@ -905,6 +908,7 @@ export class ShipInterior {
     this.time += dt;
     this.questTerminals.update(this.time);
     this.memoryStations.update(this.time, camera);
+    this.itemStations.update(dt);
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;

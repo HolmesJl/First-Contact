@@ -14,6 +14,8 @@ import { SPAWNS, STATIONS } from '../../shared/shipInterior';
 import { spawnFor } from '../../shared/lab';
 import type { Character, Job } from '../../shared/protocol';
 import { cabinDoorPublic } from './cabinDoor';
+import { CLOSET_SLOTS, normalizeInventory, normalizePadFiles, normalizeSlots, normalizeStock } from '../../shared/items';
+import { normalizeScavenger } from '../../shared/scavenger';
 import type { MemberRecord, ShipRecord } from './store';
 
 export function shipMeta(ship: ShipRecord) {
@@ -24,6 +26,7 @@ export function shipMeta(ship: ShipRecord) {
     shipName: ship.shipName!,
     transitYears: ship.transitYears!,
     cabinDoor: cabinDoorPublic(ship),
+    stock: ship.stock!,
   };
 }
 
@@ -39,6 +42,10 @@ export function normalizeMember(m: MemberRecord): MemberRecord {
   m.cloneTank ??= null;
   m.berth ??= null;
   m.memory ??= null;
+  m.inventory = normalizeInventory(m.inventory);
+  m.closet = normalizeSlots(m.closet, CLOSET_SLOTS);
+  m.padFiles = normalizePadFiles(m.padFiles);
+  m.scavenger = normalizeScavenger(m.scavenger);
   return m;
 }
 
@@ -49,6 +56,7 @@ export function normalizeShip(ship: ShipRecord): ShipRecord {
   ship.transitYears ??= TRANSIT_YEARS;
   ship.cabinDoorCode ??= null;
   ship.cabinDoorOpen ??= false;
+  ship.stock = normalizeStock(ship.stock);
   for (const m of Object.values(ship.members)) normalizeMember(m);
   return ship;
 }

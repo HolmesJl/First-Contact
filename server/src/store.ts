@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { upgradeLegacyCharacter, type Character, type MemorySnapshot, type Uniform } from '../../shared/protocol';
 import type { QuestStep } from '../../shared/opening';
+import type { Inventory, PadFile, Slots } from '../../shared/items';
+import type { ScavengerState } from '../../shared/scavenger';
 
 /**
  * One crew slot on a ship: a saved character, or a clone still forming in the lab (`character === null`). Forming
@@ -30,6 +32,14 @@ export interface MemberRecord {
   berth?: number | null;
   /** Last memory upload; what a clone would restore. */
   memory?: MemorySnapshot | null;
+  /** On-person items (carry slots + worn gear): lost on death. */
+  inventory?: Inventory;
+  /** Closet contents (20 slots): kept on death. Opened at the closet of the claimed berth. */
+  closet?: Slots;
+  /** Read Me Files opened from the inventory, saved to the data pad. */
+  padFiles?: PadFile[];
+  /** Quest 2 (scavenger hunt) progress, or null until issued. */
+  scavenger?: ScavengerState | null;
 }
 
 export interface ShipRecord {
@@ -45,6 +55,8 @@ export interface ShipRecord {
   /** Four-digit cabin door code, or null until the Captain sets it. */
   cabinDoorCode?: string | null;
   cabinDoorOpen?: boolean;
+  /** Ship-wide item and material counts by id (see shared/items.ts STARTING_STOCK). */
+  stock?: Record<string, number>;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

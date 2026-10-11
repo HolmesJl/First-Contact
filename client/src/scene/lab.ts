@@ -6,6 +6,7 @@ import { InteractSystem } from '../interact';
 import { animateRig, buildRig, disposeRig, floatRig, setBodyArmor, type Rig } from './character';
 import type { ArmorOptions } from './bodyArmor';
 import { ShipInterior } from './shipInterior';
+import { ITEMS } from '../../../shared/items';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampMoveToShip, clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import type { BerthOwner } from '../../../shared/bunks';
@@ -23,6 +24,18 @@ function previewPose(tube: number): [number, number, number] {
   return [x - 0.12, 0, TUBE_Z + 1.28];
 }
 
+/**
+ * The armor a player state calls for: the item worn in the `armor` equip slot (Lite Body Armor) maps to its
+ * `ArmorOptions`. Equipped gear is part of the broadcast, persisted PlayerState, so every client draws the same thing
+ * and it is back after a reconnect or board.
+ */
+function armorFor(p: PlayerState): ArmorOptions | null {
+  const worn = p.inventory?.equipped?.armor;
+  return worn ? (ITEMS[worn.item].armor ?? null) : null;
+}
+
+const sameArmor = (a: ArmorOptions | null, b: ArmorOptions | null) => (a === null) === (b === null) && a?.primary === b?.primary;
+
 interface Entity {
   id: string;
   key: string;
@@ -38,7 +51,7 @@ interface Entity {
   /** Recent snapshot positions [ms, x, z], for the ground speed estimate. */
   track: [number, number, number][];
   spawnFx: number;
-  /** Lite Body Armor worn by this player; re-applied when the rig is rebuilt. */
+  /** Lite Body Armor on this rig (from the player's equipped slot, or the dev toggle); re-applied when it is rebuilt. */
   armor: ArmorOptions | null;
 }
 
@@ -120,6 +133,7 @@ export class LabScene implements View {
     const app: (Appearance & { job?: Job }) | null = p.character ?? (isSelf && this.mode === 'creator' ? this.preview : null);
     const key = `${inTube ? 'tube' : 'walk'}:${JSON.stringify(app)}:${p.connected}`;
     const existing = this.entities.get(p.id);
+    const armor = inTube ? null : armorFor(p);
     if (existing && existing.key === key) {
       if (!inTube && !isSelf) {
         existing.tx = p.x;
@@ -127,14 +141,17 @@ export class LabScene implements View {
         existing.trot = p.rot;
         existing.moving = p.moving;
       }
+      if (!sameArmor(existing.armor, armor)) {
+        existing.armor = armor;
+        setBodyArmor(existing.rig, armor);
+      }
       return;
     }
     const wasInTube = existing?.inTube ?? false;
-    const armor = existing?.armor ?? null;
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    if (armor && !inTube) setBodyArmor(rig, armor);
+    if (armor) setBodyArmor(rig, armor);
     const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0, armor };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
@@ -305,6 +322,12 @@ export class LabScene implements View {
     return { x: this.local.x, z: this.local.z };
   }
 
+  /** A modal is taking the mouse: end any camera or steering drag and stop the character. */
+  releaseInput() {
+    this.controls.clear(true);
+    this.flushMove();
+  }
+
   setQuestHighlight(interactId: string | null, memoryStationIds: Iterable<string> = []) {
     this.interior.setQuestHighlight(interactId, memoryStationIds);
   }
@@ -318,13 +341,19 @@ export class LabScene implements View {
     this.interior.setCabinDoor(door, snap);
   }
 
+  setOwnBerth(berth: number | null) {
+    this.interior.setOwnBerth(berth);
+    this.interact.refreshHover();
+  }
+
   currentSpaceId() {
     return this.space?.id ?? null;
   }
 
   /**
-   * Equips Lite Body Armor on a player (`{}` = the starter armor's grey, `{ primary: '#hex' }` for another plate
-   * colour) or removes it (`null`). The upper-arm bands follow their job colour. This is the hook for inventory equip.
+   * Dev override: put Lite Body Armor on a player (`{}` = the starter armor's grey, `{ primary: '#hex' }` for another
+   * plate colour) or remove it (`null`). In play the armor follows the equipped slot in PlayerState (see `armorFor`),
+   * which wins again on the next state change for that player.
    */
   setPlayerArmor(id: string, armor: ArmorOptions | null) {
     const e = this.entities.get(id);

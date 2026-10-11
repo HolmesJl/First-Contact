@@ -22,6 +22,7 @@ import type { Space } from '../../shared/shipInterior';
 import { captainCommsObjective, questObjective, type QuestStep } from '../../shared/opening';
 import { berthLabel, formatUploadTime } from '../../shared/bunks';
 import type { ShipMeta } from '../../shared/protocol';
+import { SCAVENGER_INTRO, SCAVENGER_TASKS, SCAVENGER_TITLE, scavengerComplete, scavengerCurrentTask, scavengerObjective, type ScavengerState } from '../../shared/scavenger';
 
 const ui = document.getElementById('ui')!;
 
@@ -431,13 +432,48 @@ export class WakeIntro {
 export class DataPadOverlay {
   readonly el = h('div', 'pad-overlay');
   private body: HTMLElement;
+  private footer: HTMLElement;
+  /** Name of the saved File expanded in the Files section, if any. */
+  private openFile: string | null = null;
 
   constructor(
-    private ship: ShipMeta,
-    private me: PlayerState,
+    ship: ShipMeta,
+    me: PlayerState,
     players: Map<string, PlayerState>,
-    handlers: { onReportIn(): void; onClose(): void },
+    private handlers: { onReportIn(): void; onClose(): void },
   ) {
+    this.el.innerHTML = `
+      <div class="pad panel">
+        <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
+        <div class="pad-scroll"></div>
+        <footer hidden></footer>
+      </div>`;
+    this.body = this.el.querySelector('.pad-scroll')!;
+    this.footer = this.el.querySelector('footer')!;
+    this.el.querySelector('.pad-close')!.addEventListener('click', () => handlers.onClose());
+    // Crew report in at the bridge comms console, not from the pad; only the Captain's comms step has a pad action.
+    this.footer.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.report-in')) handlers.onReportIn();
+    });
+    this.body.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-file]');
+      if (!b) return;
+      const name = b.dataset.file!;
+      this.openFile = this.openFile === name ? null : name;
+      this.body.querySelectorAll<HTMLElement>('.pad-file').forEach((li) => {
+        li.classList.toggle('open', li.dataset.file === this.openFile);
+      });
+    });
+    this.el.addEventListener('click', (e) => {
+      if (e.target === this.el) handlers.onClose();
+    });
+    this.render(ship, me, players);
+    ui.appendChild(this.el);
+    requestAnimationFrame(() => this.el.classList.add('show'));
+  }
+
+  /** Redraw from the latest state (the pad stays open while quest tasks complete or Files are saved). */
+  render(ship: ShipMeta, me: PlayerState, players: Map<string, PlayerState>) {
     const crew = [...players.values()].filter((p) => p.character);
     const job = me.character!.job;
     const others = [...players.values()].filter((p) => p.character && p.id !== me.id);
@@ -446,25 +482,21 @@ export class DataPadOverlay {
     const canOpenComms = isCaptainComms && reportedCount >= 1;
     const task = isCaptainComms
       ? captainCommsObjective([...players.values()], me.id)
-      : questObjective(me.questStep, job, me.isClone, me.hasPad, me.berth);
+      : me.questStep === 'done'
+        ? scavengerObjective(me.scavenger)
+        : questObjective(me.questStep, job, me.isClone, me.hasPad, me.berth);
     const memory =
       me.berth === null
         ? 'No berth claimed · no memory upload on record'
         : `${esc(berthLabel(me.berth))} · last upload ${me.lastUploadAt ? formatUploadTime(me.lastUploadAt) : 'never'}`;
-    this.el.innerHTML = `
-      <div class="pad panel">
-        <header><h3>Personal data pad</h3><button class="btn ghost small pad-close">Close</button></header>
-        <div class="pad-scroll"></div>
-        ${
-          isCaptainComms
-            ? `<footer>
-          <button class="btn primary report-in" ${canOpenComms ? '' : 'disabled'}>Open comms channel</button>
-          ${canOpenComms ? '' : '<p class="muted pad-hint">Opens when at least one crew member reports in at the bridge.</p>'}
-        </footer>`
-            : ''
-        }
-      </div>`;
-    this.body = this.el.querySelector('.pad-scroll')!;
+    const files = me.padFiles.length
+      ? `<ul class="pad-files">${me.padFiles
+          .map(
+            (f) =>
+              `<li class="pad-file${this.openFile === f.name ? ' open' : ''}" data-file="${esc(f.name)}"><button type="button" class="pad-file-row" data-file="${esc(f.name)}"><span class="pad-file-time">${esc(formatPadTime(f.at))}</span><span class="pad-file-name">${esc(f.name)}</span></button><p class="pad-file-text">${esc(f.text)}</p></li>`,
+          )
+          .join('')}</ul>`
+      : '<p class="muted">No files saved. Open a File from your inventory to keep a copy here.</p>';
     this.body.innerHTML = `
       <p class="kicker">Welcome back</p>
       <p>Ship <b>${esc(ship.shipName)}</b> · ${ship.transitYears} years in transit · hull &amp; life support <i>nominal (placeholder)</i></p>
@@ -473,21 +505,42 @@ export class DataPadOverlay {
       <h4>Memory backup</h4>
       <p>${memory}</p>
       <h4>Your task</h4>
-      <p>${esc(task)}</p>`;
-    this.el.querySelector('.pad-close')!.addEventListener('click', () => handlers.onClose());
-    // Crew report in at the bridge comms console, not from the pad; only the Captain's comms step has a pad action.
-    this.el.querySelector('.report-in')?.addEventListener('click', () => handlers.onReportIn());
-    this.el.addEventListener('click', (e) => {
-      if (e.target === this.el) handlers.onClose();
-    });
-    ui.appendChild(this.el);
-    requestAnimationFrame(() => this.el.classList.add('show'));
+      <p>${esc(task)}</p>
+      ${me.scavenger ? scavengerListHtml(me.scavenger) : ''}
+      <h4>Files</h4>
+      ${files}`;
+    this.footer.hidden = !isCaptainComms;
+    this.footer.innerHTML = isCaptainComms
+      ? `<button class="btn primary report-in" ${canOpenComms ? '' : 'disabled'}>Open comms channel</button>
+          ${canOpenComms ? '' : '<p class="muted pad-hint">Opens when at least one crew member reports in at the bridge.</p>'}`
+      : '';
   }
 
   destroy() {
     this.el.classList.remove('show');
     setTimeout(() => this.el.remove(), 300);
   }
+}
+
+function formatPadTime(at: number) {
+  const d = new Date(at);
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** The scavenger hunt on the pad: the Captain's intro, each task with Complete once done, in order. */
+function scavengerListHtml(state: ScavengerState) {
+  const done = scavengerComplete(state);
+  const cur = scavengerCurrentTask(state);
+  const rows = SCAVENGER_TASKS.map((t, i) => {
+    const at = state.done[t.id];
+    const cls = at !== undefined ? 'done' : cur?.id === t.id ? 'current' : 'later';
+    const mark = at !== undefined ? `<span class="pad-task-state">Complete</span>` : cur?.id === t.id ? `<span class="pad-task-state now">Current</span>` : '';
+    return `<li class="pad-task ${cls}"><span class="pad-task-n">${i + 1}</span><span class="pad-task-text">${esc(t.text)}</span>${mark}</li>`;
+  }).join('');
+  return `
+      <h4>${esc(SCAVENGER_TITLE)}${done ? ' · complete' : ''}</h4>
+      <p class="pad-quest-intro">${esc(SCAVENGER_INTRO)}</p>
+      <ol class="pad-tasks">${rows}</ol>`;
 }
 
 // ---------------------------------------------------------------- hud
@@ -581,7 +634,7 @@ export class Hud {
         prompt('Copy this invite link:', link);
       }
     });
-    this.hint.innerHTML = `<kbd>W</kbd><kbd>S</kbd> move · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · right-drag turn · left-drag orbit · scroll zoom`;
+    this.hint.innerHTML = `<kbd>W</kbd><kbd>S</kbd> move · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · <kbd>I</kbd> inventory · right-drag turn · left-drag orbit · scroll zoom`;
     this.hint.hidden = true;
     this.status.hidden = true;
     this.status.innerHTML = `<span class="gait">JOG</span><div class="stamina"><i></i></div>`;

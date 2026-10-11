@@ -23,7 +23,7 @@ export function berthOwner(ship: ShipRecord, berth: number): MemberRecord | null
 }
 
 function takeSnapshot(member: MemberRecord, now: number): MemorySnapshot {
-  return { version: 1, at: now, questStep: member.questStep ?? 'wake', inventory: null };
+  return { version: 1, at: now, questStep: member.questStep ?? 'wake', inventory: member.inventory ? structuredClone(member.inventory) : null };
 }
 
 /**
