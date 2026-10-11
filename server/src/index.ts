@@ -58,6 +58,13 @@ const dirtyShips = new Set<string>();
 const key = (code: string, id: string) => `${code}:${id}`;
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id);
 
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+/** Ids of the players aboard a ship right now. */
+const onlineIds = (code: string): ReadonlySet<string> => {
+  const peers = online.get(code);
+  return peers ? new Set(peers.keys()) : EMPTY_IDS;
+};
+
 function send(ws: WebSocket, msg: ServerMsg) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
@@ -121,16 +128,27 @@ wss.on('connection', (ws) => {
   let clientId: string | null = null;
   let pid: string | null = null;
 
-  const isOnline = (id: string) => online.get(ship!.code)?.has(id) ?? false;
-
   const sendCharacters = () => {
+    const ids = onlineIds(ship!.code);
     send(ws, {
       t: 'characters',
       code: ship!.code,
       ship: shipMeta(ship!),
-      characters: savedCharacters(ship!, clientId!, isOnline),
-      crewCount: Object.keys(ship!.members).length,
+      characters: savedCharacters(ship!, clientId!, ids),
+      aboard: ids.size,
     });
+  };
+
+  /** Remove a deleted character from play: kick its window, forget its movement state, tell everyone it left. */
+  const removeFromPlay = (id: string, character: Character) => {
+    kick(id, 'This character was deleted from another window.');
+    const mk = key(ship!.code, id);
+    moving.delete(mk);
+    lastMoveMs.delete(mk);
+    budgets.delete(mk);
+    store.save();
+    broadcast(ship!.code, { t: 'playerLeft', id });
+    console.log(`[ship ${ship!.code}] deleted ${character.job} ${character.firstName} ${character.lastName}`);
   };
 
   /** Close another window's socket for this member (same character opened twice, or a delete while in play). */
@@ -176,8 +194,7 @@ wss.on('connection', (ws) => {
       if (!validId(msg.clientId)) return send(ws, { t: 'error', message: 'Invalid client id.' });
 
       if (msg.t === 'hello') {
-        const isOnlineOn = (code: string, id: string) => online.get(code)?.has(id) ?? false;
-        return send(ws, { t: 'profile', characters: profileCharacters(store.all(), msg.clientId, isOnlineOn) });
+        return send(ws, { t: 'profile', characters: profileCharacters(store.all(), msg.clientId, onlineIds) });
       }
 
       let target: ShipRecord | undefined;
@@ -200,7 +217,7 @@ wss.on('connection', (ws) => {
     if (!pid) {
       switch (msg.t) {
         case 'pickCharacter': {
-          const res = pickCharacter(ship, clientId, msg.characterId);
+          const res = pickCharacter(ship, clientId, msg.characterId, { onlineIds: onlineIds(ship.code) });
           if (!res.ok) return send(ws, { t: 'error', message: res.message });
           store.save();
           enter(res.member);
@@ -209,7 +226,7 @@ wss.on('connection', (ws) => {
           break;
         }
         case 'newCharacter': {
-          const res = newMember(ship, clientId);
+          const res = newMember(ship, clientId, { onlineIds: onlineIds(ship.code) });
           if (!res.ok) return send(ws, { t: 'error', message: res.message });
           store.save();
           enter(res.member);
@@ -218,15 +235,7 @@ wss.on('connection', (ws) => {
         case 'deleteCharacter': {
           const res = deleteCharacter(ship, clientId, msg.characterId);
           if (!res.ok) return send(ws, { t: 'error', message: res.message });
-          kick(msg.characterId, 'This character was deleted from another window.');
-          const mk = key(ship.code, msg.characterId);
-          moving.delete(mk);
-          lastMoveMs.delete(mk);
-          budgets.delete(mk);
-          store.save();
-          broadcast(ship.code, { t: 'playerLeft', id: msg.characterId });
-          const c = res.member.character!;
-          console.log(`[ship ${ship.code}] deleted ${c.job} ${c.firstName} ${c.lastName}`);
+          removeFromPlay(msg.characterId, res.member.character!);
           sendCharacters();
           break;
         }
@@ -238,6 +247,14 @@ wss.on('connection', (ws) => {
     if (!me) return;
 
     switch (msg.t) {
+      case 'deleteCharacter': {
+        // Roster management from the HUD: the host or an online Captain may delete anyone's saved character.
+        if (msg.characterId === pid) return send(ws, { t: 'error', message: 'Log out first; delete your own character from the pick list.' });
+        const res = deleteCharacter(ship, clientId, msg.characterId, me);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        removeFromPlay(msg.characterId, res.member.character!);
+        break;
+      }
       case 'logout': {
         // The close handler does the same bookkeeping; this just guarantees the save hits disk before the ack.
         me.lastPlayedAt = Date.now();
@@ -261,10 +278,12 @@ wss.on('connection', (ws) => {
         const err = validateCharacter(msg.character);
         if (err) return send(ws, { t: 'createError', message: err });
         const character = sanitizeCharacter(msg.character);
-        const taken = Object.values(ship.members)
-          .filter((m) => m.id !== pid && m.character)
-          .map((m) => m.character!.job);
-        const jobErr = jobCheck(taken, character.job);
+        // Only who is aboard right now matters: a second Captain is refused, any other job may repeat.
+        const aboardJobs = [...onlineIds(ship.code)]
+          .filter((id) => id !== pid)
+          .map((id) => ship!.members[id]?.character?.job)
+          .filter((j): j is Character['job'] => !!j);
+        const jobErr = jobCheck(aboardJobs, character.job);
         if (jobErr) return send(ws, { t: 'createError', message: jobErr });
 
         me.character = character;

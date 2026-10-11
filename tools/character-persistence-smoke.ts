@@ -13,7 +13,7 @@ import WebSocket from 'ws';
 import { BERTHS, spaceAt } from '../shared/shipInterior';
 import { homeSpawnFor, memoryStationFor, memoryStationId } from '../shared/bunks';
 import { CABIN_KEYPAD_INTERACT_ID, CABIN_KEYPAD_IN_INTERACT_ID, cabinKeypadInInteractPosition, cabinKeypadInteractPosition } from '../shared/cabinDoor';
-import type { Character, ClientMsg, ServerMsg } from '../shared/protocol';
+import { MAX_CREW, type Character, type ClientMsg, type ServerMsg } from '../shared/protocol';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const PORT = 47400 + Math.floor(Math.random() * 400);
@@ -186,14 +186,14 @@ async function main() {
 
   // -- 1. Host creates a Captain, crew creates an Engineer who claims Bunk 2.
   const { c: host, chars: hostChars } = await connect({ t: 'host', clientId: HOST });
-  assert(hostChars.characters.length === 0 && hostChars.crewCount === 0, 'fresh ship has no saved characters');
+  assert(hostChars.characters.length === 0 && hostChars.aboard === 0, 'fresh ship has no saved characters and nobody aboard');
   const cap = await createNew(host, 'Captain', 'Cap', true);
   const code = cap.code;
   assert(cap.player.isHost, 'host character carries isHost');
   assert(cap.player.questStep === 'captain-set-code', `captain starts at captain-set-code (${cap.player.questStep})`);
 
   const { c: crew, chars: crewChars } = await connect({ t: 'join', clientId: CREW, code });
-  assert(crewChars.characters.length === 0 && crewChars.crewCount === 1, 'new browser sees no characters but the captain in the crew count');
+  assert(crewChars.characters.length === 0 && crewChars.aboard === 1, 'new browser sees no characters but the captain aboard');
   const eng = await createNew(crew, 'Engineer', 'Eng');
   assert(!eng.player.isHost, 'crew character is not host');
 
@@ -235,7 +235,8 @@ async function main() {
     assert(Date.now() - s.lastPlayedAt < 5000, 'lastPlayedAt updated on disconnect');
     assert(s.uniform === 'crew' && s.berth === null && s.questStep === 'pick-pad', 'saved captain fields');
     assert(chars.ship.cabinDoor.codeSet, 'cabin code still set on reconnect');
-    assert(chars.crewCount === 2, `crew count 2 (${chars.crewCount})`);
+    assert(chars.aboard === 0, `nobody aboard after both left (${chars.aboard}); saved characters hold no slot`);
+    assert(s.blocked === null, 'offline captain is boardable');
     c.close();
   }
 
@@ -368,7 +369,7 @@ async function main() {
     assert(chars.characters.length === 1 && chars.characters[0].online, 'engineer listed as in play');
     c.send({ t: 'deleteCharacter', characterId: eng.you });
     const after = await c.wait(is('characters'));
-    assert(after.characters.length === 0 && after.crewCount === 1, `engineer gone from the list and the crew (${after.crewCount})`);
+    assert(after.characters.length === 0 && after.aboard === 1, `engineer gone from the list and kicked; only the captain aboard (${after.aboard})`);
     const kicked = await crew2.c.wait((m) => m.t === 'error' && !!m.fatal);
     assert(/deleted/.test((kicked as { message: string }).message), 'playing window told about the delete');
     await crew2.c.waitClosed();
@@ -401,14 +402,119 @@ async function main() {
     other.c.close();
   }
 
+  // -- 12. Slots are about who is aboard, not who is saved. Only the captain (host3) is aboard at this point.
+  // 12a. Six aboard is the cap: five forming clones join the captain; a seventh browser is refused until one leaves.
+  const formingIds: string[] = [];
+  {
+    const forming: Client[] = [];
+    for (let i = 0; i < 5; i++) {
+      const { c, chars } = await connect({ t: 'join', clientId: `smoke-fill-${i}-${crypto.randomUUID()}`, code });
+      assert(chars.aboard === 1 + i, `aboard count grows with each boarder (${chars.aboard} at ${i})`);
+      c.send({ t: 'newCharacter' });
+      const w = await c.wait(is('welcome'));
+      formingIds.push(w.you);
+      forming.push(c);
+    }
+    const seventh = await connect({ t: 'join', clientId: `smoke-seventh-${crypto.randomUUID()}`, code });
+    assert(seventh.chars.aboard === MAX_CREW, `six aboard (${seventh.chars.aboard})`);
+    seventh.c.send({ t: 'newCharacter' });
+    const full = await seventh.c.wait(is('error'));
+    assert(!full.fatal && /full/i.test(full.message), `seventh boarder refused with a clear message (${full.message})`);
+    // The captain's own browser can still take over its online character: that replaces a window, no slot needed.
+    const mine = await connect({ t: 'join', clientId: HOST, code });
+    assert(mine.chars.characters[0].online && mine.chars.characters[0].blocked === null, 'taking over your own online character is never blocked');
+    mine.c.close();
+    forming[0].close();
+    await host3.c.wait((m) => m.t === 'playerLeft' && m.id === formingIds[0]);
+    seventh.c.send({ t: 'newCharacter' });
+    await seventh.c.wait(is('welcome'));
+    seventh.c.close();
+    for (const c of forming.slice(1)) c.close();
+    for (const id of formingIds.slice(1)) await host3.c.wait((m) => m.t === 'playerLeft' && m.id === id);
+    await host3.c.wait(is('playerLeft'));
+    await sleep(200);
+  }
+
+  // 12b. Jobs: two Engineers may be aboard together; a second Captain may not, until the first logs out.
+  const NEWCAP = `smoke-newcap-${crypto.randomUUID()}`;
+  let crewEng: Awaited<ReturnType<typeof createNew>>;
+  let strangerEng: Awaited<ReturnType<typeof createNew>>;
+  let secondCap: { you: string };
+  {
+    const a = await connect({ t: 'join', clientId: CREW, code });
+    crewEng = await createNew(a.c, 'Engineer', 'EngA');
+    const b = await connect({ t: 'join', clientId: STRANGER, code });
+    strangerEng = await createNew(b.c, 'Engineer', 'EngB');
+    assert(crewEng.you !== strangerEng.you, 'two Engineers created while both aboard');
+
+    const n = await connect({ t: 'join', clientId: NEWCAP, code });
+    n.c.send({ t: 'newCharacter' });
+    await n.c.wait(is('welcome'));
+    n.c.send({ t: 'create', character: character('Captain', 'Rival') });
+    const refused = await n.c.wait(is('createError'));
+    assert(/Captain is aboard/.test(refused.message), `second Captain refused while one is aboard (${refused.message})`);
+
+    host3.c.send({ t: 'logout' });
+    await host3.c.wait(is('loggedOut'));
+    host3.c.close();
+    await n.c.wait((m) => m.t === 'playerUpdated' && m.player.id === cap.you && !m.player.connected);
+    n.c.send({ t: 'create', character: character('Captain', 'Rival') });
+    const made = await n.c.wait((m): m is Extract<ServerMsg, { t: 'playerUpdated' }> => m.t === 'playerUpdated' && !!m.player.character && m.player.character.job === 'Captain' && m.player.id !== cap.you);
+    secondCap = { you: made.player.id };
+    assert(!made.player.isHost, 'the second Captain is not the host');
+
+    // The original captain cannot board while the other Captain is aboard; the list says so up front.
+    const h = await connect({ t: 'join', clientId: HOST, code });
+    assert(/Captain is aboard/.test(h.chars.characters[0].blocked ?? ''), `Board flagged while a Captain is aboard (${h.chars.characters[0].blocked})`);
+    h.c.send({ t: 'pickCharacter', characterId: cap.you });
+    const e = await h.c.wait(is('error'));
+    assert(!e.fatal && /Captain is aboard/.test(e.message), `pick refused while a Captain is aboard (${e.message})`);
+    h.c.close();
+
+    // 12c. Roster: an online Captain (not the host) deletes a stranger's offline character; a plain crew member cannot.
+    b.c.close();
+    await n.c.wait((m) => m.t === 'playerUpdated' && m.player.id === strangerEng.you && !m.player.connected);
+    a.c.send({ t: 'deleteCharacter', characterId: secondCap.you });
+    const denied = await a.c.wait(is('error'));
+    assert(!denied.fatal && /not yours/.test(denied.message), `an Engineer cannot delete someone else's character (${denied.message})`);
+    n.c.send({ t: 'deleteCharacter', characterId: strangerEng.you });
+    const gone = await n.c.wait((m) => m.t === 'playerLeft' && m.id === strangerEng.you);
+    assert(gone, 'Captain deleted the offline Engineer');
+    await a.c.wait((m) => m.t === 'playerLeft' && m.id === strangerEng.you);
+    const sb = await connect({ t: 'join', clientId: STRANGER, code });
+    assert(sb.chars.characters.length === 0, 'the deleted character is gone from its owner’s list');
+    sb.c.close();
+
+    // The second Captain logs out; the original can board again, and as host deletes the rival's offline character.
+    n.c.send({ t: 'logout' });
+    await n.c.wait(is('loggedOut'));
+    n.c.close();
+    await a.c.wait((m) => m.t === 'playerUpdated' && m.player.id === secondCap.you && !m.player.connected);
+    const back = await connect({ t: 'join', clientId: HOST, code });
+    assert(back.chars.characters[0].blocked === null, 'Board allowed again once the other Captain left');
+    back.c.send({ t: 'pickCharacter', characterId: cap.you });
+    const w = await back.c.wait(is('welcome'));
+    const rosterNow = w.players.filter((p) => p.character).map((p) => p.id).sort();
+    assert(JSON.stringify(rosterNow) === JSON.stringify([cap.you, crewEng.you, secondCap.you].sort()), 'host sees every saved character, online or not');
+    back.c.send({ t: 'deleteCharacter', characterId: secondCap.you });
+    await back.c.wait((m) => m.t === 'playerLeft' && m.id === secondCap.you);
+    back.c.send({ t: 'deleteCharacter', characterId: cap.you });
+    const self = await back.c.wait(is('error'));
+    assert(/Log out first/.test(self.message), 'host cannot delete the character they are playing');
+    host3.c = back.c;
+    a.c.close();
+    await sleep(200);
+  }
+
   host3.c.close();
   await sleep(300);
   await stopServer();
 
   const final = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as { ships: { code: string; members: Record<string, { id: string; ownerId: string; character: Character | null }> }[] };
   const ship = final.ships.find((s) => s.code === code)!;
-  const ids = Object.keys(ship.members);
-  assert(ids.length === 1 && ids[0] === cap.you && ship.members[cap.you].ownerId === HOST, `only the captain remains on disk (${ids.length})`);
+  const ids = Object.keys(ship.members).sort();
+  assert(JSON.stringify(ids) === JSON.stringify([cap.you, crewEng.you].sort()), `the captain and the crew engineer remain on disk (${ids.length})`);
+  assert(ship.members[cap.you].ownerId === HOST && ship.members[crewEng.you].ownerId === CREW, 'owners intact on disk');
 
   console.log('character-persistence-smoke ok');
 }

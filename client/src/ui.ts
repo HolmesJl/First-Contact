@@ -4,7 +4,6 @@ import {
   HAIR_COLORS,
   HAIR_STYLES,
   JOBS,
-  JOB_CAPS,
   JOB_INFO,
   MAX_CREW,
   NAME_PATTERN,
@@ -206,7 +205,10 @@ export class CharacterList<T extends SavedCharacter> {
 
   setDisabled(disabled: boolean) {
     this.busy = disabled;
-    this.ul.querySelectorAll('button').forEach((b) => (b.disabled = disabled));
+    this.ul.querySelectorAll('button').forEach((b) => {
+      // A blocked Board button stays disabled when the rest of the list is re-enabled.
+      b.disabled = disabled || (b.dataset.act === 'pick' && !!b.closest('.pick-row.blocked'));
+    });
   }
 
   private lock(button: HTMLButtonElement, label: string) {
@@ -235,10 +237,11 @@ export class CharacterList<T extends SavedCharacter> {
         const where = ch.job === 'Captain' ? "Captain's cabin" : c.berth !== null ? berthLabel(c.berth) : 'bunk room, no bunk claimed';
         const quest = c.questStep === 'done' ? 'opening tasks complete' : 'opening tasks in progress';
         const tags = [c.isClone ? '<span class="tag-off">clone</span>' : '', c.online ? '<span class="tag-you">in play</span>' : ''].join('');
-        return `<li class="pick-row" data-id="${esc(c.id)}">
+        const blocked = c.blocked ? `<div class="pick-blocked">${esc(c.blocked)}</div>` : '';
+        return `<li class="pick-row${c.blocked ? ' blocked' : ''}" data-id="${esc(c.id)}">
           <span class="dot" style="background:${color}"></span>
-          <div class="pick-who"><b style="color:${color}">${esc(ch.job)}</b> ${name}${tags}<div class="muted">Last played ${esc(formatLastPlayed(c.lastPlayedAt))}${ship} · ${esc(where)} · ${quest}</div></div>
-          <div class="pick-actions"><button type="button" class="btn small primary" data-act="pick">${c.online ? 'Take over' : 'Board'}</button><button type="button" class="btn small ghost" data-act="delete" title="Delete this character">Delete</button></div>
+          <div class="pick-who"><b style="color:${color}">${esc(ch.job)}</b> ${name}${tags}<div class="muted">Last played ${esc(formatLastPlayed(c.lastPlayedAt))}${ship} · ${esc(where)} · ${quest}</div>${blocked}</div>
+          <div class="pick-actions"><button type="button" class="btn small primary" data-act="pick" ${c.blocked ? `disabled title="${esc(c.blocked)}"` : ''}>${c.online ? 'Take over' : 'Board'}</button><button type="button" class="btn small ghost" data-act="delete" title="Delete this character">Delete</button></div>
         </li>`;
       })
       .join('');
@@ -256,19 +259,19 @@ export class CharacterPickScreen {
   private newBtn: HTMLButtonElement;
   private count: HTMLElement;
   private characters: SavedCharacter[] = [];
-  private crewCount = 0;
+  private aboard = 0;
 
   constructor(
     code: string,
     characters: SavedCharacter[],
-    crewCount: number,
+    aboard: number,
     private handlers: { onPick(id: string): void; onNew(): void; onDelete(id: string): void },
   ) {
     this.el.innerHTML = `
       <div class="pick-card panel">
         <div class="kicker">Ship <b>${esc(code)}</b> · <span class="pick-count"></span></div>
         <h2>Who is boarding?</h2>
-        <p class="muted">Your saved crew on this ship. A returning character wakes in their quarters: the Captain in the cabin, everyone else in the bunk room.</p>
+        <p class="muted">Your saved crew on this ship. A returning character wakes in their quarters: the Captain in the cabin, everyone else in the bunk room. Up to ${MAX_CREW} players can be aboard at once, with one Captain.</p>
         <ul class="pick-list"></ul>
         <button class="btn big pick-new">New character</button>
         <div class="error" role="alert"></div>
@@ -291,18 +294,18 @@ export class CharacterPickScreen {
       this.list.setDisabled(true);
       this.handlers.onNew();
     });
-    this.render(characters, crewCount);
+    this.render(characters, aboard);
     ui.appendChild(this.el);
     requestAnimationFrame(() => this.el.classList.add('show'));
   }
 
-  render(characters: SavedCharacter[], crewCount: number) {
+  render(characters: SavedCharacter[], aboard: number) {
     this.characters = characters;
-    this.crewCount = crewCount;
-    this.count.textContent = `crew ${crewCount}/${MAX_CREW}`;
-    const full = crewCount >= MAX_CREW;
+    this.aboard = aboard;
+    this.count.textContent = `${aboard}/${MAX_CREW} aboard`;
+    const full = aboard >= MAX_CREW;
     this.newBtn.disabled = full;
-    this.newBtn.textContent = full ? `New character · crew full (${MAX_CREW}/${MAX_CREW})` : 'New character';
+    this.newBtn.textContent = full ? `New character · ship full right now (${MAX_CREW}/${MAX_CREW} aboard)` : 'New character';
     this.list.render(characters, 'No saved characters on this ship.');
   }
 
@@ -314,7 +317,7 @@ export class CharacterPickScreen {
 
   showError(msg: string) {
     this.error.textContent = msg;
-    this.render(this.characters, this.crewCount);
+    this.render(this.characters, this.aboard);
   }
 
   destroy() {
@@ -401,7 +404,7 @@ export class WakeIntro {
   }
 
   renderCrew(players: Map<string, PlayerState>, selfId: string) {
-    const list = [...players.values()].sort((a, b) => a.tube - b.tube);
+    const list = [...players.values()].filter((p) => p.connected).sort((a, b) => a.tube - b.tube);
     this.list.innerHTML = list
       .map((p) => {
         const c = p.character;
@@ -501,6 +504,12 @@ export class Hud {
   private interactPrompt = h('div', 'interact-prompt');
   /** Set by the app: save the character, disconnect and go back to the landing screen. */
   onLogout: (() => void) | null = null;
+  /** Set by the app: the host or Captain deletes a saved character from the ship roster (server re-checks). */
+  onRosterDelete: ((characterId: string) => void) | null = null;
+  private roster: HTMLElement;
+  private rosterList: HTMLElement;
+  private rosterConfirm: string | null = null;
+  private players = new Map<string, PlayerState>();
 
   constructor(
     private code: string,
@@ -514,14 +523,35 @@ export class Hud {
           <div><div class="label">Invite code</div><div class="code-big">${esc(code)}</div></div>
           <button class="btn small" data-act="copy">Copy invite link</button>
         </div>
-        <div class="crew-head"><span class="label">Crew</span><span class="crew-count"></span></div>
+        <div class="crew-head"><span class="label">Crew aboard</span><span class="crew-count"></span></div>
         <ul class="crew"></ul>
+        <div class="roster" hidden>
+          <div class="crew-head"><span class="label">Ship roster</span><span class="crew-count roster-count"></span></div>
+          <ul class="crew roster-list"></ul>
+        </div>
         <div class="logout-row">
           <button class="btn small ghost" data-act="logout" title="Save and return to the landing screen">Log out</button>
           <span class="logout-confirm" hidden>Back to quarters? <button class="btn small primary" data-act="logout-yes">Log out</button><button class="btn small ghost" data-act="logout-no">Stay</button></span>
         </div>
       </div>`;
     this.crew = this.el.querySelector('.crew')!;
+    this.roster = this.el.querySelector('.roster')!;
+    this.rosterList = this.el.querySelector('.roster-list')!;
+    this.rosterList.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
+      if (!b) return;
+      const id = b.closest<HTMLElement>('[data-id]')!.dataset.id!;
+      if (b.dataset.act === 'roster-delete') this.rosterConfirm = id;
+      else if (b.dataset.act === 'roster-keep') this.rosterConfirm = null;
+      else if (b.dataset.act === 'roster-confirm') {
+        this.rosterConfirm = null;
+        b.textContent = 'Deleting…';
+        b.disabled = true;
+        this.onRosterDelete?.(id);
+        return;
+      }
+      this.renderRoster();
+    });
     const logoutRow = this.el.querySelector<HTMLElement>('.logout-row')!;
     const logoutBtn = this.el.querySelector<HTMLButtonElement>('[data-act=logout]')!;
     const confirm = this.el.querySelector<HTMLElement>('.logout-confirm')!;
@@ -637,8 +667,14 @@ export class Hud {
     if (this.gaitLabel) this.gaitLabel.textContent = s.gait.toUpperCase();
   }
 
+  /**
+   * Crew = who is aboard right now (the cap counts these). The host and the Captain also get the ship roster: every
+   * saved character, online or not, with Delete on the offline ones. Everyone else manages only their own characters,
+   * from the pick lists.
+   */
   render(players: Map<string, PlayerState>) {
-    const list = [...players.values()].sort((a, b) => a.tube - b.tube);
+    this.players = players;
+    const list = [...players.values()].filter((p) => p.connected).sort((a, b) => a.tube - b.tube);
     this.el.querySelector('.crew-count')!.textContent = `${list.length}/${MAX_CREW}`;
     this.crew.innerHTML = list
       .map((p) => {
@@ -648,7 +684,34 @@ export class Hud {
         const tags = [p.id === this.selfId ? '<span class="tag-you">you</span>' : '', p.isHost ? '<span class="tag-host">host</span>' : '']
           .filter(Boolean)
           .join('');
-        return `<li class="${p.connected ? '' : 'offline'}"><span class="dot" style="background:${color}"></span><span class="who">${name}</span>${tags}${p.connected ? '' : '<span class="tag-off">offline</span>'}</li>`;
+        return `<li><span class="dot" style="background:${color}"></span><span class="who">${name}</span>${tags}</li>`;
+      })
+      .join('');
+    this.renderRoster();
+  }
+
+  private renderRoster() {
+    const me = this.players.get(this.selfId);
+    const manages = !!me && (me.isHost || me.character?.job === 'Captain');
+    const saved = [...this.players.values()].filter((p) => p.character);
+    this.roster.hidden = !manages || saved.length === 0;
+    if (this.roster.hidden) return;
+    if (this.rosterConfirm && !this.players.has(this.rosterConfirm)) this.rosterConfirm = null;
+    this.roster.querySelector('.roster-count')!.textContent = `${saved.length} saved`;
+    this.rosterList.innerHTML = saved
+      .sort((a, b) => Number(b.connected) - Number(a.connected) || a.tube - b.tube)
+      .map((p) => {
+        const c = p.character!;
+        const color = JOB_INFO[c.job].color;
+        const name = `<b style="color:${color}">${c.job}</b> ${esc(c.firstName)} ${esc(c.lastName)}`;
+        if (this.rosterConfirm === p.id) {
+          return `<li class="confirm" data-id="${esc(p.id)}"><span class="who">Delete ${esc(c.firstName)} ${esc(c.lastName)}?</span><span class="roster-actions"><button type="button" class="btn small danger" data-act="roster-confirm">Delete</button><button type="button" class="btn small ghost" data-act="roster-keep">Keep</button></span></li>`;
+        }
+        const tags = [p.id === this.selfId ? '<span class="tag-you">you</span>' : '', p.isHost ? '<span class="tag-host">host</span>' : '', p.connected ? '' : '<span class="tag-off">offline</span>']
+          .filter(Boolean)
+          .join('');
+        const del = !p.connected ? `<button type="button" class="btn small ghost roster-del" data-act="roster-delete" title="Delete this saved character from the ship">Delete</button>` : '';
+        return `<li class="${p.connected ? '' : 'offline'}" data-id="${esc(p.id)}"><span class="dot" style="background:${color}"></span><span class="who">${name}</span>${tags}${del}</li>`;
       })
       .join('');
   }
@@ -807,8 +870,9 @@ export class CreatorPanel {
       const count = this.taken.filter((t) => t === j).length;
       const reason = jobCheck(this.taken, j);
       const info = JOB_INFO[j];
+      const aboard = j === 'Captain' ? (count ? 'aboard' : 'open') : count ? `${count} aboard` : 'none aboard';
       return `<button type="button" class="job ${j === this.draft.job ? 'active' : ''}" data-v="${j}" ${reason ? 'disabled' : ''} style="--jc:${info.color}" title="${esc(reason ?? info.blurb)}">
-        <span class="job-top"><b>${j}</b><span class="cap">${count}/${JOB_CAPS[j]}</span></span>
+        <span class="job-top"><b>${j}</b><span class="cap">${aboard}</span></span>
         <span class="job-role">${info.role}</span>
         <span class="job-blurb">${reason ? esc(reason) : info.blurb}</span>
       </button>`;

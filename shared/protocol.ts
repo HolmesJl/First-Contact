@@ -3,14 +3,10 @@ import type { QuestStep } from './opening';
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
 export type Job = (typeof JOBS)[number];
 
-export const JOB_CAPS: Record<Job, number> = {
-  Captain: 1,
-  Engineer: 3,
-  Military: 3,
-  Doctor: 2,
-  Botanist: 4,
-};
-
+/**
+ * How many players may be aboard a ship at once. Saved characters do not hold a slot; only players online right now
+ * count, so a browser can keep as many characters as it likes and the cap bites only at boarding time.
+ */
 export const MAX_CREW = 6;
 
 export const JOB_INFO: Record<Job, { color: string; role: string; blurb: string }> = {
@@ -154,6 +150,8 @@ export interface SavedCharacter {
   lastPlayedAt: number;
   /** Another window is playing this character right now (picking it here takes over). */
   online: boolean;
+  /** Why Board is unavailable at the moment (ship full, a Captain already aboard), or null. Re-checked on pick. */
+  blocked: string | null;
 }
 
 /** A saved character as listed on the landing screen: the same record plus the ship it lives on. */
@@ -218,7 +216,7 @@ export type ServerMsg =
    * Reply to `host` / `join` (and to `deleteCharacter`): the ship and this browser's saved characters on it. The
    * client answers with `pickCharacter` or `newCharacter`; `welcome` follows.
    */
-  | { t: 'characters'; code: string; ship: ShipMeta; characters: SavedCharacter[]; crewCount: number }
+  | { t: 'characters'; code: string; ship: ShipMeta; characters: SavedCharacter[]; aboard: number }
   | { t: 'welcome'; code: string; you: string; ship: ShipMeta; players: PlayerState[] }
   | { t: 'error'; message: string; fatal?: boolean }
   | { t: 'createError'; message: string }
@@ -251,17 +249,28 @@ export function upgradeLegacyCharacter(c: Record<string, unknown>) {
   }
 }
 
-/** Returns a reason the job can't be taken, or null if it's available. */
-export function jobCheck(takenJobs: Job[], job: Job): string | null {
+/**
+ * Why a job cannot be taken given the jobs of the players aboard right now, or null. Only the Captain is unique (one
+ * aboard at a time); any number of players may share the other jobs.
+ */
+export function jobCheck(onlineJobs: Job[], job: Job): string | null {
   if (!JOBS.includes(job)) return 'Unknown job.';
-  const count = takenJobs.filter((j) => j === job).length;
-  if (count >= JOB_CAPS[job]) return `All ${JOB_CAPS[job]} ${job} berths are taken.`;
-  if (takenJobs.length >= MAX_CREW) return 'The crew is full.';
-  const hasCaptain = takenJobs.includes('Captain');
-  if (!hasCaptain && job !== 'Captain' && takenJobs.length >= MAX_CREW - 1) {
-    return 'The last berth is reserved for the Captain.';
-  }
+  if (job === 'Captain' && onlineJobs.includes('Captain')) return 'Captain is aboard right now.';
   return null;
+}
+
+export function shipFullMessage() {
+  return `The ship is full right now (${MAX_CREW}/${MAX_CREW} aboard). Try again when someone logs out.`;
+}
+
+/**
+ * Why a saved character cannot board right now, or null. Taking over a character that is already aboard never
+ * needs a slot or a job check: it replaces that window.
+ */
+export function boardCheck(aboard: number, onlineJobs: Job[], job: Job, selfOnline: boolean): string | null {
+  if (selfOnline) return null;
+  if (aboard >= MAX_CREW) return shipFullMessage();
+  return jobCheck(onlineJobs, job);
 }
 
 const INTERACT_ID = /^[a-z0-9][a-z0-9-]{0,48}$/;

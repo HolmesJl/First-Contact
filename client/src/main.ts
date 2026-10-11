@@ -160,7 +160,7 @@ async function connect(first: ClientMsg, boardId?: string) {
     if (m.t === 'characters') {
       // The server lists this browser's saved characters on the ship. Nothing saved: straight into the lab as before.
       if (picker) {
-        picker.render(m.characters, m.crewCount);
+        picker.render(m.characters, m.aboard);
       } else if (boardId && m.characters.some((c) => c.id === boardId)) {
         n.send({ t: 'pickCharacter', characterId: boardId });
       } else if (boardId) {
@@ -173,7 +173,7 @@ async function connect(first: ClientMsg, boardId?: string) {
         n.send({ t: 'newCharacter' });
       } else {
         title.destroy();
-        picker = new CharacterPickScreen(m.code, m.characters, m.crewCount, {
+        picker = new CharacterPickScreen(m.code, m.characters, m.aboard, {
           onPick: (characterId) => n.send({ t: 'pickCharacter', characterId }),
           onNew: () => n.send({ t: 'newCharacter' }),
           onDelete: (characterId) => n.send({ t: 'deleteCharacter', characterId }),
@@ -266,8 +266,9 @@ function beginCreator() {
   creator.setTakenJobs(taken);
 }
 
+/** Jobs of the players aboard right now (the only ones the Captain rule looks at). */
 function takenJobs(): Job[] {
-  return [...players.values()].filter((p) => p.id !== selfId && p.character).map((p) => p.character!.job);
+  return [...players.values()].filter((p) => p.id !== selfId && p.connected && p.character).map((p) => p.character!.job);
 }
 
 async function startLab() {
@@ -343,6 +344,7 @@ async function startLab() {
   resize();
   hud = new Hud(shipCode, selfId);
   hud.onLogout = logout;
+  hud.onRosterDelete = (characterId) => net?.send({ t: 'deleteCharacter', characterId });
   hud.render(players);
   syncHudSelf();
 

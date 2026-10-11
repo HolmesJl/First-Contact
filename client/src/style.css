@@ -597,7 +597,38 @@ kbd {
 }
 
 .crew li.offline {
-  opacity: 0.45;
+  opacity: 0.6;
+}
+
+.crew li.offline .roster-del,
+.crew li.confirm {
+  opacity: 1;
+}
+
+.roster {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.roster .btn.small {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.roster-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.pick-blocked {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffb86b;
+}
+
+.pick-row.blocked .pick-actions .btn.primary:disabled {
+  opacity: 0.35;
 }
 
 .crew .dot {
