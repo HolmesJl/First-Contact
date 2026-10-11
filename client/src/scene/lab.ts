@@ -3,8 +3,8 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { makeComposer, type View } from './common';
 import { Controls, MIN_PITCH } from '../input/controls';
 import { InteractSystem } from '../interact';
-import * as characterModule from './character';
-import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
+import { animateRig, buildRig, disposeRig, floatRig, setBodyArmor, type Rig } from './character';
+import type { ArmorOptions } from './bodyArmor';
 import { ShipInterior } from './shipInterior';
 import { ITEMS } from '../../../shared/items';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
@@ -24,29 +24,17 @@ function previewPose(tube: number): [number, number, number] {
   return [x - 0.12, 0, TUBE_Z + 1.28];
 }
 
-type BodyArmorFn = (rig: Rig, armor: { primary: string } | null) => void;
-
 /**
- * Worn body armor is drawn by `setBodyArmor(rig, { primary } | null)` from ./character when that lands (another
- * branch); until then this is a guarded no-op. Looked up at call time so a later module version is picked up.
+ * The armor a player state calls for: the item worn in the `armor` equip slot (Lite Body Armor) maps to its
+ * `ArmorOptions`. Equipped gear is part of the broadcast, persisted PlayerState, so every client draws the same thing
+ * and it is back after a reconnect or board.
  */
-function applyBodyArmor(rig: Rig, armor: { primary: string } | null) {
-  const fromModule = (characterModule as unknown as Record<string, unknown>).setBodyArmor;
-  const fromGlobal = (globalThis as unknown as Record<string, unknown>).setBodyArmor;
-  const fn = (typeof fromModule === 'function' ? fromModule : typeof fromGlobal === 'function' ? fromGlobal : null) as BodyArmorFn | null;
-  if (!fn) return;
-  try {
-    fn(rig, armor);
-  } catch (err) {
-    console.warn('setBodyArmor failed', err);
-  }
-}
-
-/** The armor visual a player state calls for (worn Lite Body Armor), or null. */
-function armorFor(p: PlayerState): { primary: string } | null {
+function armorFor(p: PlayerState): ArmorOptions | null {
   const worn = p.inventory?.equipped?.armor;
   return worn ? (ITEMS[worn.item].armor ?? null) : null;
 }
+
+const sameArmor = (a: ArmorOptions | null, b: ArmorOptions | null) => (a === null) === (b === null) && a?.primary === b?.primary;
 
 interface Entity {
   id: string;
@@ -63,8 +51,8 @@ interface Entity {
   /** Recent snapshot positions [ms, x, z], for the ground speed estimate. */
   track: [number, number, number][];
   spawnFx: number;
-  /** Serialised armor visual last applied to the rig. */
-  armorKey: string;
+  /** Lite Body Armor on this rig (from the player's equipped slot, or the dev toggle); re-applied when it is rebuilt. */
+  armor: ArmorOptions | null;
 }
 
 export interface LabHooks {
@@ -146,7 +134,6 @@ export class LabScene implements View {
     const key = `${inTube ? 'tube' : 'walk'}:${JSON.stringify(app)}:${p.connected}`;
     const existing = this.entities.get(p.id);
     const armor = inTube ? null : armorFor(p);
-    const armorKey = JSON.stringify(armor);
     if (existing && existing.key === key) {
       if (!inTube && !isSelf) {
         existing.tx = p.x;
@@ -154,9 +141,9 @@ export class LabScene implements View {
         existing.trot = p.rot;
         existing.moving = p.moving;
       }
-      if (existing.armorKey !== armorKey) {
-        existing.armorKey = armorKey;
-        applyBodyArmor(existing.rig, armor);
+      if (!sameArmor(existing.armor, armor)) {
+        existing.armor = armor;
+        setBodyArmor(existing.rig, armor);
       }
       return;
     }
@@ -164,8 +151,8 @@ export class LabScene implements View {
     if (existing) this.removePlayer(p.id);
 
     const rig = buildRig(app);
-    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0, armorKey };
-    if (armor) applyBodyArmor(rig, armor);
+    if (armor) setBodyArmor(rig, armor);
+    const e: Entity = { id: p.id, key, inTube, rig, label: null, tx: p.x, tz: p.z, trot: p.rot, moving: p.moving, speed: 0, lastSnap: 0, track: [], spawnFx: 0, armor };
     if (inTube) {
       rig.root.rotation.z = -Math.PI / 2;
       rig.root.position.set(TUBE_X[p.tube] - 0.93, TUBE_Y, TUBE_Z);
@@ -361,6 +348,18 @@ export class LabScene implements View {
 
   currentSpaceId() {
     return this.space?.id ?? null;
+  }
+
+  /**
+   * Dev override: put Lite Body Armor on a player (`{}` = the starter armor's grey, `{ primary: '#hex' }` for another
+   * plate colour) or remove it (`null`). In play the armor follows the equipped slot in PlayerState (see `armorFor`),
+   * which wins again on the next state change for that player.
+   */
+  setPlayerArmor(id: string, armor: ArmorOptions | null) {
+    const e = this.entities.get(id);
+    if (!e) return;
+    e.armor = armor;
+    if (!e.inTube) setBodyArmor(e.rig, armor);
   }
 
   /** Dev-only: snap the local player (optionally facing `rot`, camera behind) and sync to the server (walk mode). */

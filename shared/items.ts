@@ -53,8 +53,8 @@ export interface ItemDef {
   deletable: boolean;
   /** Armor class contributed while worn (meaningless until combat exists). */
   ac?: number;
-  /** Visual hook for worn body armor (see client `setBodyArmor`). */
-  armor?: { primary: string };
+  /** Drawn on the character when worn (client `setBodyArmor`): plate colour, or `{}` for the model's default grey. */
+  armor?: { primary?: string };
   /** Right click opens the item's text instead of consuming it. */
   viewable?: boolean;
   glyph: ItemGlyph;
@@ -105,7 +105,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     source: 'hold-shelves',
     deletable: false,
     ac: 2,
-    armor: { primary: '#ffffff' },
+    armor: {},
     glyph: 'vest',
     blurb: 'Starter gear: moulded armor worn over the jumpsuit. Right click to wear. Cannot be deleted; put spares back on the shelves.',
   },

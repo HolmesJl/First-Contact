@@ -184,7 +184,7 @@ Everything a character owns lives on their persisted member record in `ships.jso
 
 **Scavenger hunt** (`shared/scavenger.ts`, `server/src/scavenger.ts`). Once a player's opening quest is `done`, opening the data pad on the Bridge issues the Captain's hunt: four tasks in order (eat a Fruit from the Eatery; collect and open the Science Lab's "Read Me: module replicator" File; check the materials data pad in the Cargo Hold; take and equip Lite Body Armor from the shelves). The data pad lists them with Complete / Current markers, the HUD shows the current task as the objective with an amber ring on its target, and progress is stored in the member record.
 
-Body armor on the character is applied through a guarded `setBodyArmor(character, { primary } | null)` hook in `client/src/scene/character.ts`; until that exists the equipped armor only shows in the inventory.
+Worn Lite Body Armor is drawn on the character by `setBodyArmor(rig, options | null)` (`client/src/scene/character.ts`, model in `bodyArmor.ts`). The client derives it from the `armor` equip slot in each player's broadcast `PlayerState.inventory`, so the local player, every remote client and a reconnecting or boarding player all show the same thing; unequipping removes it. `__fc.armor(true | '#hex' | false)` is a dev override.
 
 ## Characters
 

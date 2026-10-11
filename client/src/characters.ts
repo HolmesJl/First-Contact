@@ -3,10 +3,11 @@
  * The Quaternius male and female carrying retargeted ACCAD motion capture (gendered styling or raw performer
  * motion), in the crew uniform or bare. Not used by the game.
  *
- *   /characters.html?motion=walk&gait=raw&outfit=bare&cam=front|males|females|top&facing=front|profile|back&clean=1&manual=1
+ *   /characters.html?motion=walk&gait=raw&outfit=bare|uniform|armor&armor=8a8f96&jobs=Military,Doctor&cam=front|males|females|top&facing=front|profile|back&clean=1&manual=1
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { JOB_INFO, type Job } from '../../shared/protocol';
 import * as chars from './scene/quaterniusCharacter';
 
 const params = new URLSearchParams(location.search);
@@ -63,7 +64,11 @@ interface Entry {
 }
 const entries: Entry[] = [];
 const labels = document.getElementById('labels')!;
-let outfit: 'uniform' | 'bare' = params.get('outfit') === 'bare' ? 'bare' : 'uniform';
+const OUTFITS: chars.Outfit[] = ['uniform', 'armor', 'bare'];
+let outfit: chars.Outfit = OUTFITS.find((o) => o === params.get('outfit')) ?? 'uniform';
+/** Armor primary colour (default: the starter grey) and the job whose colour the arm bands take, per character (male, female). */
+const armorPrimary = params.has('armor') ? `#${params.get('armor')}` : undefined;
+const jobs = (params.get('jobs') ?? 'Military,Doctor').split(',').map((j) => (j in JOB_INFO ? (j as Job) : 'Engineer'));
 
 const SEXES = ['male', 'female'] as const;
 SEXES.forEach((sex, i) => {
@@ -96,9 +101,9 @@ function setMotion(m: chars.Motion, nextStyled = styled) {
   refreshButtons();
 }
 
-function setOutfit(o: typeof outfit) {
+function setOutfit(o: chars.Outfit) {
   outfit = o;
-  for (const e of entries) chars.applyOutfit(e.rig, o === 'uniform');
+  entries.forEach((e, i) => chars.applyOutfit(e.rig, o, JOB_INFO[jobs[i % jobs.length]].color, armorPrimary));
   refreshButtons();
 }
 
@@ -128,8 +133,7 @@ function refreshButtons() {
 const gMotion = group(bottomBar, 'Motion');
 for (const m of ['idle', 'walk', 'jog', 'sprint'] as const) button(gMotion, m, () => setMotion(m), () => motion === m);
 const gOutfit = group(bottomBar, 'Outfit');
-button(gOutfit, 'uniform', () => setOutfit('uniform'), () => outfit === 'uniform');
-button(gOutfit, 'bare', () => setOutfit('bare'), () => outfit === 'bare');
+for (const o of OUTFITS) button(gOutfit, o, () => setOutfit(o), () => outfit === o);
 const gGait = group(bottomBar, 'Gait');
 button(gGait, 'gendered', () => setMotion(motion, true), () => styled);
 button(gGait, 'raw mocap', () => setMotion(motion, false), () => !styled);
