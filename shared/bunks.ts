@@ -6,7 +6,7 @@
  */
 import type { Job, PlayerState } from './protocol';
 import type { Facing } from './shipLayout';
-import { BERTHS, BUNK_SLAB_Y, FACE_OUT, PROPS, SPACE_NAMES, standPointOnFace, type Prop } from './shipInterior';
+import { BERTHS, BUNK_SLAB_Y, BUNK_STACKS, FACE_OUT, PROPS, SPACE_NAMES, standPointOnFace, type Prop } from './shipInterior';
 
 export const MEMORY_STATION_PREFIX = 'memory-upload-';
 export const memoryStationId = (berth: number) => `${MEMORY_STATION_PREFIX}${berth}`;
@@ -121,6 +121,27 @@ export function uploadObjectiveStationIds(me: PlayerState, players: Iterable<Pla
   const owners = berthOwners(players);
   const job = me.character.job;
   return MEMORY_STATIONS.filter((s) => !owners.has(s.berth) && berthAllowedForJob(s.berth, job)).map((s) => s.interactId);
+}
+
+/** Facing into the bunk room from a berth's standing spot (west stacks face east and vice versa). */
+const BUNK_ROOM_FACING = { W: Math.PI / 2, E: -Math.PI / 2 } as const;
+/** Middle of the bunk room, facing the desk; for crew who have not claimed a bunk yet. */
+const BUNK_ROOM_SPAWN = { x: -54.2, z: 5.2, rot: 0 };
+/** Beside the Captain's bed, facing into the cabin. */
+const CABIN_SPAWN = { x: BERTHS[0].x, z: BERTHS[0].z, rot: Math.PI / 2 };
+
+/**
+ * Where a saved character appears on login: the Captain in the cabin, everyone else in the bunk room (at their own
+ * bunk once they have claimed one). Logging out is treated as going back to quarters, so nobody is ever stranded
+ * wherever the ship happened to be when they left.
+ */
+export function homeSpawnFor(job: Job, berth: number | null): { x: number; z: number; rot: number } {
+  if (job === 'Captain') return { ...CABIN_SPAWN };
+  const b = berth !== null && berthAllowedForJob(berth, job) ? BERTHS.find((x) => x.index === berth) : undefined;
+  if (!b) return { ...BUNK_ROOM_SPAWN };
+  const stack = Math.floor((b.index - 1) / 3);
+  const side = BUNK_STACKS[stack]?.side ?? 'W';
+  return { x: b.x, z: b.z, rot: BUNK_ROOM_FACING[side] };
 }
 
 export function formatUploadTime(at: number) {

@@ -1,9 +1,23 @@
 import type { Obstacle } from './shipLayout';
 import { SHIP_LAYOUT } from './shipLayout';
-import { CABIN_KEYPAD, isWalkable } from './shipInterior';
+import { CABIN_KEYPAD, isWalkable, spaceAt } from './shipInterior';
 
 export const CABIN_DOOR_ID = 'cabin-in';
+/** Corridor-side keypad (where the Captain first sets the code). */
 export const CABIN_KEYPAD_INTERACT_ID = 'cabin-keypad';
+/** Cabin-side keypad on the same door: opens the door from inside; the Captain can change the code from either. */
+export const CABIN_KEYPAD_IN_INTERACT_ID = 'cabin-keypad-in';
+export type CabinKeypadId = typeof CABIN_KEYPAD_INTERACT_ID | typeof CABIN_KEYPAD_IN_INTERACT_ID;
+export const CABIN_KEYPAD_IDS: readonly CabinKeypadId[] = [CABIN_KEYPAD_INTERACT_ID, CABIN_KEYPAD_IN_INTERACT_ID];
+
+export function isCabinKeypadId(id: unknown): id is CabinKeypadId {
+  return id === CABIN_KEYPAD_INTERACT_ID || id === CABIN_KEYPAD_IN_INTERACT_ID;
+}
+
+/** Wall thickness the keypads sit flush against (client walls are this thick). */
+export const CABIN_WALL_T = 0.4;
+/** Keypad box centre sits this far off the wall centre line: half the wall plus half the 0.1 m deep box. */
+export const KEYPAD_WALL_OFFSET = CABIN_WALL_T / 2 + 0.05;
 
 /** Slide far enough that the panel clears the door frame (along-wall pocket). */
 export const CABIN_DOOR_SLIDE_M = 1.72;
@@ -98,6 +112,53 @@ export function cabinKeypadInteractPosition() {
     if (isWalkable(px, pz, 0, closed)) return { x: px, z: pz };
   }
   return { x: -46.6, z: 19.0 };
+}
+
+/**
+ * Cabin-side keypad: the mirror of the corridor one on the same door, at the same height and the same distance along
+ * the wall from the door, flush against the inside face of the round cabin hull. The hull curves away from the flat
+ * corridor end wall, so it is placed on the hull point at the keypad's z with the hull's inward normal (not simply
+ * reflected through the door plane, which would bury it in the wall).
+ */
+export function cabinKeypadInProp() {
+  const { z, y } = CABIN_KEYPAD;
+  const dz = z - ROUND_CABIN.z;
+  const hullX = ROUND_CABIN.x + Math.sqrt(Math.max(0, ROUND_CABIN.r ** 2 - dz ** 2));
+  const nx = (hullX - ROUND_CABIN.x) / ROUND_CABIN.r;
+  const nz = dz / ROUND_CABIN.r;
+  return {
+    x: hullX - nx * KEYPAD_WALL_OFFSET,
+    z: z - nz * KEYPAD_WALL_OFFSET,
+    y,
+    /** Outward hull normal at the keypad (the keypad faces -normal, into the cabin). */
+    nx,
+    nz,
+    /** Yaw so the keypad's thin axis lies along the hull normal. */
+    yaw: -Math.atan2(nz, nx),
+  };
+}
+
+/** Stand point inside the cabin for the inside keypad: walkable with the door closed and clear of the panel. */
+export function cabinKeypadInInteractPosition() {
+  const { x, z } = cabinKeypadInProp();
+  const closed = cabinDoorExtraObstacles(0);
+  const cabinMaxX = cabinDoorCenter().x - 0.3;
+  const candidates: [number, number][] = [];
+  for (let dx = -1.5; dx <= 0.4; dx += 0.12) {
+    for (let dz = -1.4; dz <= 0.6; dz += 0.12) {
+      if (x + dx <= cabinMaxX) candidates.push([x + dx, z + dz]);
+    }
+  }
+  candidates.sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z));
+  // Inside the room proper, not on the doorway threshold strip (which the panel sweeps across).
+  for (const [px, pz] of candidates) {
+    if (isWalkable(px, pz, 0, closed) && spaceAt(px, pz)?.id === 'cabin') return { x: px, z: pz };
+  }
+  return { x: -48.6, z: 19.0 };
+}
+
+export function cabinKeypadStand(id: CabinKeypadId) {
+  return id === CABIN_KEYPAD_IN_INTERACT_ID ? cabinKeypadInInteractPosition() : cabinKeypadInteractPosition();
 }
 
 /** Sample point in the door lane that must be blocked when the door is closed. */

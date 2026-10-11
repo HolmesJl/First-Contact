@@ -5,12 +5,13 @@ An invite-only multiplayer sci-fi co-op game in the browser, somewhere between a
 This repo is the **first playable slice**:
 
 - **Host / join.** The host launches a ship server and gets a 6-character invite code and link. Others join with it.
-- **Crew rules, enforced on the server.** Max 6 players, exactly one Captain. Job caps: Captain 1, Engineer 3, Military 3, Doctor 2, Botanist 4. If five characters exist and none is the Captain, the last berth is reserved for the Captain.
+- **Crew rules, enforced on the server.** Up to 6 players aboard at once and one Captain aboard at a time; both rules look only at who is online. Saved characters do not hold a slot, so a browser can keep as many characters as it likes; boarding is refused with a clear message when six are aboard, and a Captain's Board button is disabled while another Captain is aboard. Any other job may repeat freely, including for new characters. The host (the browser that launched the ship) and any Captain aboard see the whole ship roster in the HUD crew card and can delete offline characters there (a character in play is kicked if deleted); everyone else sees and manages only their own characters.
 - **Intro.** A short, skippable cinematic: launch from Earth, then rendezvous with the ship in lunar orbit.
 - **Character creation in the clone lab.** You start as an unformed figure in a horizontal cloning tube. Pick body (male/female), face (neutral, smiling, serious, angry, flirty), a hairstyle (male: parted, buzzed; female: buzzed, buns, long), facial hair for men (none, stubble, full beard), hair color (12), eye color (12), starting job (respecting caps), and a first and last name. The preview updates live in the tube.
 - **Spawn and walk.** After you click Create, your clone steps out next to the tube in underwear with a floating `Job Firstname Lastname` nameplate. Everyone sees each other move in real time.
 - **The seed ship, walkable.** The whole hub-and-spoke ship is one continuous level-0 greybox: the Commons, bunk room, Captain's cabin, medical lab, hibernation and cloning bay, greenhouse, hold, science lab, operations, bridge, fore and aft nodes, octagonal corridors and the engine room. See [The ship interior](#the-ship-interior).
-- **Persistence.** Ships and characters are saved to `server/data/ships.json`. Reload the tab, or come back later with the invite link, and you rejoin as the same character.
+- **Cabin door.** The Captain's cabin has a sliding door with a keypad on both sides of the door wall. The Captain sets a four-digit code once per ship (the first opening task); after that either keypad just asks for the code and opens the door, for the Captain and crew alike, and the Captain can pick *Change code…* on either keypad. Three wrong tries lock that player out for ten seconds; the door closes a few seconds after someone passes or six seconds idle. The code is part of the ship save, so it survives reloads, logging out and boarding again, and server restarts.
+- **Persistence.** Ships and characters are saved to `server/data/ships.json` (gitignored) and survive server restarts. A character belongs to the browser that made it (a stable id in `localStorage`; no accounts). Open the game again and the landing screen starts with a **Continue** list of your saved characters across ships (name, job, ship, last played) above *Launch a new ship* and *Join a crew*; boarding one wakes them in their quarters, the Captain in the cabin and crew in the bunk room, wherever they were when they left, and works with nobody else online or after a server restart. Joining a ship by invite link where you already have characters shows that ship's pick list plus **New character**. Characters can be deleted from either list (with a confirm step), which frees their job and bunk. **Log out** in the HUD crew card saves and returns to the landing screen. The server decides what each browser is shown.
 
 ## Run it
 
@@ -28,7 +29,7 @@ Then open **http://localhost:47321**. This starts two processes:
 | Vite client | `47321` | Proxies `/ws` to the game server, so one URL is all players need |
 | Game server (Node + `ws`) | `47322` | `GET /health`; WebSocket at `/ws` |
 
-To try multiplayer on one machine, open the invite link in a second tab or window. Player identity is kept per tab (`sessionStorage`), so each tab is a separate crewmate.
+To try multiplayer on one machine, open the invite link in a second tab or window and choose **New character** on the pick list; each character is a separate crewmate. Picking a character that is already in play in another window takes it over there.
 
 ### On a Windows PC
 
@@ -101,6 +102,7 @@ npm run typecheck   # server + client
 npm run build       # production build of the client into client/dist
 npm run check:controls  # unit check of the camera/movement math in client/src/input/
 npm run check:door  # cabin door server cycle: blocks closed, passes open, auto-closes and blocks again
+npm run smoke:characters  # starts its own server: create, disconnect, restart, landing profile, board, log out, take-over, delete
 ```
 
 Environment variables: `PORT` (server port, default `47322`), `DATA_FILE` (save file path), `SERVER_PORT` (tells the Vite proxy where the server is), and `ALLOWED_HOSTS` (extra comma-separated hostnames the dev server accepts).
@@ -150,7 +152,7 @@ The interior is generated from two shared data files, so the client and server c
 - `shared/shipLayout.ts` is the exterior source of truth (module rects, shapes, heights, corridors, doors, docks, lift). This slice removed the NPC dorm's `dorm-grow` dock (single-connection rule), marks the dorm's two doors `sealed`, and adds `maxPorts: 1` for the dorm and the Captain's cabin.
 - `shared/shipInterior.ts` adds, per room: the **walk shapes** (rects, or circles for the round greenhouse and cabin, a plus-and-disc for the nodes, two rects for the bridge's cut rear corners), the **props** (each solid prop is also an obstacle), **stations**, **spawns** (6 pods and 4 clone tanks in the bay), **berths** (0 in the cabin, 1 to 9 in the bunk room) and the NPC dorm panel. `clampToShip(x, z, level)` keeps a point inside the union of walk shapes and door thresholds minus obstacles; `spaceAt` names the room or corridor under a point.
 
-Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, a memory upload pad on every bunk, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0 with its own upload pad, trunk, desk with data pad, keypad prop on the locked door; the lock does nothing yet), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
+Rooms (all level 0): The Commons (lounge, eatery, R&R, holo table, lift pad with the hangar hatch sealed, flush skylight), Crew Quarters (9 bunks in three stacks with closets, a memory upload pad on every bunk, sealed NPC dorm bulkhead with a status panel), Captain's Cabin (berth 0 with its own upload pad, trunk, desk with data pad, a locked sliding door with a keypad on each side), Medical Lab, Hibernation and Cloning Bay (the old lab: 6 pods, 4 tanks), Greenhouse (six planters under a glass dome), Cargo Hold, Science Lab, Operations, Bridge (star map, two scanning stations, comms, chair, view screens on the nose), fore and aft nodes, corridors and the hangar pass-through, and a placeholder Engine Room. Free ports show as sealed octagonal hatches with a red outline, and the interior keeps their door-sized clear zones empty.
 
 Dev helper: `npm run check:layout` fails on overlapping props, props blocking a door lane or a free port, and any station, spawn, berth or door that cannot be reached from the first pod.
 

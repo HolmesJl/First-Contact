@@ -1,9 +1,20 @@
 /** Layout sanity check: `npm run check:layout`. Overlaps, blocked doors and ports, unreachable stations. */
-import { cabinDoorCenter, cabinDoorExtraObstacles, cabinDoorLaneTestPoint, cabinDoorObstacle, cabinKeypadInteractPosition } from './cabinDoor';
+import {
+  CABIN_DOOR_SLIDE_M,
+  cabinDoorCenter,
+  cabinDoorExtraObstacles,
+  cabinDoorLaneTestPoint,
+  cabinDoorObstacle,
+  cabinDoorSlideBasis,
+  cabinKeypadInInteractPosition,
+  cabinKeypadInProp,
+  cabinKeypadInteractPosition,
+} from './cabinDoor';
 import { JOG_SPEED, SPRINT_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
 import { INTERACT_RADIUS } from './opening';
-import { MEMORY_STATIONS } from './bunks';
+import type { Job } from './protocol';
+import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import {
   BERTHS,
@@ -16,6 +27,7 @@ import {
   clampToShip,
   isWalkable,
   portClearZone,
+  spaceAt,
   thresholdRect,
   visiblePorts,
   type Prop,
@@ -138,6 +150,39 @@ if (Math.hypot(kp.x - door.x, kp.z - door.z) > 2.5) {
   fail('cabin keypad should be adjacent to the cabin door');
 }
 
+// Inside keypad: the mirror of the corridor one on the cabin side of the same door. Its stand point is in the cabin,
+// walkable and reachable with the door closed, in interact range of the keypad, and off the panel's closed footprint
+// and open pocket; the keypad itself is on the cabin hull next to the door, not in the doorway.
+{
+  const kin = cabinKeypadInProp();
+  const stand = cabinKeypadInInteractPosition();
+  const basis = cabinDoorSlideBasis();
+  if (spaceAt(stand.x, stand.z)?.id !== 'cabin') fail(`inside keypad stand (${stand.x.toFixed(2)}, ${stand.z.toFixed(2)}) is not in the cabin`);
+  if (!isWalkable(stand.x, stand.z, 0, [closedObs])) fail('inside keypad stand not walkable with the door closed');
+  if (!reachable(stand.x, stand.z, 0.3)) fail('inside keypad stand unreachable');
+  if (stand.x > door.x - 0.3) fail('inside keypad stand is not on the cabin side of the door');
+  const standDist = Math.hypot(stand.x - kin.x, stand.z - kin.z);
+  if (standDist > 1.2) fail(`inside keypad stand is ${standDist.toFixed(2)}m from the keypad (max 1.2m)`);
+  if (standDist > INTERACT_RADIUS) fail('inside keypad stand out of interact range');
+  if (kin.x >= door.x) fail('inside keypad is not on the cabin side of the door plane');
+  if (Math.abs(kin.z - CABIN_KEYPAD.z) > 0.2) fail('inside keypad is not at the same distance along the wall as the corridor one');
+  if (Math.abs(kin.y - CABIN_KEYPAD.y) > 1e-6) fail('inside keypad is not at the corridor keypad height');
+  if (Math.abs(kin.z - door.z) < door.width / 2 + 0.15) fail('inside keypad hangs in the doorway');
+  if (Math.hypot(kin.x - door.x, kin.z - door.z) > 2.5) fail('inside keypad should be adjacent to the cabin door');
+  if (Math.hypot(kin.nx, kin.nz) - 1 > 1e-6) fail('inside keypad hull normal is not unit length');
+  // Keep clear of the panel wherever it slides: the pocket runs along the wall tangent from the door plane.
+  for (let f = 0; f <= 1; f += 0.1) {
+    const o = cabinDoorObstacle(f);
+    if (!o || !('rect' in o)) continue;
+    if (kin.x > o.minX - 0.05 && kin.x < o.maxX + 0.05 && kin.z > o.minZ - 0.05 && kin.z < o.maxZ + 0.05) fail(`inside keypad collides with the door panel at ${Math.round(f * 100)}% open`);
+    if (stand.x > o.minX - 0.3 && stand.x < o.maxX + 0.3 && stand.z > o.minZ - 0.3 && stand.z < o.maxZ + 0.3) fail(`inside keypad stand is in the door panel's way at ${Math.round(f * 100)}% open`);
+  }
+  const pocketEnd = { x: basis.x + basis.tx * CABIN_DOOR_SLIDE_M * basis.slideSign, z: basis.z + basis.tz * CABIN_DOOR_SLIDE_M * basis.slideSign };
+  if (Math.abs(pocketEnd.x - kin.x) < 0.1 && Math.abs(pocketEnd.z - kin.z) < basis.width / 2) fail('inside keypad sits in the panel pocket');
+  // Two different interact points: the server range-checks against the one in use.
+  if (Math.hypot(stand.x - kp.x, stand.z - kp.z) < 0.5) fail('inside and corridor keypad stands coincide');
+}
+
 // The closed panel is a thin plate across the doorway: thin along the hull normal (+x), spanning the lane along z.
 if (!('rect' in closedObs)) fail('cabin door obstacle should be a rect');
 else {
@@ -194,6 +239,23 @@ if (!('rect' in half) || half.minZ < door.z - 0.2) fail('cabin door obstacle doe
 if (JSON.stringify(cabinDoorObstacle(0)) !== JSON.stringify(closedObs)) fail('re-closed cabin door obstacle differs from the closed one');
 const reclosed = clampMoveToShip(corridorSide.x, corridorSide.z, cabinSide.x, cabinSide.z, 0, cabinDoorExtraObstacles(0));
 if (reclosed.x - door.x < 0.3) fail('re-closed cabin door does not block the doorway');
+
+// Login spawns for saved characters: the Captain in the cabin (door closed), crew at each bunk or the bunk-room spot.
+const homeCases: [Job, number | null][] = [
+  ['Captain', null],
+  ['Captain', 0],
+  ['Engineer', null],
+  ['Doctor', 0],
+  ...BERTHS.filter((b) => b.index > 0).map((b): [Job, number] => ['Botanist', b.index]),
+];
+for (const [job, berth] of homeCases) {
+  const s = homeSpawnFor(job, berth);
+  const room = spaceAt(s.x, s.z)?.id;
+  const want = job === 'Captain' ? 'cabin' : 'bunks';
+  if (room !== want) fail(`home spawn for ${job} berth ${berth} is in ${room}, not ${want}`);
+  if (!isWalkable(s.x, s.z, 0, cabinDoorExtraObstacles(0))) fail(`home spawn for ${job} berth ${berth} is not walkable`);
+  if (!reachable(s.x, s.z, 0.3)) fail(`home spawn for ${job} berth ${berth} is cut off from the ship`);
+}
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${seen.size} reachable cells`);
 if (problems.length) {
