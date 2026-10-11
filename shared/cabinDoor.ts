@@ -82,18 +82,20 @@ export function isValidCabinCode(code: string): boolean {
   return /^\d{4}$/.test(code);
 }
 
-/** Stand point in the cabin corridor for keypad interact. */
+/** Stand point in the cabin corridor for keypad interact: reachable with the door closed, so not in the panel's way. */
 export function cabinKeypadInteractPosition() {
   const { x, z } = CABIN_KEYPAD;
+  const closed = cabinDoorExtraObstacles(0);
+  const corridorMinX = cabinDoorCenter().x + 0.3;
   const candidates: [number, number][] = [];
   for (let dx = -0.4; dx <= 1.3; dx += 0.12) {
     for (let dz = -1.4; dz <= 0.6; dz += 0.12) {
-      candidates.push([x + dx, z + dz]);
+      if (x + dx >= corridorMinX) candidates.push([x + dx, z + dz]);
     }
   }
   candidates.sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z));
   for (const [px, pz] of candidates) {
-    if (isWalkable(px, pz)) return { x: px, z: pz };
+    if (isWalkable(px, pz, 0, closed)) return { x: px, z: pz };
   }
   return { x: -46.6, z: 19.0 };
 }

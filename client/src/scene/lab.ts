@@ -6,7 +6,7 @@ import { InteractSystem } from '../interact';
 import { animateRig, buildRig, disposeRig, floatRig, type Rig } from './character';
 import { ShipInterior } from './shipInterior';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
-import { clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
+import { clampMoveToShip, clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import type { BerthOwner } from '../../../shared/bunks';
 import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
@@ -320,7 +320,7 @@ export class LabScene implements View {
   /** Dev-only: snap the local player (optionally facing `rot`, camera behind) and sync to the server (walk mode). */
   devTeleport(x: number, z: number, rot?: number) {
     if (this.mode !== 'walk') return;
-    const p = clampToShip(x, z, 0);
+    const p = clampToShip(x, z, 0, this.interior.cabinDoorObstacles());
     this.local.x = p.x;
     this.local.z = p.z;
     if (rot !== undefined) {
@@ -395,11 +395,19 @@ export class LabScene implements View {
     const gait: Gait = sprinting ? 'sprint' : c.walkMode || input.analogWalk ? 'walk' : 'jog';
     const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
     this.local.rot = c.facing;
-    if (moving) {
-      const p = clampToShip(this.local.x + input.x * speed * dt, this.local.z + input.z * speed * dt, 0);
-      this.local.x = p.x;
-      this.local.z = p.z;
-    }
+    // Swept against the walk area, props and the cabin door panel where it is this frame, so the thin panel cannot be
+    // stepped through; clamped even when idle so a closing door nudges a player out of the doorway.
+    const step = moving ? speed * dt : 0;
+    const p = clampMoveToShip(
+      this.local.x,
+      this.local.z,
+      this.local.x + input.x * step,
+      this.local.z + input.z * step,
+      0,
+      this.interior.cabinDoorObstacles(),
+    );
+    this.local.x = p.x;
+    this.local.z = p.z;
     this.local.moving = moving;
     this.local.gait = gait;
     this.local.speed = moving ? input.mag * speed : 0;

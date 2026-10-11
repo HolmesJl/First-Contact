@@ -6,7 +6,7 @@ import { buildProp, type PodFx, type PropAnim, type PropContext } from './interi
 import { QuestTerminalLayer } from './questTerminals';
 import { MemoryStationLayer } from './memoryStations';
 import type { BerthOwner } from '../../../shared/bunks';
-import { SHIP_LAYOUT, type Corridor, type Door, type Rect, type Room } from '../../../shared/shipLayout';
+import { SHIP_LAYOUT, type Corridor, type Door, type Obstacle, type Rect, type Room } from '../../../shared/shipLayout';
 import {
   BRIDGE_POLY,
   CABIN_KEYPAD,
@@ -18,7 +18,13 @@ import {
   spaceGraph,
   visiblePorts,
 } from '../../../shared/shipInterior';
-import { CABIN_KEYPAD_INTERACT_ID, cabinDoorPanelPose, cabinDoorSlideBasis, cabinKeypadInteractPosition } from '../../../shared/cabinDoor';
+import {
+  CABIN_KEYPAD_INTERACT_ID,
+  cabinDoorExtraObstacles,
+  cabinDoorPanelPose,
+  cabinDoorSlideBasis,
+  cabinKeypadInteractPosition,
+} from '../../../shared/cabinDoor';
 import type { CabinDoorState } from '../../../shared/protocol';
 
 /**
@@ -319,8 +325,15 @@ export class ShipInterior {
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {
-    this.cabinDoorTargetFrac = door.openFrac;
+    // `openFrac` is the server's panel position at broadcast time (0 as it starts opening, 1 as it starts closing);
+    // the end state the panel should animate toward is `open`.
+    this.cabinDoorTargetFrac = door.open ? 1 : 0;
     if (snap) this.cabinDoorOpenFrac = door.openFrac;
+  }
+
+  /** Movement obstacles for the cabin door panel where it currently is (empty once slid aside). */
+  cabinDoorObstacles(): Obstacle[] {
+    return this.cabinDoorPanel ? cabinDoorExtraObstacles(this.cabinDoorOpenFrac) : [];
   }
 
   // ---------------------------------------------------------------- environment
@@ -847,6 +860,8 @@ export class ShipInterior {
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;
+      // The ease never quite arrives; settle so the obstacle clears (open) or seats fully (closed) instead of hovering.
+      if (Math.abs(this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) < 0.01) this.cabinDoorOpenFrac = this.cabinDoorTargetFrac;
       const pose = cabinDoorPanelPose(this.cabinDoorOpenFrac);
       this.cabinDoorPanel.position.set(pose.x, 0, pose.z);
       this.cabinDoorPanel.rotation.y = pose.yaw;
