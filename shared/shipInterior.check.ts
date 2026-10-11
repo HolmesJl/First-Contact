@@ -16,10 +16,13 @@ import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, positionForInteract } from './o
 import type { Job } from './protocol';
 import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
+import { CLOSETS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, STOCK_PANELS, WORLD_FILES } from './items';
+import { SCAVENGER_FILE_NAME, SCAVENGER_TASKS } from './scavenger';
 import {
   BERTHS,
   CABIN_KEYPAD,
   PROPS,
+  SPACE_NAMES,
   SPAWNS,
   STATIONS,
   areaFor,
@@ -279,7 +282,83 @@ for (const [job, berth] of homeCases) {
   if (!reachable(s.x, s.z, 0.3)) fail(`home spawn for ${job} berth ${berth} is cut off from the ship`);
 }
 
-console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${seen.size} reachable cells`);
+// Item stations (shared/items.ts): every stock panel, closet handle and world File has a walkable, reachable stand
+// point in interact range, in the room it claims; panels and Files sit on (not inside) their props, the wall-mounted
+// materials pad hangs on the Cargo Hold's wall, and the scavenger hunt's task targets all resolve.
+{
+  const inside = (b: ReturnType<typeof bounds>, x: number, z: number, m = 0.01) => x > b.minX + m && x < b.maxX - m && z > b.minZ + m && z < b.maxZ - m;
+  const roomOf = (name: string) => Object.entries(SPACE_NAMES).find(([, n]) => n === name)?.[0] ?? name;
+  const checkStand = (what: string, s: { stand: { x: number; z: number }; x: number; z: number; room: string }) => {
+    if (!isWalkable(s.stand.x, s.stand.z)) fail(`${what} stand (${s.stand.x.toFixed(2)}, ${s.stand.z.toFixed(2)}) not walkable`);
+    if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`${what} stand unreachable from pod 1`);
+    const d = Math.hypot(s.stand.x - s.x, s.stand.z - s.z);
+    if (d > INTERACT_RADIUS) fail(`${what} is ${d.toFixed(2)}m from its stand point (max ${INTERACT_RADIUS}m)`);
+    if (d > 1.6) fail(`${what} stand is ${d.toFixed(2)}m away; the player should stand beside it`);
+    const room = spaceAt(s.stand.x, s.stand.z)?.id;
+    if (room !== roomOf(s.room)) fail(`${what} stand is in ${room}, not ${roomOf(s.room)}`);
+  };
+  for (const p of STOCK_PANELS) {
+    checkStand(`stock panel ${p.interactId}`, p);
+    if (p.propId) {
+      const prop = PROPS.find((x) => x.id === p.propId);
+      if (!prop) fail(`stock panel ${p.interactId} missing prop ${p.propId}`);
+      else if (inside(bounds(prop), p.x, p.z)) fail(`stock panel ${p.interactId} is inside ${prop.id}`);
+    } else {
+      const room = SHIP_LAYOUT.modules.flatMap((m) => m.rooms).find((r) => r.id === roomOf(p.room));
+      if (!room) fail(`wall panel ${p.interactId} names unknown room ${p.room}`);
+      else {
+        const o = room.outer;
+        const toWall = Math.min(Math.abs(p.x - o.minX), Math.abs(p.x - o.maxX), Math.abs(p.z - o.minZ), Math.abs(p.z - o.maxZ));
+        if (toWall > 0.3) fail(`wall panel ${p.interactId} is ${toWall.toFixed(2)}m from the nearest wall of ${room.id}`);
+        if (p.x < o.minX || p.x > o.maxX || p.z < o.minZ || p.z > o.maxZ) fail(`wall panel ${p.interactId} is outside ${room.id}`);
+      }
+      for (const s of solids) if (inside(bounds(s), p.x, p.z, -0.3)) fail(`wall panel ${p.interactId} collides with ${s.id}`);
+    }
+    for (const s of solids) if (s.id !== p.propId && inside(bounds(s), p.stand.x, p.stand.z, -0.05)) fail(`stock panel ${p.interactId} stand is in ${s.id}`);
+  }
+  if (!STOCK_PANELS.some((p) => p.interactId === MATERIALS_PAD_INTERACT_ID && p.kind === 'materials' && roomOf(p.room) === 'hold')) fail('materials data pad is not a wall panel in the Cargo Hold');
+  const panelIds = new Set(STOCK_PANELS.map((p) => p.interactId));
+  if (panelIds.size !== STOCK_PANELS.length) fail('duplicate stock panel ids');
+
+  if (CLOSETS.length !== BERTHS.length) fail(`expected ${BERTHS.length} closets, got ${CLOSETS.length}`);
+  for (const c of CLOSETS) {
+    checkStand(`closet ${c.interactId}`, c);
+    const prop = PROPS.find((x) => x.id === c.propId);
+    if (!prop) fail(`closet ${c.interactId} missing prop ${c.propId}`);
+    else if (prop.kind !== 'closet') fail(`closet ${c.interactId} is on a ${prop.kind}, not a closet`);
+    for (const o of CLOSETS) {
+      if (o === c) continue;
+      if (Math.hypot(o.x - c.x, o.z - c.z) < 0.3 && Math.abs(o.y - c.y) < 0.3) fail(`closet handles ${c.interactId} / ${o.interactId} overlap`);
+    }
+  }
+
+  const fileNames = new Set<string>();
+  for (const f of WORLD_FILES) {
+    checkStand(`file ${f.interactId}`, f);
+    const prop = PROPS.find((x) => x.id === f.propId);
+    if (!prop) {
+      fail(`file ${f.interactId} missing prop ${f.propId}`);
+      continue;
+    }
+    const b = bounds(prop);
+    if (!(f.x >= b.minX && f.x <= b.maxX && f.z >= b.minZ && f.z <= b.maxZ)) fail(`file ${f.interactId} is not on top of ${prop.id}`);
+    if (Math.abs(f.y - ((prop.y ?? 0) + prop.h)) > 0.05) fail(`file ${f.interactId} floats ${(f.y - prop.h).toFixed(2)}m off ${prop.id}`);
+    if (fileNames.has(f.name)) fail(`two world Files share the name “${f.name}”`);
+    fileNames.add(f.name);
+    if (f.text.length < 20) fail(`file ${f.interactId} has no real text`);
+  }
+  if (!WORLD_FILES.some((f) => f.name === SCAVENGER_FILE_NAME && roomOf(f.room) === 'science')) fail(`the scavenger hunt File “${SCAVENGER_FILE_NAME}” is not on a Science Lab desk`);
+
+  for (const t of SCAVENGER_TASKS) {
+    const pos = positionForInteract(t.interactId);
+    if (!pos) fail(`scavenger task ${t.id} points at unknown interactable ${t.interactId}`);
+    else if (!isWalkable(pos.x, pos.z)) fail(`scavenger task ${t.id} stand point is not walkable`);
+  }
+  if (STARTING_STOCK.fruit !== 25) fail(`eatery starts with ${STARTING_STOCK.fruit} Fruit; items.md says 25`);
+  if (STARTING_STOCK['lite-body-armor'] !== 6) fail(`shelves start with ${STARTING_STOCK['lite-body-armor']} armor; the quest says 6`);
+}
+
+console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${STOCK_PANELS.length} stock panels, ${CLOSETS.length} closets, ${WORLD_FILES.length} files, ${seen.size} reachable cells`);
 if (problems.length) {
   throw new Error(`layout problems:\n${problems.join('\n')}`);
 }

@@ -12,7 +12,8 @@
     "check:layout": "tsx shared/shipInterior.check.ts",
     "check:door": "tsx server/src/cabinDoor.check.ts",
     "check:controls": "tsx client/src/input/controlMath.check.ts",
-    "smoke:characters": "tsx tools/character-persistence-smoke.ts"
+    "smoke:characters": "tsx tools/character-persistence-smoke.ts",
+    "smoke:items": "tsx tools/items-smoke.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
