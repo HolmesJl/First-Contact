@@ -174,9 +174,9 @@ async function main() {
   const farRes = await keypadInside(hostWs, 'enter', { code: '1234' }, 'cabin-keypad');
   if (farRes.ok || !/closer/i.test(farRes.message ?? '')) throw new Error(`corridor keypad usable from deep inside the cabin: ${JSON.stringify(farRes)}`);
   const reSet = await keypadInside(hostWs, 'set', { code: '9999', confirm: '9999' });
-  if (reSet.ok || !/already set/i.test(reSet.message ?? '')) throw new Error(`re-set from inside not refused: ${JSON.stringify(reSet)}`);
-  const inside = await keypadInside(hostWs, 'enter', { code: '1234' });
-  if (inside.t !== 'cabinKeypadResult' || !inside.ok) throw new Error(`inside keypad did not accept the code: ${inside.message}`);
+  if (reSet.ok) throw new Error(`re-set from inside succeeded: ${JSON.stringify(reSet)}`);
+  const inside = await keypadInside(hostWs, 'exit', {});
+  if (inside.t !== 'cabinKeypadResult' || !inside.ok) throw new Error(`inside keypad did not open the door: ${inside.message}`);
   await new Promise((r) => setTimeout(r, 700));
   const outX = await tryWalkThroughDoor(hostWs, captainId, +1);
   if (outX < DOOR.x + 0.3) throw new Error(`captain could not leave the cabin after the inside keypad opened the door (server x=${outX})`);

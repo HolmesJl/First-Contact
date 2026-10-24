@@ -7,6 +7,7 @@ import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
 import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
+import { CABIN_KEYPAD_IN_INTERACT_ID } from '../../shared/cabinDoor';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
@@ -299,9 +300,9 @@ async function startLab() {
     },
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (id, prompt) => {
-      if (isCabinKeypadId(id) && shipMeta) {
+      if (id !== null && isCabinKeypadId(id) && shipMeta) {
         const me = players.get(selfId);
-        hud?.setInteractPrompt(cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
+        hud?.setInteractPrompt(cabinKeypadHoverPrompt(id, shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
         return;
       }
       const berth = id === null ? null : berthFromMemoryStationId(id);
@@ -352,6 +353,10 @@ async function startLab() {
       if (isCabinKeypadId(id)) {
         const me = players.get(selfId);
         if (!me?.character || !shipMeta) return;
+        if (id === CABIN_KEYPAD_IN_INTERACT_ID) {
+          net?.send({ t: 'cabinKeypad', action: 'exit', x, z, keypad: id });
+          return;
+        }
         if (!shipMeta.cabinDoor.codeSet && me.character.job !== 'Captain') {
           toast('Locked. The captain has not set a code.');
           return;
@@ -527,6 +532,8 @@ function openScanStation() {
   lab.releaseInput();
   scanStation = new ScanStationOverlay(me.skills.scanning, shipMeta.scanResults, {
     onStart: () => {
+      if (!scanStation?.isOpen) return;
+      scanStation.setPendingStart(true);
       const { x, z } = lab!.localPos();
       net?.send({ t: 'scanStart', x, z });
     },
@@ -669,6 +676,7 @@ function handle(m: ServerMsg) {
       creator?.showError(m.message);
       break;
     case 'error':
+      scanStation?.setPendingStart(false);
       if (m.fatal && net) net.onClose = null;
       if (!m.fatal) toast(m.message);
       else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);

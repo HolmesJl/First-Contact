@@ -220,6 +220,7 @@ export type ClientMsg =
   | { t: 'cabinKeypad'; action: 'set'; code: string; confirm: string; x: number; z: number; keypad?: string }
   | { t: 'cabinKeypad'; action: 'enter'; code: string; x: number; z: number; keypad?: string }
   | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string }
+  | { t: 'cabinKeypad'; action: 'exit'; x: number; z: number; keypad?: string }
   | { t: 'inv'; action: InventoryAction; x: number; z: number }
   /** Opening the data pad on the Bridge after the opening quest: receive the scavenger hunt (server checks place and step). */
   | { t: 'scavengerIssue'; x: number; z: number }
@@ -374,12 +375,13 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     }
     case 'cabinKeypad': {
       const action = m.action;
-      if (action !== 'set' && action !== 'enter' && action !== 'change') return null;
+      if (action !== 'set' && action !== 'enter' && action !== 'change' && action !== 'exit') return null;
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       const code = typeof m.code === 'string' ? m.code : '';
       const confirm = typeof m.confirm === 'string' ? m.confirm : '';
       const current = typeof m.current === 'string' ? m.current : '';
       const keypad = typeof m.keypad === 'string' ? m.keypad : undefined;
+      if (action === 'exit') return { t: 'cabinKeypad', action, x: m.x as number, z: m.z as number, keypad };
       if (action === 'set') return { t: 'cabinKeypad', action, code, confirm, x: m.x as number, z: m.z as number, keypad };
       if (action === 'enter') return { t: 'cabinKeypad', action, code, x: m.x as number, z: m.z as number, keypad };
       return { t: 'cabinKeypad', action, current, code, confirm, x: m.x as number, z: m.z as number, keypad };

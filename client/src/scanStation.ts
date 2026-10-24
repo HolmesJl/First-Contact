@@ -7,6 +7,8 @@ import {
 
 const ui = document.getElementById('ui')!;
 
+const RESULT_DISMISS_MS = { hit: 4500, miss: 2800 } as const;
+
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -29,9 +31,12 @@ export class ScanStationOverlay {
   private skill: ScanningSkill;
   private results: ScanResultEntry[];
   private scanning = false;
+  private pendingStart = false;
+  private resultUntil = 0;
   private endsAt = 0;
   private raf = 0;
   private resultTimer = 0;
+  private cooldownTimer = 0;
   private lastResult: { hit: boolean; find: ScanResultEntry | null; leveledUp: boolean } | null = null;
 
   constructor(
@@ -47,6 +52,7 @@ export class ScanStationOverlay {
     requestAnimationFrame(() => this.el.classList.add('show'));
     this.el.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-close]')) this.close();
+      if ((e.target as HTMLElement).closest('.scan-start')) this.tryStart();
     });
     window.addEventListener('keydown', this.onKey);
   }
@@ -57,6 +63,15 @@ export class ScanStationOverlay {
 
   get isOpen() {
     return this.el.isConnected;
+  }
+
+  private canStartScan(): boolean {
+    return !this.scanning && !this.pendingStart && Date.now() >= this.resultUntil;
+  }
+
+  setPendingStart(on: boolean) {
+    this.pendingStart = on;
+    this.syncStartButton();
   }
 
   updateSkill(skill: ScanningSkill) {
@@ -70,6 +85,7 @@ export class ScanStationOverlay {
   }
 
   beginScan(endsAt: number) {
+    this.pendingStart = false;
     this.scanning = true;
     this.endsAt = endsAt;
     this.lastResult = null;
@@ -78,17 +94,36 @@ export class ScanStationOverlay {
   }
 
   showComplete(hit: boolean, find: ScanResultEntry | null, skill: ScanningSkill, leveledUp: boolean, results: ScanResultEntry[]) {
+    this.pendingStart = false;
     this.scanning = false;
     this.skill = skill;
     this.results = results;
     this.lastResult = { hit, find, leveledUp };
     cancelAnimationFrame(this.raf);
+    this.resultUntil = Date.now() + (hit ? RESULT_DISMISS_MS.hit : RESULT_DISMISS_MS.miss);
     this.paintComplete();
     clearTimeout(this.resultTimer);
+    clearTimeout(this.cooldownTimer);
     this.resultTimer = window.setTimeout(() => {
       this.lastResult = null;
       this.paintIdle();
-    }, hit ? 4500 : 2800);
+    }, hit ? RESULT_DISMISS_MS.hit : RESULT_DISMISS_MS.miss);
+    this.cooldownTimer = window.setTimeout(() => this.syncStartButton(), hit ? RESULT_DISMISS_MS.hit : RESULT_DISMISS_MS.miss);
+  }
+
+  private tryStart() {
+    if (!this.canStartScan()) return;
+    this.handlers.onStart();
+  }
+
+  private syncStartButton() {
+    const btn = this.el.querySelector<HTMLButtonElement>('.scan-start');
+    if (!btn) return;
+    const blocked = !this.canStartScan();
+    btn.disabled = blocked;
+    if (this.scanning) btn.textContent = 'Scanning…';
+    else if (this.pendingStart) btn.textContent = 'Starting…';
+    else btn.textContent = 'Start Scan';
   }
 
   private tickBar() {
@@ -151,17 +186,18 @@ export class ScanStationOverlay {
       .join('');
   }
 
+  private paintStartButtonShell(extra = '') {
+    const actions = this.el.querySelector('.scan-actions');
+    if (!actions) return;
+    actions.innerHTML = `<button type="button" class="scan-start primary">Start Scan</button>${extra}`;
+    this.syncStartButton();
+  }
+
   private paintIdle() {
     this.paintSkill();
     this.paintResults();
-    const actions = this.el.querySelector('.scan-actions');
+    this.paintStartButtonShell();
     const result = this.el.querySelector('.scan-result');
-    if (actions) {
-      actions.innerHTML = `<button type="button" class="scan-start primary">Start Scan</button>`;
-      actions.querySelector('.scan-start')?.addEventListener('click', () => {
-        if (!this.scanning) this.handlers.onStart();
-      });
-    }
     if (result) result.innerHTML = '';
   }
 
@@ -182,14 +218,8 @@ export class ScanStationOverlay {
   private paintComplete() {
     this.paintSkill();
     this.paintResults();
-    const actions = this.el.querySelector('.scan-actions');
+    this.paintStartButtonShell();
     const result = this.el.querySelector('.scan-result');
-    if (actions) {
-      actions.innerHTML = `<button type="button" class="scan-start primary">Start Scan</button>`;
-      actions.querySelector('.scan-start')?.addEventListener('click', () => {
-        if (!this.scanning) this.handlers.onStart();
-      });
-    }
     if (!result || !this.lastResult) return;
     const { hit, find, leveledUp } = this.lastResult;
     if (!hit) {
@@ -208,6 +238,7 @@ export class ScanStationOverlay {
   close() {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.resultTimer);
+    clearTimeout(this.cooldownTimer);
     window.removeEventListener('keydown', this.onKey);
     this.el.classList.remove('show');
     setTimeout(() => this.el.remove(), 200);

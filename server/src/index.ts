@@ -30,6 +30,7 @@ import { applyMemoryUpload } from './bunks';
 import {
   applyCabinKeypadChange,
   applyCabinKeypadEnter,
+  applyCabinKeypadExit,
   applyCabinKeypadInteract,
   applyCabinKeypadSet,
   cabinDoorObstaclesForShip,
@@ -381,7 +382,8 @@ wss.on('connection', (ws) => {
         const now = Date.now();
         const keypad = resolveKeypadId(msg.keypad);
         let res;
-        if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now, keypad);
+        if (msg.action === 'exit') res = applyCabinKeypadExit(ship, me, now, keypad);
+        else if (msg.action === 'set') res = applyCabinKeypadSet(ship, me, msg.code, msg.confirm, now, keypad);
         else if (msg.action === 'enter') res = applyCabinKeypadEnter(ship, me, msg.code, now, keypad);
         else res = applyCabinKeypadChange(ship, me, msg.current, msg.code, msg.confirm, now, keypad);
         if (!res.ok) {
