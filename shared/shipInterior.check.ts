@@ -29,10 +29,12 @@ import {
   areaFor,
   clampMoveToShip,
   clampToShip,
+  deskPadPlacementProblem,
   isWalkable,
   portClearZone,
   spaceAt,
   thresholdRect,
+  usesDeskPadMount,
   visiblePorts,
   type Prop,
 } from './shipInterior';
@@ -102,15 +104,17 @@ const p = clampToShip(-9.4, 3.5);
 if (!isWalkable(p.x, p.z)) fail('clamp returned an unwalkable point');
 
 for (const t of QUEST_TERMINALS) {
-  if (!isWalkable(t.x, t.z)) fail(`quest terminal ${t.interactId} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}) not walkable`);
+  if (!isWalkable(t.stand.x, t.stand.z)) fail(`quest terminal ${t.interactId} stand (${t.stand.x.toFixed(2)}, ${t.stand.z.toFixed(2)}) not walkable`);
   const prop = PROPS.find((p) => p.id === t.propId);
   if (!prop) {
     fail(`quest terminal ${t.interactId} missing prop ${t.propId}`);
     continue;
   }
-  const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
-  if (dist > INTERACT_RADIUS)
-    fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+  const padDist = Math.hypot(t.stand.x - t.x, t.stand.z - t.z);
+  if (padDist > INTERACT_RADIUS)
+    fail(`quest terminal ${t.interactId} pad is ${padDist.toFixed(2)}m from its stand (max ${INTERACT_RADIUS}m)`);
+  const deskErr = deskPadPlacementProblem(prop, { x: t.x, y: t.y, z: t.z }, t.stand, `quest terminal ${t.interactId}`, t.face);
+  if (deskErr && usesDeskPadMount(prop)) fail(deskErr);
 }
 
 // Crew report-in terminal: on the Bridge, reachable, its stand point derived from the comms console (not the Captain's
@@ -303,7 +307,11 @@ for (const [job, berth] of homeCases) {
     if (p.propId) {
       const prop = PROPS.find((x) => x.id === p.propId);
       if (!prop) fail(`stock panel ${p.interactId} missing prop ${p.propId}`);
-      else if (inside(bounds(prop), p.x, p.z)) fail(`stock panel ${p.interactId} is inside ${prop.id}`);
+      else {
+        if (inside(bounds(prop), p.x, p.z)) fail(`stock panel ${p.interactId} is inside ${prop.id}`);
+        const deskErr = deskPadPlacementProblem(prop, p, p.stand, `stock panel ${p.interactId}`, p.face);
+        if (deskErr) fail(deskErr);
+      }
     } else {
       const room = SHIP_LAYOUT.modules.flatMap((m) => m.rooms).find((r) => r.id === roomOf(p.room));
       if (!room) fail(`wall panel ${p.interactId} names unknown room ${p.room}`);
@@ -379,9 +387,8 @@ for (const [job, berth] of homeCases) {
     const p = PROPS.find((x) => x.id === s.propId);
     if (!p) fail(`scan station ${s.interactId} missing prop ${s.propId}`);
     else {
-      const b = bounds(p);
-      const gap = Math.hypot(s.stand.x - Math.min(b.maxX, Math.max(b.minX, s.stand.x)), s.stand.z - Math.min(b.maxZ, Math.max(b.minZ, s.stand.z)));
-      if (gap > 1.0) fail(`scan station stand is ${gap.toFixed(2)}m from ${p.id} (max 1.0m)`);
+      const deskErr = deskPadPlacementProblem(p, s, s.stand, `scan station ${s.interactId}`, s.face);
+      if (deskErr) fail(deskErr);
     }
   }
 }

@@ -6,7 +6,7 @@
  */
 import type { Job, PlayerState } from './protocol';
 import type { Facing } from './shipLayout';
-import { BERTHS, BUNK_SLAB_Y, BUNK_STACKS, FACE_OUT, PROPS, SPACE_NAMES, standPointOnFace, type Prop } from './shipInterior';
+import { BERTHS, BUNK_SLAB_Y, BUNK_STACKS, PROPS, SPACE_NAMES, deskPadMount, type Prop } from './shipInterior';
 
 export const MEMORY_STATION_PREFIX = 'memory-upload-';
 export const memoryStationId = (berth: number) => `${MEMORY_STATION_PREFIX}${berth}`;
@@ -58,20 +58,17 @@ function placeStation(berth: number): MemoryStation {
     slide = BUNK_PAD_SLIDE;
   }
   if (!prop) throw new Error(`memory station ${berth}: missing prop`);
-  const face = prop.face ?? 'S';
-  const f = FACE_OUT[face];
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  const stand = standPointOnFace(prop, 0.22, slide);
+  const mount = deskPadMount(prop, slide, 0.22, y);
   return {
     interactId: memoryStationId(berth),
     berth,
     propId: prop.id,
     room: SPACE_NAMES[prop.room] ?? prop.room,
-    x: prop.x + f.dx * (half + PAD_STANDOFF) + (f.dx === 0 ? slide : 0),
+    x: mount.x,
     y,
-    z: prop.z + f.dz * (half + PAD_STANDOFF) + (f.dx !== 0 ? slide : 0),
-    face,
-    stand: { x: stand.x, z: stand.z },
+    z: mount.z,
+    face: mount.face,
+    stand: mount.stand,
   };
 }
 

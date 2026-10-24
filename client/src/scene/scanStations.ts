@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { BRIDGE_SCAN_INTERACT_ID, SCAN_STATIONS } from '../../../shared/scanning';
-import { PROPS, questTerminalPosition } from '../../../shared/shipInterior';
+import { FACE_OUT } from '../../../shared/shipInterior';
 
 /**
- * Bridge sensor scan: quest-terminal-style pad on scan-1 plus a floor beacon at the stand point so the station is
- * obvious (wall "SCAN · LONG RANGE" screens are decorative only).
+ * Bridge sensor scan: quest-terminal-style pad on scan-1 (shared desk mount) plus a floor beacon at the stand point.
  */
 export class ScanStationLayer {
   private readonly root = new THREE.Group();
@@ -15,15 +14,10 @@ export class ScanStationLayer {
 
   constructor() {
     for (const s of SCAN_STATIONS) {
-      const prop = PROPS.find((p) => p.id === s.propId);
-      if (!prop) continue;
-      const { x, y, z } = questTerminalPosition(s.propId, 0.18);
-
       const g = new THREE.Group();
-      g.position.set(x, y, z);
-      const face = prop.face ?? 'S';
-      const yaw = { N: Math.PI, S: 0, E: Math.PI / 2, W: -Math.PI / 2 }[face];
-      g.rotation.y = yaw;
+      g.position.set(s.x, s.y, s.z);
+      const f = FACE_OUT[s.face];
+      g.rotation.y = Math.atan2(f.dx, f.dz);
 
       const panel = new THREE.Mesh(
         new THREE.BoxGeometry(0.42, 0.28, 0.06),
@@ -48,9 +42,14 @@ export class ScanStationLayer {
       padGlow.rotation.x = -Math.PI / 2;
       padGlow.position.y = -0.22;
 
-      g.add(panel, padGlow);
-      this.root.add(g);
-      this.pads.set(s.interactId, padGlow);
+      const pick = new THREE.Mesh(
+        new THREE.BoxGeometry(0.55, 0.45, 0.35),
+        new THREE.MeshBasicMaterial({ visible: false }),
+      );
+      pick.position.z = 0.05;
+      pick.userData.interactId = s.interactId;
+
+      g.add(panel, screen, padGlow, pick);
 
       const beacon = new THREE.Mesh(
         new THREE.RingGeometry(0.28, 0.48, 32),
@@ -58,7 +57,10 @@ export class ScanStationLayer {
       );
       beacon.rotation.x = -Math.PI / 2;
       beacon.position.set(s.stand.x, 0.04, s.stand.z);
+
+      this.root.add(g);
       this.root.add(beacon);
+      this.pads.set(s.interactId, padGlow);
       this.beacons.set(s.interactId, beacon);
     }
   }

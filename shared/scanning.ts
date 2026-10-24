@@ -1,4 +1,4 @@
-import { PROPS, SPACE_NAMES, standPointOnFace } from './shipInterior';
+import { PROPS, SPACE_NAMES, deskPadMount } from './shipInterior';
 import type { Facing } from './shipLayout';
 
 export const SCAN_DURATION_MS = 5000;
@@ -40,19 +40,16 @@ export interface ScanStation {
 function placeBridgeScanStation(): ScanStation {
   const prop = PROPS.find((p) => p.id === BRIDGE_SCAN_PROP_ID);
   if (!prop) throw new Error(`scan station: missing prop ${BRIDGE_SCAN_PROP_ID}`);
-  const face = prop.face ?? 'S';
-  const f = { N: { dx: 0, dz: -1 }, S: { dx: 0, dz: 1 }, E: { dx: 1, dz: 0 }, W: { dx: -1, dz: 0 } }[face];
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  const stand = standPointOnFace(prop, 0.22);
+  const mount = deskPadMount(prop);
   return {
     interactId: BRIDGE_SCAN_INTERACT_ID,
     propId: prop.id,
     room: SPACE_NAMES[prop.room] ?? prop.room,
-    x: prop.x + f.dx * (half + 0.04),
-    y: (prop.y ?? 0) + prop.h + 0.3,
-    z: prop.z + f.dz * (half + 0.04),
-    face,
-    stand: { x: stand.x, z: stand.z },
+    x: mount.x,
+    y: mount.y,
+    z: mount.z,
+    face: mount.face,
+    stand: mount.stand,
   };
 }
 

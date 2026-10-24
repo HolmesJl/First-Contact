@@ -217,7 +217,7 @@ export function positionForInteract(interactId: string): { x: number; z: number 
   const berth = berthFromMemoryStationId(interactId);
   if (berth !== null) return memoryStationFor(berth)?.stand ?? null;
   const t = terminalMeta(interactId);
-  if (t) return { x: t.x, z: t.z };
+  if (t) return t.stand;
   const s = stationById(interactId);
   return s ? { x: s.x, z: s.z } : null;
 }

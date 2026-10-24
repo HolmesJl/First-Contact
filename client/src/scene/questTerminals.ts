@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { QUEST_TERMINALS } from '../../../shared/opening';
+import { FACE_OUT } from '../../../shared/shipInterior';
 
 export class QuestTerminalLayer {
   private readonly root = new THREE.Group();
@@ -10,6 +11,8 @@ export class QuestTerminalLayer {
     for (const t of QUEST_TERMINALS) {
       const g = new THREE.Group();
       g.position.set(t.x, t.y, t.z);
+      const f = FACE_OUT[t.face];
+      g.rotation.y = Math.atan2(f.dx, f.dz);
 
       const panel = new THREE.Mesh(
         new THREE.BoxGeometry(0.42, 0.28, 0.06),
@@ -32,17 +35,19 @@ export class QuestTerminalLayer {
         new THREE.MeshBasicMaterial({ color: 0x5fd8ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
       );
       glow.rotation.x = -Math.PI / 2;
-      glow.position.y = -0.2;
+      glow.position.set(t.stand.x, 0.04, t.stand.z);
       glow.visible = false;
 
       const pick = new THREE.Mesh(
         new THREE.BoxGeometry(0.55, 0.45, 0.35),
         new THREE.MeshBasicMaterial({ visible: false }),
       );
+      pick.position.z = 0.05;
       pick.userData.interactId = t.interactId;
 
-      g.add(panel, glow, pick);
+      g.add(panel, pick);
       this.root.add(g);
+      this.root.add(glow);
       this.glows.set(t.interactId, glow);
     }
   }
