@@ -10,7 +10,19 @@
  * player stands beside them; the Printer and Refinery panels only list materials for now. World Files are read-me pads
  * lying on props around the ship; a copy is picked up, and a player carries at most one File of a given name.
  */
-import { BERTHS, BUNK_SLAB_Y, FACE_OUT, PROPS, SPACE_NAMES, deskPadMount, standPointOnFace, usesDeskPadMount, type Prop } from './shipInterior';
+import {
+  BERTHS,
+  BUNK_SLAB_Y,
+  FACE_OUT,
+  PROPS,
+  SPACE_NAMES,
+  deskFileMount,
+  deskPadMount,
+  deskSurfaceY,
+  standPointOnFace,
+  usesDeskPadMount,
+  type Prop,
+} from './shipInterior';
 import type { Facing, RoomId } from './shipLayout';
 
 // ---------------------------------------------------------------- item definitions
@@ -535,7 +547,7 @@ const FILE_SPECS: readonly FileSpec[] = [
     name: 'Transit Log',
     text: 'Year 60 of transit. Hibernation cycle complete. Crew revival authorised. Seed core intact; growth modules not yet fabricated. Resume the journey once the crew has reported in.',
     propId: 'scan-2',
-    face: 'S',
+    face: 'N',
     slide: 0,
   },
   {
@@ -582,24 +594,33 @@ const FILE_SPECS: readonly FileSpec[] = [
 
 function placeFile(s: FileSpec): WorldFile {
   const prop = propById(s.propId);
-  const f = FACE_OUT[s.face];
-  // On the prop top, pulled toward the reader's side so it reads as "lying at the edge".
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  const inset = Math.max(0.18, half - 0.22);
-  const x = prop.x + f.dx * inset + (f.dx === 0 ? s.slide : 0);
-  const z = prop.z + f.dz * inset + (f.dx !== 0 ? s.slide : 0);
-  const stand = standPointOnFace({ ...prop, face: s.face }, 0.22, s.slide);
+  const face = s.face;
+  const mount =
+    usesDeskPadMount(prop) || prop.kind === 'table' || prop.kind === 'sofa'
+      ? deskFileMount(prop, face, s.slide)
+      : (() => {
+          const f = FACE_OUT[face];
+          const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+          const inset = Math.max(0.18, half - 0.22);
+          const stand = standPointOnFace({ ...prop, face }, 0.22, s.slide);
+          return {
+            x: prop.x + f.dx * inset + (f.dx === 0 ? s.slide : 0),
+            z: prop.z + f.dz * inset + (f.dx !== 0 ? s.slide : 0),
+            y: deskSurfaceY(prop),
+            stand,
+          };
+        })();
   return {
     interactId: `${FILE_PREFIX}${s.slug}`,
     name: s.name,
     text: s.text,
     propId: prop.id,
     room: SPACE_NAMES[prop.room] ?? prop.room,
-    x,
-    y: (prop.y ?? 0) + prop.h + 0.015,
-    z,
-    face: s.face,
-    stand: { x: stand.x, z: stand.z },
+    x: mount.x,
+    y: mount.y,
+    z: mount.z,
+    face,
+    stand: { x: mount.stand.x, z: mount.stand.z },
   };
 }
 

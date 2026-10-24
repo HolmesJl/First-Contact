@@ -30,6 +30,7 @@ import {
   clampMoveToShip,
   clampToShip,
   deskPadPlacementProblem,
+  deskSurfaceY,
   isWalkable,
   portClearZone,
   spaceAt,
@@ -351,7 +352,19 @@ for (const [job, berth] of homeCases) {
     }
     const b = bounds(prop);
     if (!(f.x >= b.minX && f.x <= b.maxX && f.z >= b.minZ && f.z <= b.maxZ)) fail(`file ${f.interactId} is not on top of ${prop.id}`);
-    if (Math.abs(f.y - ((prop.y ?? 0) + prop.h)) > 0.05) fail(`file ${f.interactId} floats ${(f.y - prop.h).toFixed(2)}m off ${prop.id}`);
+    const topY = deskSurfaceY(prop);
+    if (Math.abs(f.y - topY) > 0.06) fail(`file ${f.interactId} is ${(f.y - topY).toFixed(2)}m off the ${prop.id} desktop`);
+    if (usesDeskPadMount(prop) || prop.kind === 'table') {
+      const deskErr = deskPadPlacementProblem(
+        prop,
+        { x: f.x, y: f.y, z: f.z },
+        f.stand,
+        `file ${f.interactId}`,
+        f.face,
+        { requireOperatorRight: false },
+      );
+      if (deskErr) fail(deskErr);
+    }
     if (fileNames.has(f.name)) fail(`two world Files share the name “${f.name}”`);
     fileNames.add(f.name);
     if (f.text.length < 20) fail(`file ${f.interactId} has no real text`);

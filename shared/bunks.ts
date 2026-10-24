@@ -38,7 +38,6 @@ export interface MemoryStation {
 
 /** Pads sit toward the closet end of a bunk so they clear the ladder on the other end. */
 const BUNK_PAD_SLIDE = 0.55;
-const PAD_STANDOFF = 0.04;
 
 function placeStation(berth: number): MemoryStation {
   const b = BERTHS.find((x) => x.index === berth);
