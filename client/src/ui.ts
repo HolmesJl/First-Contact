@@ -662,10 +662,10 @@ export class Hud {
         prompt('Copy this invite link:', link);
       }
     });
-    this.hint.innerHTML = `<kbd>W</kbd><kbd>S</kbd> move · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>Shift</kbd> sprint · <kbd>C</kbd> walk/jog · <kbd>I</kbd> inventory · right-drag turn · left-drag orbit · scroll zoom`;
+    this.hint.innerHTML = `<kbd>W</kbd><kbd>S</kbd> move · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>Shift</kbd> run · <kbd>I</kbd> inventory · right-drag turn · left-drag orbit · scroll zoom`;
     this.hint.hidden = true;
     this.status.hidden = true;
-    this.status.innerHTML = `<span class="gait">JOG</span><div class="stamina"><i></i></div>`;
+    this.status.innerHTML = `<span class="gait">WALK</span><div class="stamina"><i></i></div>`;
     this.bar = this.status.querySelector('.stamina i');
     this.gaitLabel = this.status.querySelector('.gait');
     this.loc = this.el.querySelector('.loc');
@@ -743,14 +743,14 @@ export class Hud {
     this.roomTimer = window.setTimeout(() => this.roomBanner.classList.remove('show'), 2600);
   }
 
-  setStatus(s: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }) {
+  setStatus(s: { gait: Gait; stamina: number; exhausted: boolean }) {
     const sig = `${s.gait}|${Math.round(s.stamina * 100)}|${s.exhausted}`;
     if (sig === this.lastStatus) return;
     this.lastStatus = sig;
     if (this.bar) this.bar.style.width = `${Math.round(s.stamina * 100)}%`;
     this.status.classList.toggle('empty', s.exhausted);
     this.status.classList.toggle('full', s.stamina >= 0.995);
-    if (this.gaitLabel) this.gaitLabel.textContent = s.gait.toUpperCase();
+    if (this.gaitLabel) this.gaitLabel.textContent = s.gait === 'sprint' ? 'RUN' : 'WALK';
   }
 
   /**

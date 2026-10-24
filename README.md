@@ -82,10 +82,9 @@ Classic third-person MMO scheme. The mouse cursor stays free and visible; there 
 
 | Input | Action |
 | --- | --- |
-| `W` / `S` (or `↑` / `↓`) | Move forward / backward along the way your character faces |
+| `W` / `S` (or `↑` / `↓`) | Move forward / backward at **walk** speed (2.2 m/s) along the way your character faces |
 | `A` / `D` (or `←` / `→`) | Strafe left / right (the character keeps facing the same way) |
-| `Shift` (hold) | **Sprint** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot sprint again until it has recovered a little |
-| `C` | Toggle **walk** (1.5 m/s) and **jog** (3.5 m/s, the default) |
+| `Shift` (hold) | **Run** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot run again until it has recovered a little |
 | Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
 | Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view), drag down to look down. On release the camera yaw eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s). The pitch you set is kept until you drag again or re-board |
 | Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
@@ -121,7 +120,7 @@ shared/     protocol types, job caps and validation, ship layout and interior da
   bunks.ts                memory upload stations derived from the bunk and bed props; berth claim rules, hover text
   items.ts                item definitions, inventory/closet rules, stock panels, closets and world Files derived from the props, item events
   scavenger.ts            the Captain's scavenger hunt: tasks, progress state, HUD objective, which item event completes which task
-  movement.ts             walk/jog/sprint speeds, the stamina rule, and the server's per-player movement budget
+  movement.ts             walk and sprint speeds, the stamina rule, and the server's per-player movement budget
   lab.ts                  the bay's pod constants and `spawnFor` (the bay is the world origin)
 server/     Node WebSocket server: ships, membership, character creation, movement relay, JSON persistence
   src/bunks.ts            berth claims and memory upload snapshots (server-authoritative, one player per berth)
@@ -149,9 +148,9 @@ tools/      offline asset pipeline (build-characters.mjs, build-character-clips.
 
 ## Networking model
 
-The server is authoritative for membership, job assignment, character data, and spawn position. Movement is client-predicted: clients send position at 15 Hz, the server limits the step to what the movement rule allows, clamps it with `clampToShip(x, z, level)` (walkable area minus obstacles), and broadcasts snapshots at about 15 Hz. Remote players are smoothed on the client, and their walk, jog or sprint animation is picked from the speed seen between snapshots.
+The server is authoritative for membership, job assignment, character data, and spawn position. Movement is client-predicted: clients send position at 15 Hz, the server limits the step to what the movement rule allows, clamps it with `clampToShip(x, z, level)` (walkable area minus obstacles), and broadcasts snapshots at about 15 Hz. Remote players are smoothed on the client, and their walk or run animation is picked from the speed seen between snapshots.
 
-**Movement cap.** Each player has a token-bucket budget on the server (`MoveBudget` in `shared/movement.ts`): jog speed plus 12% tolerance, and a stamina-sized reserve that pays for the sprint burst (about 3 s from a full bar, refilling over about 6 s). A single message can never move a player more than about 1.9 m. A client that claims more simply lags behind where it says it is; honest clients are never clipped.
+**Movement cap.** Each player has a token-bucket budget on the server (`MoveBudget` in `shared/movement.ts`): walk speed (2.2 m/s) plus 12% tolerance, and a stamina-sized reserve that pays for the run burst (about 3 s from a full bar, refilling over about 6 s). A single message can never move a player more than about 1.9 m. A client that claims more simply lags behind where it says it is; honest clients are never clipped.
 
 **Protocol.** Unchanged: `move` is still `{ x, z, rot, moving }`, and `PlayerState.tube` is still the pod index. The server owns the level (always 0 for now, the hangar is sealed), so no `level` field is sent yet. The lift, `spawnId`, `berth` and `useLift` from the layout plan arrive with the lift and bunk assignment slices.
 
@@ -188,7 +187,7 @@ Worn Lite Body Armor is drawn on the character by `setBodyArmor(rig, options | n
 
 ## Characters
 
-Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, wearing a painted crew uniform (sleeve bands, shoulder patches and collar in the colour of their job). Motion is gendered motion capture (idle, walk, jog, sprint) chosen from the ground speed and played at the rate that makes the feet track the ground, with crossfades between gaits; remote players derive their gait from the speed between position snapshots. The base meshes have no facial rig, so the expressions are procedural morph targets (not texture variants). They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
+Clones are rigged, low/mid-poly glTF models (about 7k vertices each) sharing one UE-style skeleton, wearing a painted crew uniform (sleeve bands, shoulder patches and collar in the colour of their job). Motion is gendered motion capture (idle, walk, sprint) chosen from the ground speed and played at the rate that makes the feet track the ground, with crossfades between gaits; remote players derive their gait from the speed between position snapshots. The base meshes have no facial rig, so the expressions are procedural morph targets (not texture variants). They are generated at load time around mouth, eye, and brow landmarks found through the painted face texture's UVs:
 
 - **Neutral (default):** no morphs.
 - **Smiling:** raised mouth corners and cheeks, lifted brows.

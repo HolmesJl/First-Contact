@@ -10,7 +10,7 @@ import { ITEMS } from '../../../shared/items';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampMoveToShip, clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import type { BerthOwner } from '../../../shared/bunks';
-import { JOG_SPEED, SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
+import { SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
 const SEND_INTERVAL = 1 / 15;
@@ -60,7 +60,7 @@ export interface LabHooks {
   /** The local player entered a room or corridor. */
   onSpace?(space: Space): void;
   /** Local gait and stamina (0..1), every frame. */
-  onStatus?(status: { gait: Gait; stamina: number; exhausted: boolean; walkMode: boolean }): void;
+  onStatus?(status: { gait: Gait; stamina: number; exhausted: boolean }): void;
   onInteractHover?(id: string | null, prompt: string | null): void;
   onInteract?(id: string): void;
 }
@@ -80,7 +80,7 @@ export class LabScene implements View {
   private mode: 'creator' | 'walk' = 'creator';
   private creatorTube = 0;
   private preview: (Appearance & { job?: Job }) | null = null;
-  private local = { x: 0, z: 0, rot: 0, moving: false, gait: 'jog' as Gait, speed: 0 };
+  private local = { x: 0, z: 0, rot: 0, moving: false, gait: 'walk' as Gait, speed: 0 };
   private sendTimer = 0;
   private lastSent = '';
 
@@ -296,7 +296,7 @@ export class LabScene implements View {
   }
 
   enterWalk(self: PlayerState) {
-    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'jog', speed: 0 };
+    this.local = { x: self.x, z: self.z, rot: self.rot, moving: false, gait: 'walk', speed: 0 };
     this.mode = 'walk';
     this.space = null;
     this.controls.reset(self.rot);
@@ -441,8 +441,8 @@ export class LabScene implements View {
     const input = c.sample();
     const moving = input.mag > 0.1;
     const sprinting = this.stamina.update(dt, moving && input.wantsSprint);
-    const gait: Gait = sprinting ? 'sprint' : c.walkMode || input.analogWalk ? 'walk' : 'jog';
-    const speed = gait === 'sprint' ? SPRINT_SPEED : gait === 'walk' ? WALK_SPEED : JOG_SPEED;
+    const gait: Gait = sprinting ? 'sprint' : 'walk';
+    const speed = gait === 'sprint' ? SPRINT_SPEED : WALK_SPEED;
     this.local.rot = c.facing;
     // Swept against the walk area, props and the cabin door panel where it is this frame, so the thin panel cannot be
     // stepped through; clamped even when idle so a closing door nudges a player out of the doorway.
@@ -467,7 +467,7 @@ export class LabScene implements View {
       this.interior.setFocus(space.id);
       this.hooks.onSpace?.(space);
     }
-    this.hooks.onStatus?.({ gait, stamina: this.stamina.value, exhausted: this.stamina.exhausted, walkMode: c.walkMode });
+    this.hooks.onStatus?.({ gait, stamina: this.stamina.value, exhausted: this.stamina.exhausted });
 
     this.sendTimer += dt;
     if (this.sendTimer >= SEND_INTERVAL) {

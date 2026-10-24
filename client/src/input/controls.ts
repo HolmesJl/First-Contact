@@ -3,7 +3,7 @@
  *
  *   W/S            forward / back, along the character's facing
  *   A/D            strafe left / right (facing is unchanged)
- *   Shift, C       sprint (stamina) / toggle walk, handled by the scene from `sample()` and `walkMode`
+ *   Shift          sprint (stamina), handled by the scene from `sample()`
  *   right-drag     turns the character; the camera stays behind it
  *   left-drag      orbits the camera around the character without turning it; the yaw eases back behind on release,
  *                  the pitch (look up / down) stays where the player left it
@@ -53,7 +53,7 @@ export interface MoveSample {
   z: number;
   mag: number;
   wantsSprint: boolean;
-  /** Touch stick pushed gently: walk rather than jog. */
+  /** Touch stick deflection (0..1); scales walk speed when not sprinting. */
   analogWalk: boolean;
 }
 
@@ -79,8 +79,6 @@ export class Controls {
   orbitOffset = 0;
   pitch = DEFAULT_PITCH;
   dist = 3.9;
-  walkMode = false;
-
   private down = new Set<string>();
   private drag: Drag | null = null;
   private ret: Return | null = null;
@@ -235,7 +233,6 @@ export class Controls {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod && (BROWSER_KEYS.has(e.code) || MOVE_CODES.has(e.code))) e.preventDefault();
       if (mod) return;
-      if (e.code === 'KeyC' && !e.repeat) this.walkMode = !this.walkMode;
       if (MOVE_CODES.has(e.code) || SHIFT_CODES.includes(e.code)) this.down.add(e.code);
     });
 

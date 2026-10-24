@@ -1,8 +1,7 @@
 /** Movement speeds and the sprint stamina rule, shared by the client (prediction, HUD bar) and the server (cap). */
 
 /** Metres per second. */
-export const WALK_SPEED = 1.5;
-export const JOG_SPEED = 3.5;
+export const WALK_SPEED = 2.2;
 export const SPRINT_SPEED = 4.8;
 
 /** Seconds of sprint from a full bar. */
@@ -12,12 +11,11 @@ export const STAMINA_REFILL_SECONDS = 6;
 /** After running dry, sprint is locked until the bar has refilled to this fraction. */
 export const SPRINT_RESUME_AT = 0.25;
 
-export type Gait = 'walk' | 'jog' | 'sprint';
+export type Gait = 'walk' | 'sprint';
 
 /** Gait a remote player is in, from the speed observed between snapshots. */
 export function gaitFromSpeed(speed: number): Gait {
-  if (speed < (WALK_SPEED + JOG_SPEED) / 2) return 'walk';
-  if (speed < (JOG_SPEED + SPRINT_SPEED) / 2) return 'jog';
+  if (speed < (WALK_SPEED + SPRINT_SPEED) / 2) return 'walk';
   return 'sprint';
 }
 
@@ -46,7 +44,7 @@ export class Stamina {
 
 /**
  * Server-side movement cap. Clients report positions at about 15 Hz; the budget is a token bucket so network jitter
- * never clips an honest client, while a hacked one cannot beat jog speed except for the stamina-limited sprint burst.
+ * never clips an honest client, while a hacked one cannot beat walk speed except for the stamina-limited sprint burst.
  */
 export class MoveBudget {
   private base = 1;
@@ -61,7 +59,7 @@ export class MoveBudget {
   take(dist: number, now: number): number {
     const dt = Math.min(1.5, Math.max(0, now - this.last));
     this.last = now;
-    this.base = Math.min(BASE_CAPACITY, this.base + dt * JOG_SPEED * TOLERANCE);
+    this.base = Math.min(BASE_CAPACITY, this.base + dt * WALK_SPEED * TOLERANCE);
     this.extra = Math.min(SPRINT_EXTRA_CAPACITY, this.extra + (dt * SPRINT_EXTRA_CAPACITY) / STAMINA_REFILL_SECONDS);
     if (dist <= 1e-6) return 1;
     // One message can never move further than a bit over 0.4 s of sprinting, whatever the budget holds.
@@ -81,5 +79,5 @@ export class MoveBudget {
 const TOLERANCE = 1.12;
 const MAX_STEP = SPRINT_SPEED * 0.4;
 const BASE_CAPACITY = 1.0;
-/** Extra metres a full stamina bar buys over jogging: (sprint - jog) * seconds. */
-const SPRINT_EXTRA_CAPACITY = (SPRINT_SPEED - JOG_SPEED) * SPRINT_SECONDS * TOLERANCE + 0.6;
+/** Extra metres a full stamina bar buys over walking: (sprint - walk) * seconds. */
+const SPRINT_EXTRA_CAPACITY = (SPRINT_SPEED - WALK_SPEED) * SPRINT_SECONDS * TOLERANCE + 0.6;
