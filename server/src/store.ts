@@ -4,6 +4,7 @@ import { upgradeLegacyCharacter, type Character, type MemorySnapshot, type Unifo
 import type { QuestStep } from '../../shared/opening';
 import type { Inventory, PadFile, Slots } from '../../shared/items';
 import type { ScavengerState } from '../../shared/scavenger';
+import type { ScanResultEntry, ScanningSkill } from '../../shared/scanning';
 
 /**
  * One crew slot on a ship: a saved character, or a clone still forming in the lab (`character === null`). Forming
@@ -40,6 +41,7 @@ export interface MemberRecord {
   padFiles?: PadFile[];
   /** Quest 2 (scavenger hunt) progress, or null until issued. */
   scavenger?: ScavengerState | null;
+  skills?: { scanning?: ScanningSkill };
 }
 
 export interface ShipRecord {
@@ -57,6 +59,8 @@ export interface ShipRecord {
   cabinDoorOpen?: boolean;
   /** Ship-wide item and material counts by id (see shared/items.ts STARTING_STOCK). */
   stock?: Record<string, number>;
+  /** Shared contact log from Bridge scans (newest last; capped on normalize). */
+  scanResults?: ScanResultEntry[];
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

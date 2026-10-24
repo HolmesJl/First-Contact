@@ -1,6 +1,7 @@
 import type { QuestStep } from './opening';
 import { isItemId, validSlotRef, type EquipSlot, type Inventory, type ItemId, type ItemStack, type PadFile, type SlotRef, type Slots } from './items';
 import type { ScavengerState } from './scavenger';
+import type { ScanResultEntry, ScanningSkill } from './scanning';
 
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
 export type Job = (typeof JOBS)[number];
@@ -132,6 +133,7 @@ export interface ShipMeta {
   cabinDoor: CabinDoorState;
   /** Ship-wide item and material counts by id (Eatery food, Cargo Hold armor, printer and refinery materials). */
   stock: Record<string, number>;
+  scanResults: ScanResultEntry[];
 }
 
 /** The only uniform so far; everyone starts with the crew jumpsuit equipped. */
@@ -189,6 +191,7 @@ export interface PlayerState {
   padFiles: PadFile[];
   /** Quest 2 progress, or null until the pad issues it on the Bridge. */
   scavenger: ScavengerState | null;
+  skills: { scanning: ScanningSkill };
 }
 
 /** [id, x, z, rot, moving] */
@@ -219,7 +222,9 @@ export type ClientMsg =
   | { t: 'cabinKeypad'; action: 'change'; current: string; code: string; confirm: string; x: number; z: number; keypad?: string }
   | { t: 'inv'; action: InventoryAction; x: number; z: number }
   /** Opening the data pad on the Bridge after the opening quest: receive the scavenger hunt (server checks place and step). */
-  | { t: 'scavengerIssue'; x: number; z: number };
+  | { t: 'scavengerIssue'; x: number; z: number }
+  /** Start a Bridge sensor scan (server owns the timer and the roll). */
+  | { t: 'scanStart'; x: number; z: number };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -270,7 +275,18 @@ export type ServerMsg =
    * Sent to the uploading player only. `claimed` is true for their first berth; `from` is the berth they moved out of
    * when the upload also switched bunks, else null.
    */
-  | { t: 'memoryUpload'; berth: number; at: number; claimed: boolean; from: number | null };
+  | { t: 'memoryUpload'; berth: number; at: number; claimed: boolean; from: number | null }
+  /** Scan timer started for this player. */
+  | { t: 'scanProgress'; endsAt: number }
+  /** Scan finished: hit or miss; skill counts only advance on hits. */
+  | {
+      t: 'scanComplete';
+      hit: boolean;
+      find: ScanResultEntry | null;
+      skill: ScanningSkill;
+      leveledUp: boolean;
+      scanResults: ScanResultEntry[];
+    };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 
@@ -342,8 +358,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'logout':
       return { t: m.t };
     case 'scavengerIssue':
+    case 'scanStart':
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
-      return { t: 'scavengerIssue', x: m.x as number, z: m.z as number };
+      return { t: m.t, x: m.x as number, z: m.z as number };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
     case 'move':

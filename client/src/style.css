@@ -1483,6 +1483,170 @@ kbd {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* ---------------------------------------------------------------- scan station */
+
+.scan-station-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.22s;
+  pointer-events: none;
+}
+
+.scan-station-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scan-card {
+  width: min(92vw, 420px);
+  max-height: 82vh;
+  overflow: auto;
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.scan-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.scan-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scan-level,
+.scan-progress-label {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.scan-level strong,
+.scan-progress-label strong {
+  color: #b8f5dc;
+}
+
+.scan-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scan-start.primary {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(124, 240, 196, 0.35);
+  background: rgba(42, 154, 114, 0.25);
+  color: #d8fff0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.scan-start.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.scan-bar-wrap {
+  margin-top: 4px;
+}
+
+.scan-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.scan-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #2a9a72, #7cf0c4);
+  transition: width 0.08s linear;
+}
+
+.scan-status {
+  font-size: 13px;
+  color: #9be8c8;
+}
+
+.scan-toast {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.scan-toast.miss {
+  background: rgba(255, 120, 100, 0.12);
+  border: 1px solid rgba(255, 120, 100, 0.25);
+  color: #ffc9be;
+}
+
+.scan-toast.hit {
+  background: rgba(124, 240, 196, 0.1);
+  border: 1px solid rgba(124, 240, 196, 0.28);
+  color: #d8fff0;
+}
+
+.scan-find-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.scan-levelup {
+  font-size: 13px;
+  color: #ffe08a;
+  margin-bottom: 6px;
+}
+
+.scan-log-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.scan-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scan-log-type {
+  color: #9be8c8;
+}
+
+.scan-log-empty {
+  font-style: italic;
+}
+
 /* ---------------------------------------------------------------- inventory */
 
 .inv-overlay {

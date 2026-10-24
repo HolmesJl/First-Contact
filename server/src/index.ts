@@ -42,6 +42,7 @@ import { MoveBudget } from '../../shared/movement';
 import { isItemInteractId, isWorldFileId, stockPanelById } from '../../shared/items';
 import { applyInventoryAction, applyOpenPanel, applyPickupFile, itemEvents, type InvResult } from './items';
 import { applyScavengerIssue, installScavengerQuest } from './scavenger';
+import { applyScanStart, cancelScan, finishDueScans, shipScanResults } from './scanning';
 
 installScavengerQuest();
 
@@ -103,6 +104,7 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     inventory: m.inventory!,
     padFiles: m.padFiles ?? [],
     scavenger: m.scavenger ?? null,
+    skills: { scanning: m.skills!.scanning! },
   };
 }
 
@@ -415,6 +417,16 @@ wss.on('connection', (ws) => {
         finishInventory(me, applyInventoryAction(ship, me, msg.action));
         break;
       }
+      case 'scanStart': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyScanStart(ship, me, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        send(ws, { t: 'scanProgress', endsAt: res.endsAt });
+        break;
+      }
       case 'scavengerIssue': {
         // Same as `interact`: take the client's position (clamped) before the Bridge check. The last `move` can sit a
         // step behind after a budget-limited sprint, since a standing client stops repeating its position.
@@ -476,6 +488,7 @@ wss.on('connection', (ws) => {
     moving.delete(mk);
     lastMoveMs.delete(mk);
     budgets.delete(mk);
+    cancelScan(ship.code, pid);
     const me = ship.members[pid];
     if (me && dropFormingMember(ship, pid)) {
       store.save();
@@ -497,6 +510,26 @@ setInterval(() => {
     if (tickCabinDoors(ship, now)) {
       store.save();
       broadcast(code, { t: 'cabinDoor', door: cabinDoorPublic(ship, now) });
+    }
+    const completed = finishDueScans(ship, now);
+    if (completed.length) {
+      store.save();
+      for (const row of completed) {
+        const member = ship.members[row.memberId];
+        const peer = online.get(code)?.get(row.memberId);
+        if (peer && member) {
+          send(peer, {
+            t: 'scanComplete',
+            hit: row.hit,
+            find: row.find,
+            skill: row.skill,
+            leveledUp: row.leveledUp,
+            scanResults: shipScanResults(ship),
+          });
+          broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
+        }
+        if (row.hit) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
+      }
     }
   }
   for (const [mk, t] of lastMoveMs) {

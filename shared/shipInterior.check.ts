@@ -18,6 +18,7 @@ import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import { CLOSETS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, STOCK_PANELS, WORLD_FILES } from './items';
 import { SCAVENGER_FILE_NAME, SCAVENGER_TASKS } from './scavenger';
+import { BRIDGE_SCAN_PROP_ID, SCAN_STATIONS } from './scanning';
 import {
   BERTHS,
   CABIN_KEYPAD,
@@ -356,6 +357,28 @@ for (const [job, berth] of homeCases) {
   }
   if (STARTING_STOCK.fruit !== 25) fail(`eatery starts with ${STARTING_STOCK.fruit} Fruit; items.md says 25`);
   if (STARTING_STOCK['lite-body-armor'] !== 6) fail(`shelves start with ${STARTING_STOCK['lite-body-armor']} armor; the quest says 6`);
+}
+
+// Bridge scan station (shared/scanning.ts): stand point on scan-1 console, walkable and in interact range.
+{
+  const prop = PROPS.find((p) => p.id === BRIDGE_SCAN_PROP_ID);
+  if (!prop) fail(`bridge scan station missing prop ${BRIDGE_SCAN_PROP_ID}`);
+  else if (prop.room !== 'bridge') fail(`bridge scan prop ${BRIDGE_SCAN_PROP_ID} is in ${prop.room}`);
+  if (SCAN_STATIONS.length !== 1) fail(`expected one scan station in v1, got ${SCAN_STATIONS.length}`);
+  for (const s of SCAN_STATIONS) {
+    if (!isWalkable(s.stand.x, s.stand.z)) fail(`scan station ${s.interactId} stand not walkable`);
+    if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`scan station ${s.interactId} stand unreachable`);
+    const dist = Math.hypot(s.stand.x - s.x, s.stand.z - s.z);
+    if (dist > INTERACT_RADIUS) fail(`scan station ${s.interactId} is ${dist.toFixed(2)}m from its panel (max ${INTERACT_RADIUS}m)`);
+    if (spaceAt(s.stand.x, s.stand.z)?.id !== 'bridge') fail(`scan station ${s.interactId} stand is not on the bridge`);
+    const p = PROPS.find((x) => x.id === s.propId);
+    if (!p) fail(`scan station ${s.interactId} missing prop ${s.propId}`);
+    else {
+      const b = bounds(p);
+      const gap = Math.hypot(s.stand.x - Math.min(b.maxX, Math.max(b.minX, s.stand.x)), s.stand.z - Math.min(b.maxZ, Math.max(b.minZ, s.stand.z)));
+      if (gap > 1.0) fail(`scan station stand is ${gap.toFixed(2)}m from ${p.id} (max 1.0m)`);
+    }
+  }
 }
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${STOCK_PANELS.length} stock panels, ${CLOSETS.length} closets, ${WORLD_FILES.length} files, ${seen.size} reachable cells`);

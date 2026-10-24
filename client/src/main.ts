@@ -14,6 +14,8 @@ import { InventoryOverlay } from './inventory';
 import { REPORT_IN_INTERACT_ID, objectiveInteractId, questObjective } from '../../shared/opening';
 import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt, stockPanelById } from '../../shared/items';
 import { isOnBridge, scavengerAwaiting, scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
+import { isScanStationId } from '../../shared/scanning';
+import { ScanStationOverlay } from './scanStation';
 import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -69,6 +71,7 @@ let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
 let inventory: InventoryOverlay | null = null;
+let scanStation: ScanStationOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let shipMeta: ShipMeta | null = null;
@@ -366,6 +369,10 @@ async function startLab() {
         else requestScavengerIssue();
         return;
       }
+      if (isScanStationId(id)) {
+        openScanStation();
+        return;
+      }
       net?.send({ t: 'interact', id, x, z });
     },
   });
@@ -499,6 +506,23 @@ async function logout() {
   location.replace(location.pathname);
 }
 
+function openScanStation() {
+  const me = players.get(selfId);
+  if (!me?.character || !shipMeta || !lab) return;
+  scanStation?.close();
+  lab.releaseInput();
+  scanStation = new ScanStationOverlay(me.skills.scanning, shipMeta.scanResults, {
+    onStart: () => {
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'scanStart', x, z });
+    },
+    onClose: () => {
+      scanStation = null;
+    },
+    playerPos: () => lab?.localPos() ?? null,
+  });
+}
+
 function openPad() {
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !shipMeta) return;
@@ -549,6 +573,7 @@ function handle(m: ServerMsg) {
       // Another player's claim can free or take a bunk the upload objective was pointing at.
       if (p.id !== selfId && players.get(selfId)?.questStep === 'upload-memories') syncHudSelf();
       if (p.id === selfId) {
+        scanStation?.updateSkill(p.skills.scanning);
         if (p.hasPad && !hadPad) {
           hadPad = true;
           toast('Data pad added to communicator slot.');
@@ -584,7 +609,16 @@ function handle(m: ServerMsg) {
       shipMeta = m.ship;
       lab?.setCabinDoor(m.ship.cabinDoor);
       inventory?.setStock(m.ship.stock);
+      scanStation?.setResults(m.ship.scanResults);
       wakeIntro?.enableContinue(() => beginCreator());
+      break;
+    case 'scanProgress':
+      scanStation?.beginScan(m.endsAt);
+      break;
+    case 'scanComplete':
+      if (shipMeta) shipMeta = { ...shipMeta, scanResults: m.scanResults };
+      scanStation?.showComplete(m.hit, m.find, m.skill, m.leveledUp, m.scanResults);
+      if (m.leveledUp) toast('Scanning skill increased!');
       break;
     case 'closet':
       inventory?.setCloset(m.slots);

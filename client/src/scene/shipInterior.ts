@@ -6,6 +6,7 @@ import { buildProp, type PodFx, type PropAnim, type PropContext } from './interi
 import { QuestTerminalLayer } from './questTerminals';
 import { MemoryStationLayer } from './memoryStations';
 import { ItemStationLayer } from './itemStations';
+import { ScanStationLayer } from './scanStations';
 import { isItemInteractId } from '../../../shared/items';
 import type { BerthOwner } from '../../../shared/bunks';
 import { SHIP_LAYOUT, type Corridor, type Door, type Obstacle, type Rect, type Room } from '../../../shared/shipLayout';
@@ -301,6 +302,7 @@ export class ShipInterior {
   private questTerminals = new QuestTerminalLayer();
   private memoryStations = new MemoryStationLayer();
   private itemStations = new ItemStationLayer();
+  private scanStations = new ScanStationLayer();
   private cabinDoorPanel: THREE.Group | null = null;
   private cabinDoorOpenFrac = 0;
   private cabinDoorTargetFrac = 0;
@@ -318,6 +320,7 @@ export class ShipInterior {
     this.questTerminals.attach(this.root);
     this.memoryStations.attach(this.root);
     this.itemStations.attach(this.root);
+    this.scanStations.attach(this.root);
     this.setFocus(null);
   }
 
@@ -909,6 +912,7 @@ export class ShipInterior {
     this.questTerminals.update(this.time);
     this.memoryStations.update(this.time, camera);
     this.itemStations.update(dt);
+    this.scanStations.update(this.time);
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;
