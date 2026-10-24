@@ -48,7 +48,7 @@ export class ScanStationLayer {
       glow.visible = false;
 
       const pick = new THREE.Mesh(
-        new THREE.BoxGeometry(0.65, 0.5, 0.4),
+        new THREE.BoxGeometry(1.1, 0.85, 0.65),
         new THREE.MeshBasicMaterial({ visible: false }),
       );
       pick.userData.interactId = s.interactId;
