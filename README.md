@@ -84,7 +84,7 @@ Classic third-person MMO scheme. The mouse cursor stays free and visible; there 
 | --- | --- |
 | `W` / `S` (or `↑` / `↓`) | Move forward / backward at **walk** speed (2.2 m/s) along the way your character faces |
 | `A` / `D` (or `←` / `→`) | Strafe left / right (the character keeps facing the same way) |
-| `Shift` (hold) | **Run** (4.8 m/s). A burst: the stamina bar drains in about 3 s and refills in about 6 s, and you cannot run again until it has recovered a little |
+| `Shift` (hold) | **Run** (4.8 m/s). A burst: the stamina bar drains in about 9 s and refills in about 6 s, and you cannot run again until it has recovered a little |
 | Right mouse + drag | **Turn the character**; the camera stays behind it. The browser context menu is off over the game view only |
 | Left mouse + drag | **Orbit the camera** around the character without turning it; drag up to look up (the camera drops to near floor level, so door signs come into view), drag down to look down. On release the camera yaw eases back behind the character (about 0.4 s); start moving mid-orbit and it snaps back faster (about 0.15 s). The pitch you set is kept until you drag again or re-board |
 | Scroll wheel | Zoom in / out. Walls and corridor hulls between the camera and your character fade out so the interior stays readable |
@@ -150,7 +150,7 @@ tools/      offline asset pipeline (build-characters.mjs, build-character-clips.
 
 The server is authoritative for membership, job assignment, character data, and spawn position. Movement is client-predicted: clients send position at 15 Hz, the server limits the step to what the movement rule allows, clamps it with `clampToShip(x, z, level)` (walkable area minus obstacles), and broadcasts snapshots at about 15 Hz. Remote players are smoothed on the client, and their walk or run animation is picked from the speed seen between snapshots.
 
-**Movement cap.** Each player has a token-bucket budget on the server (`MoveBudget` in `shared/movement.ts`): walk speed (2.2 m/s) plus 12% tolerance, and a stamina-sized reserve that pays for the run burst (about 3 s from a full bar, refilling over about 6 s). A single message can never move a player more than about 1.9 m. A client that claims more simply lags behind where it says it is; honest clients are never clipped.
+**Movement cap.** Each player has a token-bucket budget on the server (`MoveBudget` in `shared/movement.ts`): walk speed (2.2 m/s) plus 12% tolerance, and a stamina-sized reserve that pays for the run burst (about 9 s from a full bar, refilling over about 6 s). A single message can never move a player more than about 1.9 m. A client that claims more simply lags behind where it says it is; honest clients are never clipped.
 
 **Protocol.** Unchanged: `move` is still `{ x, z, rot, moving }`, and `PlayerState.tube` is still the pod index. The server owns the level (always 0 for now, the hangar is sealed), so no `level` field is sent yet. The lift, `spawnId`, `berth` and `useLift` from the layout plan arrive with the lift and bunk assignment slices.
 

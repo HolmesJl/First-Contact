@@ -5,7 +5,7 @@ export const WALK_SPEED = 2.2;
 export const SPRINT_SPEED = 4.8;
 
 /** Seconds of sprint from a full bar. */
-export const SPRINT_SECONDS = 3;
+export const SPRINT_SECONDS = 9;
 /** Seconds to refill an empty bar. */
 export const STAMINA_REFILL_SECONDS = 6;
 /** After running dry, sprint is locked until the bar has refilled to this fraction. */
