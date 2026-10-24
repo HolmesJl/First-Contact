@@ -58,7 +58,7 @@ const moving = new Map<string, boolean>();
 /** Last move message time (ms) per player; used to clear stuck `moving` when input stops. */
 const lastMoveMs = new Map<string, number>();
 const MOVE_STALE_MS = 280;
-/** Per-player movement cap (jog speed plus the stamina-limited sprint burst). */
+/** Per-player movement cap (walk speed plus the stamina-limited sprint burst). */
 const budgets = new Map<string, MoveBudget>();
 const dirtyShips = new Set<string>();
 

@@ -468,7 +468,7 @@ function clearIdleArms(rig: Rig) {
   }
 }
 
-/** speed: ground speed in m/s (used while moving); it picks idle, walk, jog or sprint and the clip's playback rate. */
+/** speed: ground speed in m/s (used while moving); it picks idle, walk or sprint and the clip's playback rate. */
 export function animateRig(rig: Rig, dt: number, moving: boolean, speed = 0) {
   rig.time += dt;
   updateMotion(rig.motion, dt, moving, speed);

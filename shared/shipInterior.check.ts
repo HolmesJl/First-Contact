@@ -10,7 +10,7 @@ import {
   cabinKeypadInProp,
   cabinKeypadInteractPosition,
 } from './cabinDoor';
-import { JOG_SPEED, SPRINT_SPEED } from './movement';
+import { SPRINT_SPEED, WALK_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
 import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, interactIdForProp, interactPrompt, positionForInteract } from './opening';
 import type { Job } from './protocol';
@@ -235,7 +235,7 @@ for (const [from, to, name] of [
   const side = Math.sign(from.x - door.x);
   const single = clampMoveToShip(from.x, from.z, to.x, to.z, 0, [closedObs]);
   if ((single.x - door.x) * side < 0.3) fail(`closed cabin door: one swept step ${name} crossed the panel (x=${single.x.toFixed(3)})`);
-  for (const perMsg of [JOG_SPEED / 15, SPRINT_SPEED * 0.4]) {
+  for (const perMsg of [WALK_SPEED / 15, SPRINT_SPEED * 0.4]) {
     let x = door.x + side * 1.2;
     for (let i = 1; i <= 24; i++) {
       const claim = door.x + side * 1.2 - side * i * perMsg;

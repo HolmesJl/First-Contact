@@ -1,25 +1,27 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { JOG_SPEED, SPRINT_SPEED, WALK_SPEED } from '../../../shared/movement';
+import { SPRINT_SPEED, WALK_SPEED } from '../../../shared/movement';
 import type { Sex } from '../../../shared/protocol';
 
 /**
  * Locomotion for the Quaternius characters: gendered ACCAD motion-capture clips (tools/build-character-clips.mjs
  * writes clips-<sex>.glb and motion.json), applied to body-<sex>.glb by bone name. The clip is chosen from the
- * ground speed (idle, walk, jog, sprint) and played at the speed that makes the feet track the ground, then
+ * ground speed (idle, walk, sprint) and played at the speed that makes the feet track the ground, then
  * cross-faded when the gait changes.
  */
 
-export type Gait = 'idle' | 'walk' | 'jog' | 'sprint';
-const MOVING_GAITS = ['walk', 'jog', 'sprint'] as const;
+export type ClipGait = 'idle' | 'walk' | 'jog' | 'sprint';
+/** Gait used for animation selection while moving (jog clip stays in the asset but is not selected in play). */
+export type Gait = 'idle' | 'walk' | 'sprint';
+const CLIP_GAITS = ['idle', 'walk', 'jog', 'sprint'] as const;
+const MOVING_GAITS = ['walk', 'sprint'] as const;
 
-/** Gait boundaries sit halfway between the game's movement speeds (same rule as gaitFromSpeed). */
-const WALK_JOG = (WALK_SPEED + JOG_SPEED) / 2;
-const JOG_SPRINT = (JOG_SPEED + SPRINT_SPEED) / 2;
+/** Gait boundary sits halfway between walk and sprint speeds (same rule as gaitFromSpeed). */
+const WALK_SPRINT = (WALK_SPEED + SPRINT_SPEED) / 2;
 const HYSTERESIS = 0.25;
 
 /** Playback speed limits per gait, so a clip is never stretched into something that no longer reads as that gait. */
-const RATE: Record<(typeof MOVING_GAITS)[number], [number, number]> = { walk: [0.55, 1.75], jog: [0.75, 1.3], sprint: [0.85, 1.25] };
+const RATE: Record<(typeof MOVING_GAITS)[number], [number, number]> = { walk: [0.55, 2.0], sprint: [0.85, 1.25] };
 const FADE_MOVE = 0.25;
 /** ~30% longer than gait crossfades so idle blends feel less snappy. */
 const FADE_IDLE = 0.325;
@@ -27,21 +29,21 @@ const FADE_IDLE = 0.325;
 export const IDLE_PLAYBACK = 1 / 1.3;
 
 interface SexMotion {
-  clips: Record<Gait, THREE.AnimationClip>;
+  clips: Record<ClipGait, THREE.AnimationClip>;
   /** Ground speed (m/s) the clip covers at 1x. */
-  ground: Record<Gait, number>;
+  ground: Record<ClipGait, number>;
 }
 
 let motion: Record<Sex, SexMotion> | null = null;
 
 export async function loadMotion(base: string) {
   const loader = new GLTFLoader();
-  const info = (await (await fetch(`${base}motion.json`)).json()) as Record<Sex, Record<Gait, { groundSpeed: number }>>;
+  const info = (await (await fetch(`${base}motion.json`)).json()) as Record<Sex, Record<ClipGait, { groundSpeed: number }>>;
   const load = async (sex: Sex): Promise<SexMotion> => {
     const gltf = await loader.loadAsync(`${base}clips-${sex}.glb`);
-    const clips = {} as Record<Gait, THREE.AnimationClip>;
-    const ground = {} as Record<Gait, number>;
-    for (const g of ['idle', ...MOVING_GAITS] as const) {
+    const clips = {} as Record<ClipGait, THREE.AnimationClip>;
+    const ground = {} as Record<ClipGait, number>;
+    for (const g of CLIP_GAITS) {
       const clip = gltf.animations.find((a) => a.name === g);
       if (!clip) throw new Error(`${sex}: missing clip ${g}`);
       clips[g] = clip;
@@ -53,10 +55,12 @@ export async function loadMotion(base: string) {
   motion = { male, female };
 }
 
+type MovingGait = (typeof MOVING_GAITS)[number];
+
 export interface Motion {
   gait: Gait;
   actions: Record<Gait, THREE.AnimationAction>;
-  ground: Record<Gait, number>;
+  ground: Record<MovingGait, number>;
   /** Smoothed ground speed (remote players only report positions, so their speed is noisy). */
   speed: number;
 }
@@ -65,18 +69,25 @@ export function createMotion(mixer: THREE.AnimationMixer, sex: Sex): Motion {
   if (!motion) throw new Error('loadMotion() must resolve before building rigs');
   const m = motion[sex];
   const actions = {} as Record<Gait, THREE.AnimationAction>;
-  for (const g of Object.keys(m.clips) as Gait[]) actions[g] = mixer.clipAction(m.clips[g]);
+  for (const g of ['idle', ...MOVING_GAITS] as const) {
+    actions[g] = mixer.clipAction(m.clips[g]);
+  }
   actions.idle.time = Math.random() * m.clips.idle.duration;
   actions.idle.play();
-  return { gait: 'idle', actions, ground: m.ground, speed: 0 };
+  return {
+    gait: 'idle',
+    actions,
+    ground: { walk: m.ground.walk, sprint: m.ground.sprint },
+    speed: 0,
+  };
 }
 
 export function gaitForSpeed(speed: number, current: Gait): Gait {
   const h = HYSTERESIS;
-  const walkJog = current === 'walk' ? WALK_JOG + h : current === 'idle' ? WALK_JOG : WALK_JOG - h;
-  const jogSprint = current === 'sprint' ? JOG_SPRINT - h : JOG_SPRINT + (current === 'jog' ? h : 0);
-  if (speed < walkJog) return 'walk';
-  return speed < jogSprint ? 'jog' : 'sprint';
+  const walkSprint =
+    current === 'walk' ? WALK_SPRINT + h : current === 'idle' ? WALK_SPRINT : WALK_SPRINT - h;
+  if (speed < walkSprint) return 'walk';
+  return 'sprint';
 }
 
 /** speed: ground speed in m/s, only used while `moving`. */
