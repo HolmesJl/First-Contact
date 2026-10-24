@@ -367,7 +367,7 @@ for (const [job, berth] of homeCases) {
   if (SCAN_STATIONS.length !== 1) fail(`expected one scan station in v1, got ${SCAN_STATIONS.length}`);
   if (interactIdForProp(BRIDGE_SCAN_INTERACT_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('bridge-scan interact id not recognized by interactIdForProp');
   if (interactIdForProp(BRIDGE_SCAN_PROP_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('scan-1 prop id must map to bridge-scan');
-  if (!interactPrompt(BRIDGE_SCAN_INTERACT_ID)?.includes('Sensor scan')) fail('scan station hover prompt missing');
+  if (interactPrompt(BRIDGE_SCAN_INTERACT_ID) !== 'Sensor scan') fail('scan station hover prompt missing');
   const stand = positionForInteract(BRIDGE_SCAN_INTERACT_ID);
   if (!stand) fail('bridge-scan has no interact position');
   for (const s of SCAN_STATIONS) {

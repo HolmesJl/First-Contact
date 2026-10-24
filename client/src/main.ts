@@ -320,7 +320,7 @@ async function startLab() {
         return;
       }
       if (id !== null && isScanStationId(id)) {
-        hud?.setInteractPrompt('Click · Sensor scan');
+        hud?.setInteractPrompt('Sensor scan');
         lab?.setScanHover(id);
         return;
       }

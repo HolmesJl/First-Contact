@@ -177,7 +177,7 @@ export function interactPrompt(interactId: string): string | null {
   if (berth !== null) return `Upload memories · ${berthLabel(berth)}`;
   if (isCabinKeypadId(interactId)) return 'Use cabin keypad';
   if (isItemInteractId(interactId)) return itemInteractPrompt(interactId);
-  if (isScanStationId(interactId)) return 'Click · Sensor scan';
+  if (isScanStationId(interactId)) return 'Sensor scan';
   switch (interactId) {
     case 'captain-desk':
     case 'bunk-desk-pad':
