@@ -345,6 +345,10 @@ export class ShipInterior {
     this.itemStations.setOwnBerth(berth);
   }
 
+  setScanHover(interactId: string | null) {
+    this.scanStations.setHighlight(interactId);
+  }
+
   setCabinDoor(door: CabinDoorState, snap = false) {
     // `openFrac` is the server's panel position at broadcast time (0 as it starts opening, 1 as it starts closing);
     // the end state the panel should animate toward is `open`.

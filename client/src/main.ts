@@ -316,8 +316,15 @@ async function startLab() {
       }
       if (id === REPORT_IN_INTERACT_ID && scavengerAwaiting(players.get(selfId) ?? { questStep: 'wake', hasPad: false, scavenger: null })) {
         hud?.setInteractPrompt('Open your data pad for new orders');
+        lab?.setScanHover(null);
         return;
       }
+      if (id !== null && isScanStationId(id)) {
+        hud?.setInteractPrompt('Click · Sensor scan');
+        lab?.setScanHover(id);
+        return;
+      }
+      lab?.setScanHover(null);
       hud?.setInteractPrompt(prompt);
     },
     onInteract: (id) => {

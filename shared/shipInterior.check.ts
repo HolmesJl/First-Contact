@@ -12,13 +12,13 @@ import {
 } from './cabinDoor';
 import { JOG_SPEED, SPRINT_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
-import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, positionForInteract } from './opening';
+import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, interactIdForProp, interactPrompt, positionForInteract } from './opening';
 import type { Job } from './protocol';
 import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import { CLOSETS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, STOCK_PANELS, WORLD_FILES } from './items';
 import { SCAVENGER_FILE_NAME, SCAVENGER_TASKS } from './scavenger';
-import { BRIDGE_SCAN_PROP_ID, SCAN_STATIONS } from './scanning';
+import { BRIDGE_SCAN_INTERACT_ID, BRIDGE_SCAN_PROP_ID, SCAN_STATIONS } from './scanning';
 import {
   BERTHS,
   CABIN_KEYPAD,
@@ -365,6 +365,11 @@ for (const [job, berth] of homeCases) {
   if (!prop) fail(`bridge scan station missing prop ${BRIDGE_SCAN_PROP_ID}`);
   else if (prop.room !== 'bridge') fail(`bridge scan prop ${BRIDGE_SCAN_PROP_ID} is in ${prop.room}`);
   if (SCAN_STATIONS.length !== 1) fail(`expected one scan station in v1, got ${SCAN_STATIONS.length}`);
+  if (interactIdForProp(BRIDGE_SCAN_INTERACT_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('bridge-scan interact id not recognized by interactIdForProp');
+  if (interactIdForProp(BRIDGE_SCAN_PROP_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('scan-1 prop id must map to bridge-scan');
+  if (!interactPrompt(BRIDGE_SCAN_INTERACT_ID)?.includes('Sensor scan')) fail('scan station hover prompt missing');
+  const stand = positionForInteract(BRIDGE_SCAN_INTERACT_ID);
+  if (!stand) fail('bridge-scan has no interact position');
   for (const s of SCAN_STATIONS) {
     if (!isWalkable(s.stand.x, s.stand.z)) fail(`scan station ${s.interactId} stand not walkable`);
     if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`scan station ${s.interactId} stand unreachable`);

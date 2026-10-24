@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TUBE_Y } from '../../../../shared/lab';
 import type { Facing } from '../../../../shared/shipLayout';
+import { BRIDGE_SCAN_INTERACT_ID, BRIDGE_SCAN_PROP_ID } from '../../../../shared/scanning';
 import { BUNK_SLAB_Y, type Prop } from '../../../../shared/shipInterior';
 import { canvasTexture } from '../common';
 import { buildShip } from '../ship';
@@ -83,7 +84,25 @@ export function buildProp(p: Prop, ctx: PropContext) {
       b.box(p.sx * 0.96, 0.05, p.sz * 0.96, p.x, y0 + p.h * 0.72, p.z, 'dark');
       // Slanted-looking screen block on top of the front half.
       b.box(fx !== 0 ? p.sx * 0.35 : p.sx * 0.86, p.h * 0.28, fz !== 0 ? p.sz * 0.35 : p.sz * 0.86, p.x + fx * (depth(p, f) * 0.2), y0 + p.h * 0.77, p.z + fz * (depth(p, f) * 0.2), 'dark');
-      screen(ctx, p, f, y0 + p.h * 0.6, Math.min(1.5, across(p, f) * 0.8), p.h * 0.34, p.station ? 'cyan' : 'amber');
+      const scanStation = p.id === BRIDGE_SCAN_PROP_ID;
+      screen(
+        ctx,
+        { ...p, label: scanStation ? 'SENSOR SCAN' : p.label },
+        f,
+        y0 + p.h * 0.6,
+        Math.min(1.5, across(p, f) * 0.8),
+        p.h * 0.34,
+        scanStation ? 'green' : p.station ? 'cyan' : 'amber',
+      );
+      if (scanStation) {
+        const pick = new THREE.Mesh(
+          new THREE.BoxGeometry(p.sx + 0.35, p.h + 0.45, p.sz + 0.5),
+          new THREE.MeshBasicMaterial({ visible: false }),
+        );
+        pick.position.set(p.x, y0 + p.h * 0.45, p.z);
+        pick.userData.interactId = BRIDGE_SCAN_INTERACT_ID;
+        ctx.group.add(pick);
+      }
       break;
     }
     case 'machine': {

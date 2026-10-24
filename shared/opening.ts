@@ -177,7 +177,7 @@ export function interactPrompt(interactId: string): string | null {
   if (berth !== null) return `Upload memories · ${berthLabel(berth)}`;
   if (isCabinKeypadId(interactId)) return 'Use cabin keypad';
   if (isItemInteractId(interactId)) return itemInteractPrompt(interactId);
-  if (isScanStationId(interactId)) return 'Open scan console';
+  if (isScanStationId(interactId)) return 'Click · Sensor scan';
   switch (interactId) {
     case 'captain-desk':
     case 'bunk-desk-pad':
@@ -199,13 +199,14 @@ export function interactPrompt(interactId: string): string | null {
   }
 }
 
-export function interactIdForProp(propId: string): string | null {
-  if (isCabinKeypadId(propId)) return propId;
-  if (berthFromMemoryStationId(propId) !== null) return propId;
-  if (isItemInteractId(propId)) return propId;
-  const scan = SCAN_STATIONS.find((s) => s.propId === propId);
+export function interactIdForProp(id: string): string | null {
+  if (isScanStationId(id)) return id;
+  if (isCabinKeypadId(id)) return id;
+  if (berthFromMemoryStationId(id) !== null) return id;
+  if (isItemInteractId(id)) return id;
+  const scan = SCAN_STATIONS.find((s) => s.propId === id);
   if (scan) return scan.interactId;
-  return INTERACT_IDS.has(propId) ? propId : null;
+  return INTERACT_IDS.has(id) ? id : null;
 }
 
 export function positionForInteract(interactId: string): { x: number; z: number } | null {
