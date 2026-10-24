@@ -7,6 +7,7 @@ import { preloadCharacters } from './scene/character';
 import type { View } from './scene/common';
 import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, TitleScreen, WakeIntro, banner, flash, joystick, toast } from './ui';
 import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
+import { CABIN_KEYPAD_IN_INTERACT_ID } from '../../shared/cabinDoor';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
 import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
@@ -14,6 +15,8 @@ import { InventoryOverlay } from './inventory';
 import { REPORT_IN_INTERACT_ID, objectiveInteractId, questObjective } from '../../shared/opening';
 import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt, stockPanelById } from '../../shared/items';
 import { isOnBridge, scavengerAwaiting, scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
+import { isScanStationId } from '../../shared/scanning';
+import { ScanStationOverlay } from './scanStation';
 import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -69,6 +72,7 @@ let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
 let inventory: InventoryOverlay | null = null;
+let scanStation: ScanStationOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let shipMeta: ShipMeta | null = null;
@@ -296,9 +300,9 @@ async function startLab() {
     },
     onStatus: (status) => hud?.setStatus(status),
     onInteractHover: (id, prompt) => {
-      if (isCabinKeypadId(id) && shipMeta) {
+      if (id !== null && isCabinKeypadId(id) && shipMeta) {
         const me = players.get(selfId);
-        hud?.setInteractPrompt(cabinKeypadHoverPrompt(shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
+        hud?.setInteractPrompt(cabinKeypadHoverPrompt(id, shipMeta.cabinDoor.codeSet, me?.character?.job ?? null));
         return;
       }
       const berth = id === null ? null : berthFromMemoryStationId(id);
@@ -313,8 +317,15 @@ async function startLab() {
       }
       if (id === REPORT_IN_INTERACT_ID && scavengerAwaiting(players.get(selfId) ?? { questStep: 'wake', hasPad: false, scavenger: null })) {
         hud?.setInteractPrompt('Open your data pad for new orders');
+        lab?.setScanHover(null);
         return;
       }
+      if (id !== null && isScanStationId(id)) {
+        hud?.setInteractPrompt('Sensor scan');
+        lab?.setScanHover(id);
+        return;
+      }
+      lab?.setScanHover(null);
       hud?.setInteractPrompt(prompt);
     },
     onInteract: (id) => {
@@ -342,6 +353,10 @@ async function startLab() {
       if (isCabinKeypadId(id)) {
         const me = players.get(selfId);
         if (!me?.character || !shipMeta) return;
+        if (id === CABIN_KEYPAD_IN_INTERACT_ID) {
+          net?.send({ t: 'cabinKeypad', action: 'exit', x, z, keypad: id });
+          return;
+        }
         if (!shipMeta.cabinDoor.codeSet && me.character.job !== 'Captain') {
           toast('Locked. The captain has not set a code.');
           return;
@@ -366,6 +381,10 @@ async function startLab() {
         else requestScavengerIssue();
         return;
       }
+      if (isScanStationId(id)) {
+        openScanStation();
+        return;
+      }
       net?.send({ t: 'interact', id, x, z });
     },
   });
@@ -378,6 +397,8 @@ async function startLab() {
         cabinDoorFrac(f: number): void;
         interact(id: string): void;
         armor(on: boolean | string | null, playerId?: string): void;
+        openScan(): void;
+        scanStart(): void;
       };
     }).__fc = {
       lab,
@@ -389,6 +410,11 @@ async function startLab() {
       },
       // __fc.armor(true) puts the grey Lite Body Armor on yourself; pass a hex for another primary, false/null to remove.
       armor: (on, playerId = selfId) => lab?.setPlayerArmor(playerId, on ? (typeof on === 'string' ? { primary: on } : {}) : null),
+      openScan: () => openScanStation(),
+      scanStart: () => {
+        const { x, z } = lab!.localPos();
+        net?.send({ t: 'scanStart', x, z });
+      },
     };
   resize();
   hud = new Hud(shipCode, selfId);
@@ -499,6 +525,25 @@ async function logout() {
   location.replace(location.pathname);
 }
 
+function openScanStation() {
+  const me = players.get(selfId);
+  if (!me?.character || !shipMeta || !lab) return;
+  scanStation?.close();
+  lab.releaseInput();
+  scanStation = new ScanStationOverlay(me.skills.scanning, shipMeta.scanResults, {
+    onStart: () => {
+      if (!scanStation?.isOpen) return;
+      scanStation.setPendingStart(true);
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'scanStart', x, z });
+    },
+    onClose: () => {
+      scanStation = null;
+    },
+    playerPos: () => lab?.localPos() ?? null,
+  });
+}
+
 function openPad() {
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !shipMeta) return;
@@ -549,6 +594,7 @@ function handle(m: ServerMsg) {
       // Another player's claim can free or take a bunk the upload objective was pointing at.
       if (p.id !== selfId && players.get(selfId)?.questStep === 'upload-memories') syncHudSelf();
       if (p.id === selfId) {
+        scanStation?.updateSkill(p.skills.scanning);
         if (p.hasPad && !hadPad) {
           hadPad = true;
           toast('Data pad added to communicator slot.');
@@ -584,7 +630,16 @@ function handle(m: ServerMsg) {
       shipMeta = m.ship;
       lab?.setCabinDoor(m.ship.cabinDoor);
       inventory?.setStock(m.ship.stock);
+      scanStation?.setResults(m.ship.scanResults);
       wakeIntro?.enableContinue(() => beginCreator());
+      break;
+    case 'scanProgress':
+      scanStation?.beginScan(m.endsAt);
+      break;
+    case 'scanComplete':
+      if (shipMeta) shipMeta = { ...shipMeta, scanResults: m.scanResults };
+      scanStation?.showComplete(m.hit, m.find, m.skill, m.leveledUp, m.scanResults);
+      if (m.leveledUp) toast('Scanning skill increased!');
       break;
     case 'closet':
       inventory?.setCloset(m.slots);
@@ -621,6 +676,7 @@ function handle(m: ServerMsg) {
       creator?.showError(m.message);
       break;
     case 'error':
+      scanStation?.setPendingStart(false);
       if (m.fatal && net) net.onClose = null;
       if (!m.fatal) toast(m.message);
       else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);

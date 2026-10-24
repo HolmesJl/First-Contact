@@ -12,12 +12,13 @@ import {
 } from './cabinDoor';
 import { JOG_SPEED, SPRINT_SPEED } from './movement';
 import { SHIP_LAYOUT } from './shipLayout';
-import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, positionForInteract } from './opening';
+import { INTERACT_RADIUS, REPORT_IN_INTERACT_ID, interactIdForProp, interactPrompt, positionForInteract } from './opening';
 import type { Job } from './protocol';
 import { MEMORY_STATIONS, homeSpawnFor } from './bunks';
 import { QUEST_TERMINALS } from './shipInterior';
 import { CLOSETS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, STOCK_PANELS, WORLD_FILES } from './items';
 import { SCAVENGER_FILE_NAME, SCAVENGER_TASKS } from './scavenger';
+import { BRIDGE_SCAN_INTERACT_ID, BRIDGE_SCAN_PROP_ID, SCAN_STATIONS } from './scanning';
 import {
   BERTHS,
   CABIN_KEYPAD,
@@ -28,10 +29,13 @@ import {
   areaFor,
   clampMoveToShip,
   clampToShip,
+  deskPadPlacementProblem,
+  deskSurfaceY,
   isWalkable,
   portClearZone,
   spaceAt,
   thresholdRect,
+  usesDeskPadMount,
   visiblePorts,
   type Prop,
 } from './shipInterior';
@@ -101,15 +105,17 @@ const p = clampToShip(-9.4, 3.5);
 if (!isWalkable(p.x, p.z)) fail('clamp returned an unwalkable point');
 
 for (const t of QUEST_TERMINALS) {
-  if (!isWalkable(t.x, t.z)) fail(`quest terminal ${t.interactId} at (${t.x.toFixed(2)}, ${t.z.toFixed(2)}) not walkable`);
+  if (!isWalkable(t.stand.x, t.stand.z)) fail(`quest terminal ${t.interactId} stand (${t.stand.x.toFixed(2)}, ${t.stand.z.toFixed(2)}) not walkable`);
   const prop = PROPS.find((p) => p.id === t.propId);
   if (!prop) {
     fail(`quest terminal ${t.interactId} missing prop ${t.propId}`);
     continue;
   }
-  const dist = Math.hypot(t.x - prop.x, t.z - prop.z);
-  if (dist > INTERACT_RADIUS)
-    fail(`quest terminal ${t.interactId} is ${dist.toFixed(2)}m from ${t.propId} (max ${INTERACT_RADIUS}m)`);
+  const padDist = Math.hypot(t.stand.x - t.x, t.stand.z - t.z);
+  if (padDist > INTERACT_RADIUS)
+    fail(`quest terminal ${t.interactId} pad is ${padDist.toFixed(2)}m from its stand (max ${INTERACT_RADIUS}m)`);
+  const deskErr = deskPadPlacementProblem(prop, { x: t.x, y: t.y, z: t.z }, t.stand, `quest terminal ${t.interactId}`, t.face);
+  if (deskErr && usesDeskPadMount(prop)) fail(deskErr);
 }
 
 // Crew report-in terminal: on the Bridge, reachable, its stand point derived from the comms console (not the Captain's
@@ -302,7 +308,11 @@ for (const [job, berth] of homeCases) {
     if (p.propId) {
       const prop = PROPS.find((x) => x.id === p.propId);
       if (!prop) fail(`stock panel ${p.interactId} missing prop ${p.propId}`);
-      else if (inside(bounds(prop), p.x, p.z)) fail(`stock panel ${p.interactId} is inside ${prop.id}`);
+      else {
+        if (inside(bounds(prop), p.x, p.z)) fail(`stock panel ${p.interactId} is inside ${prop.id}`);
+        const deskErr = deskPadPlacementProblem(prop, p, p.stand, `stock panel ${p.interactId}`, p.face);
+        if (deskErr) fail(deskErr);
+      }
     } else {
       const room = SHIP_LAYOUT.modules.flatMap((m) => m.rooms).find((r) => r.id === roomOf(p.room));
       if (!room) fail(`wall panel ${p.interactId} names unknown room ${p.room}`);
@@ -342,7 +352,19 @@ for (const [job, berth] of homeCases) {
     }
     const b = bounds(prop);
     if (!(f.x >= b.minX && f.x <= b.maxX && f.z >= b.minZ && f.z <= b.maxZ)) fail(`file ${f.interactId} is not on top of ${prop.id}`);
-    if (Math.abs(f.y - ((prop.y ?? 0) + prop.h)) > 0.05) fail(`file ${f.interactId} floats ${(f.y - prop.h).toFixed(2)}m off ${prop.id}`);
+    const topY = deskSurfaceY(prop);
+    if (Math.abs(f.y - topY) > 0.06) fail(`file ${f.interactId} is ${(f.y - topY).toFixed(2)}m off the ${prop.id} desktop`);
+    if (usesDeskPadMount(prop) || prop.kind === 'table') {
+      const deskErr = deskPadPlacementProblem(
+        prop,
+        { x: f.x, y: f.y, z: f.z },
+        f.stand,
+        `file ${f.interactId}`,
+        f.face,
+        { requireOperatorRight: false },
+      );
+      if (deskErr) fail(deskErr);
+    }
     if (fileNames.has(f.name)) fail(`two world Files share the name “${f.name}”`);
     fileNames.add(f.name);
     if (f.text.length < 20) fail(`file ${f.interactId} has no real text`);
@@ -356,6 +378,32 @@ for (const [job, berth] of homeCases) {
   }
   if (STARTING_STOCK.fruit !== 25) fail(`eatery starts with ${STARTING_STOCK.fruit} Fruit; items.md says 25`);
   if (STARTING_STOCK['lite-body-armor'] !== 6) fail(`shelves start with ${STARTING_STOCK['lite-body-armor']} armor; the quest says 6`);
+}
+
+// Bridge scan station (shared/scanning.ts): stand point on scan-1 console, walkable and in interact range.
+{
+  const prop = PROPS.find((p) => p.id === BRIDGE_SCAN_PROP_ID);
+  if (!prop) fail(`bridge scan station missing prop ${BRIDGE_SCAN_PROP_ID}`);
+  else if (prop.room !== 'bridge') fail(`bridge scan prop ${BRIDGE_SCAN_PROP_ID} is in ${prop.room}`);
+  if (SCAN_STATIONS.length !== 1) fail(`expected one scan station in v1, got ${SCAN_STATIONS.length}`);
+  if (interactIdForProp(BRIDGE_SCAN_INTERACT_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('bridge-scan interact id not recognized by interactIdForProp');
+  if (interactIdForProp(BRIDGE_SCAN_PROP_ID) !== BRIDGE_SCAN_INTERACT_ID) fail('scan-1 prop id must map to bridge-scan');
+  if (interactPrompt(BRIDGE_SCAN_INTERACT_ID) !== 'Sensor scan') fail('scan station hover prompt missing');
+  const stand = positionForInteract(BRIDGE_SCAN_INTERACT_ID);
+  if (!stand) fail('bridge-scan has no interact position');
+  for (const s of SCAN_STATIONS) {
+    if (!isWalkable(s.stand.x, s.stand.z)) fail(`scan station ${s.interactId} stand not walkable`);
+    if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`scan station ${s.interactId} stand unreachable`);
+    const dist = Math.hypot(s.stand.x - s.x, s.stand.z - s.z);
+    if (dist > INTERACT_RADIUS) fail(`scan station ${s.interactId} is ${dist.toFixed(2)}m from its panel (max ${INTERACT_RADIUS}m)`);
+    if (spaceAt(s.stand.x, s.stand.z)?.id !== 'bridge') fail(`scan station ${s.interactId} stand is not on the bridge`);
+    const p = PROPS.find((x) => x.id === s.propId);
+    if (!p) fail(`scan station ${s.interactId} missing prop ${s.propId}`);
+    else {
+      const deskErr = deskPadPlacementProblem(p, s, s.stand, `scan station ${s.interactId}`, s.face);
+      if (deskErr) fail(deskErr);
+    }
+  }
 }
 
 console.log(`${area.shapes.length} walk shapes, ${area.obstacles.length} obstacles, ${PROPS.length} props, ${STATIONS.length} stations, ${STOCK_PANELS.length} stock panels, ${CLOSETS.length} closets, ${WORLD_FILES.length} files, ${seen.size} reachable cells`);

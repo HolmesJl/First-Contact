@@ -3,6 +3,7 @@ import { CABIN_KEYPAD_INTERACT_ID, cabinKeypadStand, isCabinKeypadId } from './c
 import { berthFromMemoryStationId, berthLabel, memoryStationFor, memoryStationId } from './bunks';
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 import { isItemInteractId, itemInteractPosition, itemInteractPrompt } from './items';
+import { SCAN_STATIONS, isScanStationId, scanStationById } from './scanning';
 
 export const TRANSIT_YEARS = 60;
 export const SHIP_DISPLAY_NAME = 'First Contact';
@@ -176,6 +177,7 @@ export function interactPrompt(interactId: string): string | null {
   if (berth !== null) return `Upload memories · ${berthLabel(berth)}`;
   if (isCabinKeypadId(interactId)) return 'Use cabin keypad';
   if (isItemInteractId(interactId)) return itemInteractPrompt(interactId);
+  if (isScanStationId(interactId)) return 'Sensor scan';
   switch (interactId) {
     case 'captain-desk':
     case 'bunk-desk-pad':
@@ -197,20 +199,25 @@ export function interactPrompt(interactId: string): string | null {
   }
 }
 
-export function interactIdForProp(propId: string): string | null {
-  if (isCabinKeypadId(propId)) return propId;
-  if (berthFromMemoryStationId(propId) !== null) return propId;
-  if (isItemInteractId(propId)) return propId;
-  return INTERACT_IDS.has(propId) ? propId : null;
+export function interactIdForProp(id: string): string | null {
+  if (isScanStationId(id)) return id;
+  if (isCabinKeypadId(id)) return id;
+  if (berthFromMemoryStationId(id) !== null) return id;
+  if (isItemInteractId(id)) return id;
+  const scan = SCAN_STATIONS.find((s) => s.propId === id);
+  if (scan) return scan.interactId;
+  return INTERACT_IDS.has(id) ? id : null;
 }
 
 export function positionForInteract(interactId: string): { x: number; z: number } | null {
   if (isCabinKeypadId(interactId)) return cabinKeypadStand(interactId);
   if (isItemInteractId(interactId)) return itemInteractPosition(interactId);
+  const scan = scanStationById(interactId);
+  if (scan) return scan.stand;
   const berth = berthFromMemoryStationId(interactId);
   if (berth !== null) return memoryStationFor(berth)?.stand ?? null;
   const t = terminalMeta(interactId);
-  if (t) return { x: t.x, z: t.z };
+  if (t) return t.stand;
   const s = stationById(interactId);
   return s ? { x: s.x, z: s.z } : null;
 }

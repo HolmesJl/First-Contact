@@ -10,7 +10,19 @@
  * player stands beside them; the Printer and Refinery panels only list materials for now. World Files are read-me pads
  * lying on props around the ship; a copy is picked up, and a player carries at most one File of a given name.
  */
-import { BERTHS, BUNK_SLAB_Y, FACE_OUT, PROPS, SPACE_NAMES, standPointOnFace, type Prop } from './shipInterior';
+import {
+  BERTHS,
+  BUNK_SLAB_Y,
+  FACE_OUT,
+  PROPS,
+  SPACE_NAMES,
+  deskFileMount,
+  deskPadMount,
+  deskSurfaceY,
+  standPointOnFace,
+  usesDeskPadMount,
+  type Prop,
+} from './shipInterior';
 import type { Facing, RoomId } from './shipLayout';
 
 // ---------------------------------------------------------------- item definitions
@@ -379,9 +391,9 @@ export const MATERIALS_PAD_INTERACT_ID = 'hold-materials-pad';
 
 const PANEL_SPECS: readonly PanelSpec[] = [
   { interactId: 'eatery-panel', kind: 'eatery', title: 'Eatery control panel', propId: 'eatery-counter', face: 'N', slide: 1.5, y: null, takes: EATERY_MENU },
-  { interactId: 'printer-panel', kind: 'printer', title: 'Printer control panel', propId: 'printer', face: 'S', slide: 0, y: 1.15, takes: [] },
-  { interactId: 'refinery-panel', kind: 'refinery', title: 'Refining control panel', propId: 'refinery', face: 'E', slide: 0, y: 1.25, takes: [] },
-  { interactId: 'hold-shelves', kind: 'shelves', title: 'Cargo Hold shelves', propId: 'hold-rack-1', face: 'N', slide: 0, y: 1.35, takes: ['lite-body-armor'] },
+  { interactId: 'printer-panel', kind: 'printer', title: 'Printer control panel', propId: 'printer', face: 'S', slide: 0, y: null, takes: [] },
+  { interactId: 'refinery-panel', kind: 'refinery', title: 'Refining control panel', propId: 'refinery', face: 'E', slide: 0, y: null, takes: [] },
+  { interactId: 'hold-shelves', kind: 'shelves', title: 'Cargo Hold shelves', propId: 'hold-rack-1', face: 'N', slide: 0, y: null, takes: ['lite-body-armor'] },
   { interactId: MATERIALS_PAD_INTERACT_ID, kind: 'materials', title: 'Materials data pad', wall: MATERIALS_PAD_WALL, face: 'S', slide: 0, y: 1.45, takes: [] },
 ];
 
@@ -423,8 +435,25 @@ function placePanel(s: PanelSpec): StockPanel {
     };
   }
   const prop = propById(s.propId!);
-  const m = mountOnFace(prop, s.face, s.slide, PANEL_STANDOFF);
-  const stand = standPointOnFace({ ...prop, face: s.face }, 0.22, s.slide);
+  const face = s.face;
+  if (usesDeskPadMount(prop)) {
+    const mount = deskPadMount({ ...prop, face }, s.slide);
+    return {
+      interactId: s.interactId,
+      kind: s.kind,
+      title: s.title,
+      propId: prop.id,
+      room: SPACE_NAMES[prop.room] ?? prop.room,
+      x: mount.x,
+      y: s.y ?? mount.y,
+      z: mount.z,
+      face: mount.face,
+      stand: mount.stand,
+      takes: s.takes,
+    };
+  }
+  const m = mountOnFace(prop, face, s.slide, PANEL_STANDOFF);
+  const stand = standPointOnFace({ ...prop, face }, 0.22, s.slide);
   return {
     interactId: s.interactId,
     kind: s.kind,
@@ -434,7 +463,7 @@ function placePanel(s: PanelSpec): StockPanel {
     x: m.x,
     y: s.y ?? (prop.y ?? 0) + prop.h + 0.3,
     z: m.z,
-    face: s.face,
+    face,
     stand: { x: stand.x, z: stand.z },
     takes: s.takes,
   };
@@ -518,7 +547,7 @@ const FILE_SPECS: readonly FileSpec[] = [
     name: 'Transit Log',
     text: 'Year 60 of transit. Hibernation cycle complete. Crew revival authorised. Seed core intact; growth modules not yet fabricated. Resume the journey once the crew has reported in.',
     propId: 'scan-2',
-    face: 'S',
+    face: 'N',
     slide: 0,
   },
   {
@@ -565,24 +594,33 @@ const FILE_SPECS: readonly FileSpec[] = [
 
 function placeFile(s: FileSpec): WorldFile {
   const prop = propById(s.propId);
-  const f = FACE_OUT[s.face];
-  // On the prop top, pulled toward the reader's side so it reads as "lying at the edge".
-  const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
-  const inset = Math.max(0.18, half - 0.22);
-  const x = prop.x + f.dx * inset + (f.dx === 0 ? s.slide : 0);
-  const z = prop.z + f.dz * inset + (f.dx !== 0 ? s.slide : 0);
-  const stand = standPointOnFace({ ...prop, face: s.face }, 0.22, s.slide);
+  const face = s.face;
+  const mount =
+    usesDeskPadMount(prop) || prop.kind === 'table' || prop.kind === 'sofa'
+      ? deskFileMount(prop, face, s.slide)
+      : (() => {
+          const f = FACE_OUT[face];
+          const half = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+          const inset = Math.max(0.18, half - 0.22);
+          const stand = standPointOnFace({ ...prop, face }, 0.22, s.slide);
+          return {
+            x: prop.x + f.dx * inset + (f.dx === 0 ? s.slide : 0),
+            z: prop.z + f.dz * inset + (f.dx !== 0 ? s.slide : 0),
+            y: deskSurfaceY(prop),
+            stand,
+          };
+        })();
   return {
     interactId: `${FILE_PREFIX}${s.slug}`,
     name: s.name,
     text: s.text,
     propId: prop.id,
     room: SPACE_NAMES[prop.room] ?? prop.room,
-    x,
-    y: (prop.y ?? 0) + prop.h + 0.015,
-    z,
-    face: s.face,
-    stand: { x: stand.x, z: stand.z },
+    x: mount.x,
+    y: mount.y,
+    z: mount.z,
+    face,
+    stand: { x: mount.stand.x, z: mount.stand.z },
   };
 }
 

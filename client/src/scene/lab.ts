@@ -332,6 +332,10 @@ export class LabScene implements View {
     this.interior.setQuestHighlight(interactId, memoryStationIds);
   }
 
+  setScanHover(interactId: string | null) {
+    this.interior.setScanHover(interactId);
+  }
+
   setBerthOwners(owners: Map<number, BerthOwner>) {
     this.interior.setBerthOwners(owners);
     this.interact.refreshHover();

@@ -145,18 +145,18 @@ const CABIN_CODE = '4321';
 const OUTSIDE_STAND = cabinKeypadInteractPosition();
 const INSIDE_STAND = cabinKeypadInInteractPosition();
 
-/** Use the inside keypad with the saved code: must open without any set prompt (an explicit set is refused). */
+/** Inside keypad opens the door with no code; set/enter from inside are refused. */
 async function openFromInside(c: Client, what: string) {
   await placeAt(c, INSIDE_STAND);
-  c.send({ t: 'interact', id: CABIN_KEYPAD_IN_INTERACT_ID, x: INSIDE_STAND.x, z: INSIDE_STAND.z });
-  await sleep(250);
-  assert(!c.inbox.some((m) => m.t === 'error'), `${what}: inside keypad interact refused`);
   c.send({ t: 'cabinKeypad', action: 'set', code: '0000', confirm: '0000', x: INSIDE_STAND.x, z: INSIDE_STAND.z, keypad: CABIN_KEYPAD_IN_INTERACT_ID });
   const reSet = await c.wait(is('cabinKeypadResult'));
-  assert(!reSet.ok && /already set/i.test(reSet.message ?? ''), `${what}: inside keypad offered to set the code again (${reSet.message})`);
+  assert(!reSet.ok && /corridor keypad/i.test(reSet.message ?? ''), `${what}: inside keypad allowed set (${reSet.message})`);
   c.send({ t: 'cabinKeypad', action: 'enter', code: CABIN_CODE, x: INSIDE_STAND.x, z: INSIDE_STAND.z, keypad: CABIN_KEYPAD_IN_INTERACT_ID });
+  const reEnter = await c.wait(is('cabinKeypadResult'));
+  assert(!reEnter.ok, `${what}: inside keypad accepted enter with code`);
+  c.send({ t: 'cabinKeypad', action: 'exit', x: INSIDE_STAND.x, z: INSIDE_STAND.z, keypad: CABIN_KEYPAD_IN_INTERACT_ID });
   const res = await c.wait(is('cabinKeypadResult'));
-  assert(res.ok, `${what}: inside keypad rejected the saved code (${res.message})`);
+  assert(res.ok, `${what}: inside exit failed (${res.message})`);
 }
 
 // ---------------------------------------------------------------- scenario

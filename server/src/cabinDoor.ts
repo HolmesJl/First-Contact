@@ -2,6 +2,7 @@ import {
   CABIN_DOOR_AFTER_PASS_MS,
   CABIN_DOOR_IDLE_CLOSE_MS,
   CABIN_DOOR_OPEN_MS,
+  CABIN_KEYPAD_IN_INTERACT_ID,
   CABIN_KEYPAD_INTERACT_ID,
   CABIN_KEYPAD_LOCKOUT_MS,
   CABIN_MAX_WRONG_ATTEMPTS,
@@ -190,6 +191,9 @@ export function applyCabinKeypadSet(
   now = Date.now(),
   keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
+  if (keypad === CABIN_KEYPAD_IN_INTERACT_ID) {
+    return { ok: false, message: 'Set the code from the corridor keypad.' };
+  }
   const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character || member.character.job !== 'Captain') {
@@ -224,6 +228,24 @@ export function applyCabinKeypadSet(
   };
 }
 
+/** Open the cabin door from the inside keypad — no code. */
+export function applyCabinKeypadExit(
+  ship: ShipRecord,
+  member: MemberRecord,
+  now = Date.now(),
+  keypad: CabinKeypadId = CABIN_KEYPAD_IN_INTERACT_ID,
+): CabinKeypadResult {
+  if (keypad !== CABIN_KEYPAD_IN_INTERACT_ID) {
+    return { ok: false, message: 'Use the corridor keypad to enter a code.' };
+  }
+  const err = checkKeypadRange(member, keypad);
+  if (err) return { ok: false, message: err };
+  if (!member.character) return { ok: false, message: 'No character.' };
+  normalizeCabinDoor(ship);
+  openCabinDoor(ship, now);
+  return { ok: true, notice: 'Door opening.', flash: 'green', dismissMs: 400 };
+}
+
 export function applyCabinKeypadEnter(
   ship: ShipRecord,
   member: MemberRecord,
@@ -231,6 +253,9 @@ export function applyCabinKeypadEnter(
   now = Date.now(),
   keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
+  if (keypad === CABIN_KEYPAD_IN_INTERACT_ID) {
+    return { ok: false, message: 'Use the inside keypad to open the door.' };
+  }
   const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character) return { ok: false, message: 'No character.' };
@@ -280,6 +305,9 @@ export function applyCabinKeypadChange(
   now = Date.now(),
   keypad: CabinKeypadId = CABIN_KEYPAD_INTERACT_ID,
 ): CabinKeypadResult {
+  if (keypad === CABIN_KEYPAD_IN_INTERACT_ID) {
+    return { ok: false, message: 'Change the code from the corridor keypad.' };
+  }
   const err = checkKeypadRange(member, keypad);
   if (err) return { ok: false, message: err };
   if (!member.character || member.character.job !== 'Captain') {

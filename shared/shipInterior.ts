@@ -280,8 +280,8 @@ cyl('cabin', 'cabin-rug', 'rug', -51.2, 18.3, 1.5, 0.02, { solid: false });
 // Bridge.
 box('bridge', 'bridge-comms', 'console', -34.2, 28.6, 1.4, 1.2, 1.1, { face: 'W', label: 'COMMS', station: 'comms' });
 cyl('bridge', 'bridge-chair', 'chair', -38.2, 30.4, 0.4, 1.2, { face: 'S', label: "CAPTAIN'S CHAIR", station: 'captain-chair', job: 'captain' });
-box('bridge', 'scan-1', 'console', -42.2, 33.2, 1.8, 1.2, 1.1, { face: 'S', label: 'SCANNING 1', station: 'scanner' });
-box('bridge', 'scan-2', 'console', -34.2, 33.2, 1.8, 1.2, 1.1, { face: 'S', label: 'SCANNING 2', station: 'scanner' });
+box('bridge', 'scan-1', 'console', -42.2, 33.2, 1.8, 1.2, 1.1, { face: 'N', label: 'SCANNING 1', station: 'scanner' });
+box('bridge', 'scan-2', 'console', -34.2, 33.2, 1.8, 1.2, 1.1, { face: 'N', label: 'SCANNING 2', station: 'scanner' });
 box('bridge', 'star-map', 'console', -38.2, 34.4, 2.6, 1.2, 1.0, { face: 'N', label: 'STAR MAP', station: 'star-map', job: 'captain' });
 
 // Operations.
@@ -432,6 +432,120 @@ export const FACE_OUT: Record<Facing, { dx: number; dz: number }> = {
   W: { dx: -1, dz: 0 },
 };
 
+/** Prop kinds that use the desk/console pad mount rule (glowing terminal on the operator's right). */
+export const DESK_PAD_PROP_KINDS: ReadonlySet<PropKind> = new Set([
+  'console',
+  'desk',
+  'machine',
+  'bench',
+  'rack',
+  'counter',
+  'table',
+]);
+
+export function usesDeskPadMount(prop: Pick<Prop, 'kind'>): boolean {
+  return DESK_PAD_PROP_KINDS.has(prop.kind);
+}
+
+/** Unit vector along the face width (for `slideAlongFace` on desk mounts). */
+export function faceTangent(face: Facing): { dx: number; dz: number } {
+  return Math.abs(FACE_OUT[face].dx) > 0 ? { dx: 0, dz: 1 } : { dx: 1, dz: 0 };
+}
+
+/** Operator's right when standing in front of a prop and facing its `face` screen. */
+export function operatorRight(face: Facing): { dx: number; dz: number } {
+  const f = FACE_OUT[face];
+  return { dx: -f.dz, dz: f.dx };
+}
+
+const DESK_PAD_RIGHT_OFFSET = 0.36;
+const DESK_PAD_FACE_STANDOFF = 0.04;
+const DESK_PAD_Y_FRAC = 0.88;
+/** How far in from the outer edge of the desktop a world File sits (still on the operator-facing rim). */
+const DESK_FILE_EDGE_INSET = 0.14;
+
+/** Y of the visible desktop / console top for pads, files, and layout checks. */
+export function deskSurfaceY(prop: Prop): number {
+  const y0 = prop.y ?? 0;
+  if (prop.kind === 'console') return y0 + prop.h * DESK_PAD_Y_FRAC;
+  if (prop.kind === 'desk' || prop.kind === 'counter') return y0 + prop.h;
+  if (prop.kind === 'bench' || prop.kind === 'table') return y0 + prop.h * 0.96;
+  return y0 + prop.h + 0.015;
+}
+
+export interface DeskPadMount {
+  x: number;
+  y: number;
+  z: number;
+  face: Facing;
+  stand: { x: number; z: number };
+}
+
+/**
+ * Desk/console terminal mount (whole ship): the player stands centred in front of the prop (`standPointOnFace`). The
+ * glowing data pad sits on top of the raised console block, flush with the operator-facing side, offset to the
+ * operator's RIGHT (their right hand when facing the desk). Use `slideAlongFace` to shift pad and stand along the
+ * counter width on long surfaces.
+ */
+export function deskPadMount(prop: Prop, slideAlongFace = 0, standOff = 0.22, yOverride?: number): DeskPadMount {
+  const face = prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const tan = faceTangent(face);
+  const right = operatorRight(face);
+  const halfDepth = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  const baseX = prop.x + f.dx * (halfDepth + DESK_PAD_FACE_STANDOFF);
+  const baseZ = prop.z + f.dz * (halfDepth + DESK_PAD_FACE_STANDOFF);
+  const x = baseX + tan.dx * slideAlongFace + right.dx * DESK_PAD_RIGHT_OFFSET;
+  const z = baseZ + tan.dz * slideAlongFace + right.dz * DESK_PAD_RIGHT_OFFSET;
+  const y = yOverride ?? deskSurfaceY(prop);
+  const stand = standPointOnFace(prop, standOff, slideAlongFace);
+  return { x, y, z, face, stand: { x: stand.x, z: stand.z } };
+}
+
+/** World File lying on the operator-facing rim of a desk/console top (not inside the mesh). */
+export function deskFileMount(prop: Prop, face: Facing, slideAlongFace = 0): { x: number; y: number; z: number; stand: { x: number; z: number } } {
+  const f = FACE_OUT[face];
+  const tan = faceTangent(face);
+  const halfDepth = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  const along = halfDepth - DESK_FILE_EDGE_INSET;
+  const x = prop.x + f.dx * along + tan.dx * slideAlongFace;
+  const z = prop.z + f.dz * along + tan.dz * slideAlongFace;
+  const stand = standPointOnFace({ ...prop, face }, 0.22, slideAlongFace);
+  return { x, y: deskSurfaceY(prop), z, stand: { x: stand.x, z: stand.z } };
+}
+
+/** Layout check helper: pad on desk top, operator's right, stand in front; returns an error message or null. */
+export function deskPadPlacementProblem(
+  prop: Prop,
+  pad: { x: number; y: number; z: number },
+  stand: { x: number; z: number },
+  label: string,
+  faceOverride?: Facing,
+  opts?: { requireOperatorRight?: boolean },
+): string | null {
+  if (!usesDeskPadMount(prop)) return null;
+  const y0 = prop.y ?? 0;
+  const top = y0 + prop.h;
+  if (pad.y < y0 + prop.h * 0.55 || pad.y > top + 0.08) return `${label}: pad height ${pad.y.toFixed(2)} off console top`;
+  const minX = prop.x - prop.sx / 2 - 0.08;
+  const maxX = prop.x + prop.sx / 2 + 0.08;
+  const minZ = prop.z - prop.sz / 2 - 0.08;
+  const maxZ = prop.z + prop.sz / 2 + 0.08;
+  if (pad.x < minX || pad.x > maxX || pad.z < minZ || pad.z > maxZ) return `${label}: pad outside ${prop.id} footprint`;
+  const face = faceOverride ?? prop.face ?? 'S';
+  const f = FACE_OUT[face];
+  const r = operatorRight(face);
+  const rightDot = (pad.x - prop.x) * r.dx + (pad.z - prop.z) * r.dz;
+  if ((opts?.requireOperatorRight ?? true) && rightDot < 0.1) return `${label}: pad not on operator's right of ${prop.id}`;
+  const faceDot = (pad.x - prop.x) * f.dx + (pad.z - prop.z) * f.dz;
+  const halfDepth = Math.abs(f.dx) > 0 ? prop.sx / 2 : prop.sz / 2;
+  if (faceDot < halfDepth * 0.25) return `${label}: pad not on the operator-facing side of ${prop.id}`;
+  const standFace = (stand.x - prop.x) * f.dx + (stand.z - prop.z) * f.dz;
+  if (standFace < halfDepth + 0.08) return `${label}: stand not in front of ${prop.id}`;
+  if (Math.hypot(pad.x - stand.x, pad.z - stand.z) < 0.28) return `${label}: pad overlaps stand point`;
+  return null;
+}
+
 /**
  * Stand point just outside a prop's `face` side, nudged outward until walkable. `slide` offsets the point along the
  * face (positive toward +x or +z), so several interact points can share one prop without sharing a spot.
@@ -451,17 +565,18 @@ export function standPointOnFace(prop: Prop, standOff = 0.22, slide = 0): { x: n
   throw new Error(`${prop.id}: no walkable stand point on ${face} face`);
 }
 
-/** Quest-terminal click / proximity: on the prop's `face` side, nudged outward until walkable. */
+/** Quest-terminal pad mount and stand for a prop id. */
 export function questTerminalPosition(propId: string, standOff = 0.22) {
   const prop = PROPS.find((p) => p.id === propId);
   if (!prop) throw new Error(`unknown quest prop: ${propId}`);
   const y0 = prop.y ?? 0;
   if (prop.kind === 'pad') {
     if (!isWalkable(prop.x, prop.z)) throw new Error(`quest pad ${propId} not on walkable floor`);
-    return { x: prop.x, z: prop.z, y: y0 + 0.92, prop };
+    const face = prop.face ?? 'S';
+    return { x: prop.x, z: prop.z, y: y0 + 0.92, face, stand: { x: prop.x, z: prop.z }, prop };
   }
-  const { x, z } = standPointOnFace(prop, standOff);
-  return { x, z, y: y0 + prop.h + 0.04, prop };
+  const mount = deskPadMount(prop, 0, standOff);
+  return { x: mount.x, z: mount.z, y: mount.y, face: mount.face, stand: mount.stand, prop };
 }
 
 const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], string> = {
@@ -476,7 +591,7 @@ const QUEST_TERMINAL_LABELS: Record<(typeof QUEST_TERMINAL_PROP_IDS)[number], st
 };
 
 export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
-  const { x, z, y, prop } = questTerminalPosition(propId);
+  const { x, z, y, face, stand, prop } = questTerminalPosition(propId);
   return {
     interactId: propId,
     propId,
@@ -485,6 +600,8 @@ export const QUEST_TERMINALS = QUEST_TERMINAL_PROP_IDS.map((propId) => {
     x,
     z,
     y,
+    face,
+    stand,
   };
 });
 
