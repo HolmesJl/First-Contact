@@ -571,6 +571,42 @@ export function standPointOnFace(prop: Prop, standOff = 0.22, slide = 0): { x: n
   throw new Error(`${prop.id}: no walkable stand point on ${face} face`);
 }
 
+/** Pillar count and layout on the Science Lab teleporter pad (`client/src/scene/interior/props.ts`). */
+export const TELEPORTER_PAD_PILLAR_COUNT = 3;
+/** Northeast pillar — visible from the south-face stand without fighting the arch ring. */
+export const LAB_TRANSPORTER_PILLAR_INDEX = 0;
+
+export function teleporterPadPillarCenter(prop: Prop, pillarIndex: number): { x: number; z: number; y0: number } {
+  const r = prop.sx / 2;
+  const y0 = prop.y ?? 0;
+  const a = (pillarIndex / TELEPORTER_PAD_PILLAR_COUNT) * Math.PI * 2 + 0.5;
+  return {
+    x: prop.x + Math.cos(a) * (r + 0.2),
+    z: prop.z + Math.sin(a) * (r + 0.2),
+    y0,
+  };
+}
+
+/** Column-mounted lab transporter datapad, flush on a pillar and facing the walkable stand. */
+export function labTransporterPillarMount(prop: Prop, pillarIndex = LAB_TRANSPORTER_PILLAR_INDEX, standOff = 0.22) {
+  const stand = standPointOnFace(prop, standOff, 0);
+  const { x: px, z: pz, y0 } = teleporterPadPillarCenter(prop, pillarIndex);
+  const dx = stand.x - px;
+  const dz = stand.z - pz;
+  const len = Math.hypot(dx, dz) || 1;
+  const ux = dx / len;
+  const uz = dz / len;
+  const inset = 0.1;
+  return {
+    x: px + ux * inset,
+    z: pz + uz * inset,
+    y: y0 + 1.45,
+    face: stand.face,
+    stand: { x: stand.x, z: stand.z },
+    yaw: Math.atan2(ux, uz),
+  };
+}
+
 /**
  * Chest-height transporter console on the rim of a floor pad, facing the walkable stand (amber terminal style).
  */

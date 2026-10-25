@@ -1,5 +1,5 @@
 import { RAW_MATERIALS, SHIP_MATERIALS, materialName } from './items';
-import { PROPS, SPACE_NAMES, floorTransporterTerminalMount, questTerminalPosition } from './shipInterior';
+import { PROPS, SPACE_NAMES, floorTransporterTerminalMount, labTransporterPillarMount, questTerminalPosition } from './shipInterior';
 import type { Facing } from './shipLayout';
 import type { Job } from './protocol';
 import { SURFACE_ANOMALY_LABEL, scanContactAwayMissionStub, type ScanLootLine, type ScanOutcomeKind, type ScanResultEntry } from './scanning';
@@ -37,6 +37,8 @@ export interface TransporterStation {
   z: number;
   face: Facing;
   stand: { x: number; z: number };
+  /** World Y rotation when the console does not use {@link face} alone (pillar-mounted lab pad). */
+  yaw?: number;
   /** Raw from atmosphere finds, or ship materials from debris. */
   lootKind: 'raw' | 'ship';
   destination: 'refinery' | 'cargoHold';
@@ -45,6 +47,22 @@ export interface TransporterStation {
 function placePad(propId: string, interactId: TransporterPadId, lootKind: 'raw' | 'ship', destination: 'refinery' | 'cargoHold'): TransporterStation {
   const prop = PROPS.find((p) => p.id === propId);
   if (!prop) throw new Error(`transporter: missing prop ${propId}`);
+  if (propId === LAB_TRANSPORTER_PROP_ID) {
+    const m = labTransporterPillarMount(prop);
+    return {
+      interactId,
+      propId,
+      room: SPACE_NAMES[prop.room] ?? prop.room,
+      x: m.x,
+      y: m.y,
+      z: m.z,
+      face: m.face,
+      stand: m.stand,
+      yaw: m.yaw,
+      lootKind,
+      destination,
+    };
+  }
   const { x, z, y, face, stand } =
     prop.kind === 'pad' ? floorTransporterTerminalMount(prop) : questTerminalPosition(propId);
   return {
