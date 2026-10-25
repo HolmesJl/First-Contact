@@ -16,6 +16,7 @@ import {
   refineryHasRoom,
   transporterStationById,
   transporterSucceeded,
+  TRANSPORTER_SKILL_MISS_MESSAGE,
   type TransporterPadId,
   type TransporterSkill,
   LAB_TRANSPORTER_INTERACT_ID,
@@ -57,7 +58,7 @@ export function isTransportInProgress(shipCode: string, memberId: string): boole
 
 export type TransportStartResult =
   | { ok: true; endsAt: number }
-  | { ok: false; message: string; denied?: boolean; toast?: boolean };
+  | { ok: false; message: string; denied?: boolean };
 
 export function applyTransportStart(
   ship: ShipRecord,
@@ -86,7 +87,7 @@ export function applyTransportStart(
   const skillBefore = member.skills!.transporter!;
   const roll = transportRoll();
   if (!transporterSucceeded(skillBefore.level, roll)) {
-    return { ok: false, message: 'Transporter missed the lock. Try again.', toast: true };
+    return { ok: false, message: TRANSPORTER_SKILL_MISS_MESSAGE };
   }
 
   ship.scanResults = normalizeScanResults(ship.scanResults);

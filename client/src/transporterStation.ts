@@ -114,6 +114,16 @@ export class TransporterStationOverlay {
     this.paintStatus();
   }
 
+  /** Skill miss or other start failure: unlock Start and keep the message in the dialog. */
+  failStart(message: string) {
+    this.pendingStart = false;
+    this.beaming = false;
+    cancelAnimationFrame(this.raf);
+    this.statusMessage = message;
+    this.syncStartButton();
+    this.paintStatus();
+  }
+
   beginBeam(endsAt: number) {
     this.pendingStart = false;
     this.beaming = true;
@@ -148,6 +158,8 @@ export class TransporterStationOverlay {
 
   private tryStart() {
     if (!this.canStart() || !this.scanId || !this.materialId) return;
+    this.statusMessage = null;
+    this.paintStatus();
     this.handlers.onStart({ scanId: this.scanId, materialId: this.materialId, qty: this.qty });
   }
 
@@ -203,7 +215,9 @@ export class TransporterStationOverlay {
   private paintStatus() {
     const el = this.el.querySelector('.transport-status');
     if (!el) return;
-    el.innerHTML = this.statusMessage ? `<div class="scan-toast miss">${esc(this.statusMessage)}</div>` : '';
+    el.innerHTML = this.statusMessage
+      ? `<div class="transport-feedback miss" role="status">${esc(this.statusMessage)}</div>`
+      : '';
   }
 
   private paintBody() {

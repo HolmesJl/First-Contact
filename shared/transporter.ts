@@ -189,6 +189,8 @@ export function canStartLabTransporter(job: Job, _isClone: boolean): boolean {
 }
 
 export const TRANSPORTER_SKILL_DENIED = 'You do not have the skills to use this transporter.';
+/** Player-facing copy when the pre-beam Transporter skill roll fails (lab and cargo). */
+export const TRANSPORTER_SKILL_MISS_MESSAGE = 'Beam failed — skill check missed. Try again.';
 export const REFINERY_FULL_MESSAGE = 'No room in the refinery';
 export const CARGO_HOLD_FULL_MESSAGE = 'No room in the cargo hold';
 

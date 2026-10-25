@@ -17,6 +17,7 @@ import {
   REFINERY_FULL_MESSAGE,
   REFINERY_START_PER_RAW,
   TRANSPORTER_SKILL_DENIED,
+  TRANSPORTER_SKILL_MISS_MESSAGE,
   TRANSPORTER_STATIONS,
   stockTotal,
 } from '../shared/transporter';
@@ -140,7 +141,7 @@ async function main() {
     SCAN_FORCE_ROLL: '0',
     SCAN_FORCE_OUTCOME: 'atmosphere',
     SCAN_FORCE_ANOMALY_ROLL: '0.99',
-    TRANSPORT_FORCE_ROLL: '0',
+    TRANSPORT_FORCE_ROLL: '0.99',
   });
 
   const bot = new Client(ws1);
@@ -199,11 +200,49 @@ async function main() {
     x: LAB_STAND.x,
     z: LAB_STAND.z,
   });
-  await eng.wait(is('transportProgress'));
-  const beamed = await eng.wait(is('transportComplete'), 15000);
+  const skillMiss = await eng.wait(is('error'));
+  assert(skillMiss.message === TRANSPORTER_SKILL_MISS_MESSAGE, 'skill miss copy');
+  eng.send({
+    t: 'transportStart',
+    padId: LAB_TRANSPORTER_INTERACT_ID,
+    scanId: scanned.find!.id,
+    materialId: rawLine.materialId,
+    qty: 1,
+    x: LAB_STAND.x,
+    z: LAB_STAND.z,
+  });
+  const skillMiss2 = await eng.wait(is('error'));
+  assert(skillMiss2.message === TRANSPORTER_SKILL_MISS_MESSAGE, 'second start after miss not stuck');
+  eng.close();
+  await stopServer();
+
+  const ws1b = await startServer({
+    SCAN_FORCE_ROLL: '0',
+    SCAN_FORCE_OUTCOME: 'atmosphere',
+    SCAN_FORCE_ANOMALY_ROLL: '0.99',
+    TRANSPORT_FORCE_ROLL: '0',
+  });
+  const engBeam = new Client(ws1b);
+  await engBeam.open();
+  engBeam.send({ t: 'join', clientId: hostId, code: shipCode });
+  await engBeam.wait(is('characters'));
+  engBeam.send({ t: 'pickCharacter', characterId: engineerId });
+  await engBeam.wait(is('welcome'));
+
+  engBeam.send({
+    t: 'transportStart',
+    padId: LAB_TRANSPORTER_INTERACT_ID,
+    scanId: scanned.find!.id,
+    materialId: rawLine.materialId,
+    qty: 1,
+    x: LAB_STAND.x,
+    z: LAB_STAND.z,
+  });
+  await engBeam.wait(is('transportProgress'));
+  const beamed = await engBeam.wait(is('transportComplete'), 15000);
   assert(beamed.ok, 'engineer beam ok');
   assert(beamed.refineryStock[rawLine.materialId] === REFINERY_START_PER_RAW + 1, 'refinery gained one unit');
-  eng.close();
+  engBeam.close();
   await stopServer();
 
   const ws2 = await startServer({

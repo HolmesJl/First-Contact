@@ -17,11 +17,13 @@
     "smoke:transport": "tsx tools/transport-smoke.ts",
     "smoke:datapad": "tsx tools/datapad-smoke.ts",
     "smoke:transporter-pick": "tsx tools/transporter-pick-smoke.ts",
+    "smoke:transporter-dialog": "tsx tools/transporter-dialog-smoke.ts",
     "smoke:items": "tsx tools/items-smoke.ts",
     "smoke:steer": "node tools/steer-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
+    "linkedom": "^0.18.9",
     "playwright": "^1.64.1"
   }
 }

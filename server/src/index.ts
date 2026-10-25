@@ -442,11 +442,7 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         const res = applyTransportStart(ship, me, msg.padId as TransporterPadId, msg.scanId, msg.materialId, msg.qty, msg.x, msg.z);
-        if (!res.ok) {
-          if (res.toast) send(ws, { t: 'notice', message: res.message });
-          else return send(ws, { t: 'error', message: res.message });
-          break;
-        }
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
         send(ws, { t: 'transportProgress', endsAt: res.endsAt });
         break;
       }

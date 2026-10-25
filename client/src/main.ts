@@ -767,13 +767,14 @@ function handle(m: ServerMsg) {
       break;
     case 'error':
       scanStation?.setPendingStart(false);
-      transporterStation?.setPendingStart(false);
       if (m.fatal && net) net.onClose = null;
       if (!m.fatal) {
-        toast(m.message);
-        transporterStation?.showMessage(m.message);
-      }
-      else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);
+        if (transporterStation?.isOpen) transporterStation.failStart(m.message);
+        else {
+          transporterStation?.setPendingStart(false);
+          toast(m.message);
+        }
+      } else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);
       break;
     case 'welcome':
     case 'characters':

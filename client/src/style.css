@@ -1778,6 +1778,20 @@ kbd {
   color: #ffc9be;
 }
 
+.transport-status .transport-feedback {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.transport-status .transport-feedback.miss {
+  background: rgba(255, 120, 100, 0.12);
+  border: 1px solid rgba(255, 120, 100, 0.25);
+  color: #ffc9be;
+}
+
 .scan-toast.hit {
   background: rgba(124, 240, 196, 0.1);
   border: 1px solid rgba(124, 240, 196, 0.28);
