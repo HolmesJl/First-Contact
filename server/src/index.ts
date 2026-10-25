@@ -264,7 +264,7 @@ wss.on('connection', (ws) => {
           store.save();
           enter(res.member);
           const c = res.member.character!;
-          console.log(`[ship ${ship.code}] resumed ${c.job} ${c.firstName} ${c.lastName} in ${c.job === 'Captain' ? 'the cabin' : 'the bunk room'}`);
+          console.log(`[ship ${ship.code}] resumed ${c.job} ${c.firstName} ${c.lastName} in the Commons`);
           break;
         }
         case 'newCharacter': {

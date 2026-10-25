@@ -203,7 +203,7 @@ async function main() {
   assert(up.berth === 2 && up.claimed, 'engineer claimed Bunk 2');
   const engBefore = (await crew.wait((m): m is Extract<ServerMsg, { t: 'playerUpdated' }> => m.t === 'playerUpdated' && m.player.id === eng.you && m.player.berth === 2)).player;
 
-  // Walk the captain off the spawn so "spawn in cabin" is a real reset later.
+  // Walk the captain off the Commons spawn so a later board is a real position reset.
   for (let i = 0; i < 6; i++) {
     host.send({ t: 'move', x: cap.player.x, z: cap.player.z + 0.2 * (i + 1), rot: 1, moving: true });
     await sleep(70);
@@ -271,7 +271,7 @@ async function main() {
     other.close();
   }
 
-  // -- 5b. Continue → Board: join the ship from the profile entry and pick; spawned in the cabin, quest step intact.
+  // -- 5b. Continue → Board: join the ship from the profile entry and pick; spawned in the Commons, quest step intact.
   const host2 = await connect({ t: 'join', clientId: HOST, code });
   assert(host2.chars.characters.length === 1 && host2.chars.characters[0].id === cap.you, 'pick list survives restart');
   host2.c.send({ t: 'pickCharacter', characterId: cap.you });
@@ -279,8 +279,8 @@ async function main() {
   assert(w2.you === cap.you, 'picked character keeps its id');
   const me2 = w2.players.find((p) => p.id === cap.you)!;
   assert(me2.character?.job === 'Captain', 'captain character restored');
-  assert(near(me2, homeSpawnFor('Captain', null)), `captain spawns at the cabin spot (${me2.x}, ${me2.z})`);
-  assert(spaceAt(me2.x, me2.z)?.id === 'cabin', 'captain is inside the cabin');
+  assert(near(me2, homeSpawnFor('Captain', null)), `captain spawns at the Commons board spot (${me2.x}, ${me2.z})`);
+  assert(spaceAt(me2.x, me2.z)?.id === 'commons', 'captain is in the Commons');
   assert(me2.questStep === 'pick-pad' && !me2.hasPad, 'captain quest state resumed, no wake replay');
   assert(me2.isHost, 'isHost survives restart');
   const engState = w2.players.find((p) => p.id === eng.you)!;
@@ -290,21 +290,20 @@ async function main() {
   await openFromInside(host2.c, 'after restart');
   host2.c.inbox.length = 0;
 
-  // -- 6. Engineer picks: spawns at their own bunk, quest step and berth intact.
+  // -- 6. Engineer picks: spawns in the Commons, quest step and berth intact.
   const crew2 = await connect({ t: 'join', clientId: CREW, code });
   assert(crew2.chars.characters.length === 1 && crew2.chars.characters[0].berth === 2, 'engineer pick list shows Bunk 2');
   crew2.c.send({ t: 'pickCharacter', characterId: eng.you });
   const w3 = await crew2.c.wait(is('welcome'));
   const me3 = w3.players.find((p) => p.id === eng.you)!;
-  const bunk2 = BERTHS.find((b) => b.index === 2)!;
-  assert(near(me3, bunk2) && near(me3, homeSpawnFor('Engineer', 2)), `engineer spawns at Bunk 2 (${me3.x}, ${me3.z})`);
-  assert(spaceAt(me3.x, me3.z)?.id === 'bunks', 'engineer is in the bunk room');
+  assert(near(me3, homeSpawnFor('Engineer', 2)), `engineer spawns at the Commons board spot (${me3.x}, ${me3.z})`);
+  assert(spaceAt(me3.x, me3.z)?.id === 'commons', 'engineer is in the Commons');
   assert(me3.questStep === engBefore.questStep && me3.berth === 2 && me3.lastUploadAt === engBefore.lastUploadAt, 'engineer state resumed');
   // The captain saw the engineer come back online.
   await host2.c.wait((m) => m.t === 'playerUpdated' && m.player.id === eng.you && m.player.connected);
 
   // -- 6b. Log out: the server acks after writing the save, the profile shows the character offline with a fresh
-  //        lastPlayedAt, and boarding again works (back in the cabin).
+  //        lastPlayedAt, and boarding again works (back in the Commons).
   {
     await sleep(1100);
     const before = fs.statSync(DATA_FILE).mtimeMs;
@@ -326,7 +325,7 @@ async function main() {
     again.c.send({ t: 'pickCharacter', characterId: cap.you });
     const w = await again.c.wait(is('welcome'));
     const me = w.players.find((pl) => pl.id === cap.you)!;
-    assert(spaceAt(me.x, me.z)?.id === 'cabin' && me.questStep === 'pick-pad', 'boarding again after logout lands in the cabin');
+    assert(spaceAt(me.x, me.z)?.id === 'commons' && me.questStep === 'pick-pad', 'boarding again after logout lands in the Commons');
     assert(w.ship.cabinDoor.codeSet, 'cabin code set after logout and board');
     await openFromInside(again.c, 'after logout');
     host2.c = again.c;

@@ -213,7 +213,7 @@ export type ClientMsg =
   | { t: 'host'; clientId: string }
   /** `legacyPlayerId` is the per-tab id older clients used; a character it owns is adopted by `clientId`. */
   | { t: 'join'; clientId: string; code: string; legacyPlayerId?: string }
-  /** Resume a saved character; it spawns in its cabin or bunk room. */
+  /** Resume a saved character; it spawns in the Commons. */
   | { t: 'pickCharacter'; characterId: string }
   /** Start the creation flow for a fresh character. */
   | { t: 'newCharacter' }

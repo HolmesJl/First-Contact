@@ -1,7 +1,7 @@
 /**
  * Saved characters. A character is a ship member with a `character`; it belongs to the browser (`ownerId`, the
- * client's localStorage id) that created it and is listed back to that browser only. Picking one spawns it in its
- * quarters. Saved characters do not hold a crew slot: the cap and the one-Captain rule apply to who is aboard now.
+ * client's localStorage id) that created it and is listed back to that browser only. Picking one spawns them in the
+ * Commons. Saved characters do not hold a crew slot: the cap and the one-Captain rule apply to who is aboard now.
  */
 import { homeSpawnFor } from '../../shared/bunks';
 import { MAX_CREW, boardCheck, shipFullMessage, type Job, type ProfileCharacter, type SavedCharacter } from '../../shared/protocol';
@@ -104,7 +104,7 @@ export function newMember(ship: ShipRecord, clientId: string, presence: Presence
 export type PickResult = { ok: true; member: MemberRecord } | { ok: false; message: string };
 
 /**
- * Resume a saved character: it wakes in its cabin or bunk room, wherever it was when its owner left. Refused while
+ * Resume a saved character: it appears in the Commons. Refused while
  * the ship is full or, for a Captain, while another Captain is aboard (taking over your own online character is fine).
  */
 export function pickCharacter(ship: ShipRecord, clientId: string, characterId: string, presence: Presence, now = Date.now()): PickResult {

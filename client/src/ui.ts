@@ -74,7 +74,7 @@ export class TitleScreen {
         ${invite ? `<div class="invite-banner">You've been invited aboard ship <b>${esc(invite)}</b></div>` : ''}
         <section class="continue" hidden>
           <h2>Continue</h2>
-          <p class="muted continue-note">Your saved characters. Boarding wakes them in their quarters.</p>
+          <p class="muted continue-note">Your saved characters. Boarding drops you in the Commons.</p>
           <ul class="pick-list"></ul>
         </section>
         <div class="divider continue-divider" hidden><span>or</span></div>
@@ -285,7 +285,7 @@ export class CharacterPickScreen {
       <div class="pick-card panel">
         <div class="kicker">Ship <b>${esc(code)}</b> · <span class="pick-count"></span></div>
         <h2>Who is boarding?</h2>
-        <p class="muted">Your saved crew on this ship. A returning character wakes in their quarters: the Captain in the cabin, everyone else in the bunk room. Up to ${MAX_CREW} players can be aboard at once, with one Captain.</p>
+        <p class="muted">Your saved crew on this ship. Boarding or Continue drops you in the Commons. Up to ${MAX_CREW} players can be aboard at once, with one Captain.</p>
         <ul class="pick-list"></ul>
         <button class="btn big pick-new">New character</button>
         <div class="error" role="alert"></div>

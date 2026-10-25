@@ -282,7 +282,7 @@ if (JSON.stringify(cabinDoorObstacle(0)) !== JSON.stringify(closedObs)) fail('re
 const reclosed = clampMoveToShip(corridorSide.x, corridorSide.z, cabinSide.x, cabinSide.z, 0, cabinDoorExtraObstacles(0));
 if (reclosed.x - door.x < 0.3) fail('re-closed cabin door does not block the doorway');
 
-// Login spawns for saved characters: the Captain in the cabin (door closed), crew at each bunk or the bunk-room spot.
+// Board / Continue spawns: everyone in the Commons regardless of job or claimed berth.
 const homeCases: [Job, number | null][] = [
   ['Captain', null],
   ['Captain', 0],
@@ -293,8 +293,7 @@ const homeCases: [Job, number | null][] = [
 for (const [job, berth] of homeCases) {
   const s = homeSpawnFor(job, berth);
   const room = spaceAt(s.x, s.z)?.id;
-  const want = job === 'Captain' ? 'cabin' : 'bunks';
-  if (room !== want) fail(`home spawn for ${job} berth ${berth} is in ${room}, not ${want}`);
+  if (room !== 'commons') fail(`home spawn for ${job} berth ${berth} is in ${room}, not commons`);
   if (!isWalkable(s.x, s.z, 0, cabinDoorExtraObstacles(0))) fail(`home spawn for ${job} berth ${berth} is not walkable`);
   if (!reachable(s.x, s.z, 0.3)) fail(`home spawn for ${job} berth ${berth} is cut off from the ship`);
 }
