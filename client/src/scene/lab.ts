@@ -5,6 +5,7 @@ import { Controls, MIN_PITCH } from '../input/controls';
 import { InteractSystem } from '../interact';
 import { animateRig, buildRig, disposeRig, floatRig, setBodyArmor, type Rig } from './character';
 import type { ArmorOptions } from './bodyArmor';
+import { clampCameraAlongRay } from './cameraCollision';
 import { ShipInterior } from './shipInterior';
 import { ITEMS } from '../../../shared/items';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
@@ -89,6 +90,7 @@ export class LabScene implements View {
   private interact: InteractSystem;
   private camPos = new THREE.Vector3(0, 3, 6);
   private camLook = new THREE.Vector3(0, 1, 0);
+  private camRay = new THREE.Raycaster();
   /** Seconds left of the soft camera blend after entering walk mode; afterwards the camera follows rigidly. */
   private camSettle = 0;
   private focus = new THREE.Vector3();
@@ -511,6 +513,8 @@ export class LabScene implements View {
         look.y += MIN_CAM_Y - pos.y;
         pos.y = MIN_CAM_Y;
       }
+      const hull = this.interior.cameraCollisionMeshes();
+      if (hull.length) pos = clampCameraAlongRay(look, pos, hull, this.camRay);
     }
     if (this.mode === 'walk' && this.camSettle <= 0) {
       this.camPos.copy(pos);

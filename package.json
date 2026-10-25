@@ -12,6 +12,7 @@
     "check:layout": "tsx shared/shipInterior.check.ts",
     "check:door": "tsx server/src/cabinDoor.check.ts",
     "check:controls": "tsx client/src/input/controlMath.check.ts",
+    "check:camera": "tsx client/src/scene/cameraCollision.check.ts",
     "smoke:characters": "tsx tools/character-persistence-smoke.ts",
     "smoke:scan": "tsx tools/scan-smoke.ts",
     "smoke:helm": "tsx tools/helm-smoke.ts",

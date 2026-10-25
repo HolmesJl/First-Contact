@@ -579,9 +579,82 @@ export class ShipInterior {
     if (room.id === 'greenhouse') b.ring(7.3, 0.05, v.center.x, 0.012, v.center.z, 'glowGreen', 64);
   }
 
+  /** Framed forward viewport: bezel + inset star display (not a raw window). */
+  private addBridgeViewportPanel(
+    parent: THREE.Group,
+    x: number,
+    y: number,
+    z: number,
+    rotY: number,
+    w: number,
+    h: number,
+  ) {
+    const g = new THREE.Group();
+    g.position.set(x, y, z);
+    g.rotation.y = rotY;
+    const bezel = 0.11;
+    const depth = 0.06;
+    const ow = w + bezel * 2;
+    const oh = h + bezel * 2;
+    const frameMat = MAT.frame.clone();
+    const darkMat = MAT.dark.clone();
+
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(ow, oh), darkMat);
+    back.position.z = -0.015;
+    g.add(back);
+
+    const bar = (bw: number, bh: number, bx: number, by: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, depth), frameMat);
+      m.position.set(bx, by, depth / 2);
+      g.add(m);
+    };
+    bar(ow, bezel, 0, oh / 2 - bezel / 2);
+    bar(ow, bezel, 0, -oh / 2 + bezel / 2);
+    bar(bezel, h, -ow / 2 + bezel / 2, 0);
+    bar(bezel, h, ow / 2 - bezel / 2, 0);
+
+    const display = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.starscape.viewportDisplayMaterial(0.9));
+    display.position.z = depth * 0.82;
+    g.add(display);
+    this.viewportMeshes.push(display);
+
+    const gloss = new THREE.Mesh(
+      new THREE.PlaneGeometry(w * 0.97, h * 0.97),
+      new THREE.MeshBasicMaterial({
+        color: 0xb8dcff,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    );
+    gloss.position.z = depth * 0.88;
+    g.add(gloss);
+
+    const labelTex = canvasTexture(220, 28, (ctx) => {
+      ctx.fillStyle = 'rgba(4, 12, 22, 0.92)';
+      ctx.fillRect(0, 0, 220, 28);
+      ctx.strokeStyle = '#46d9ff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, 219, 27);
+      ctx.fillStyle = '#9fd8ff';
+      ctx.font = '600 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('EXT · FORWARD VIEW', 110, 15);
+    });
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(w * 0.92, 0.16),
+      new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, toneMapped: false, depthWrite: false }),
+    );
+    label.position.set(0, -h / 2 + 0.12, depth * 0.84);
+    g.add(label);
+
+    parent.add(g);
+  }
+
   private bridgeScreens(v: SpaceView, b: Batch) {
-    // One shared exterior field; each panel samples a different camera ray (panoramic wrap).
-    const screenMat = this.starscape.viewportMaterial(0.95);
     const edges: [Pt, Pt][] = [
       [BRIDGE_POLY[3], BRIDGE_POLY[4]],
       [BRIDGE_POLY[4], BRIDGE_POLY[5]],
@@ -597,12 +670,16 @@ export class ShipInterior {
       const pw = (len - 0.5) / n - 0.1;
       for (let i = 0; i < n; i++) {
         const t = 0.25 + ((i + 0.5) * (len - 0.5)) / n;
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, 2.3), screenMat);
-        const off = WALL_T / 2 + 0.02;
-        m.position.set(p[0] + dx * t + inx * off, 2.65, p[1] + dz * t + inz * off);
-        m.rotation.y = Math.atan2(inx, inz);
-        v.group.add(m);
-        this.viewportMeshes.push(m);
+        const off = WALL_T / 2 + 0.03;
+        this.addBridgeViewportPanel(
+          v.group,
+          p[0] + dx * t + inx * off,
+          2.65,
+          p[1] + dz * t + inz * off,
+          Math.atan2(inx, inz),
+          pw,
+          2.3,
+        );
       }
       b.beam(p[0] + dx * 0.2 + inx * 0.22, 1.4, p[1] + dz * 0.2 + inz * 0.22, q[0] - dx * 0.2 + inx * 0.22, 1.4, q[1] - dz * 0.2 + inz * 0.22, 0.07, 'glowCyan');
     }
@@ -938,6 +1015,11 @@ export class ShipInterior {
   flashPod(i: number) {
     const p = this.anim.pods[i];
     if (p) p.flash = 1;
+  }
+
+  /** Solid hull / room geometry for third-person camera ray tests (includes faded cutaway walls). */
+  cameraCollisionMeshes(): THREE.Mesh[] {
+    return this.occluderMeshes.filter((m) => m.parent?.visible);
   }
 
   /**

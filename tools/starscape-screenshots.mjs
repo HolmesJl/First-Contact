@@ -49,16 +49,16 @@ await sleep(3000);
 await page.waitForFunction(() => window.__fc?.lab && !document.querySelector('.creator'), { timeout: 90000 });
 await sleep(2000);
 
-await page.evaluate(async ({ HELM, CORRIDOR }) => {
-  window.__fc.teleport(HELM.x, HELM.z, Math.PI);
+await page.evaluate(async () => {
+  window.__fc.teleport(-38.2, 31.5, 0);
   window.__fc.setShipMotion?.('warp');
   await new Promise((r) => setTimeout(r, 800));
   const cam = window.__fc.lab?.camera;
   if (cam) {
-    cam.position.set(HELM.x, 1.7, HELM.z - 1.2);
-    cam.lookAt(HELM.x, 2.5, HELM.z + 8);
+    cam.position.set(-36.4, 2.15, 29.5);
+    cam.lookAt(-37.8, 2.55, 41.5);
   }
-}, { HELM, CORRIDOR });
+});
 await sleep(600);
 await page.locator('#scene').screenshot({ path: OUT.bridge });
 console.log('saved', OUT.bridge);
