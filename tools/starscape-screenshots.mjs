@@ -51,12 +51,12 @@ await sleep(2000);
 
 await page.evaluate(async () => {
   window.__fc.teleport(-38.2, 31.5, 0);
-  window.__fc.setShipMotion?.('warp');
+  window.__fc.setShipMotion?.('still');
   await new Promise((r) => setTimeout(r, 800));
   const cam = window.__fc.lab?.camera;
   if (cam) {
-    cam.position.set(-36.4, 2.15, 29.5);
-    cam.lookAt(-37.8, 2.55, 41.5);
+    cam.position.set(-36.2, 2.05, 30.2);
+    cam.lookAt(-38.0, 2.45, 41.8);
   }
 });
 await sleep(600);

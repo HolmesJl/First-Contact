@@ -579,91 +579,142 @@ export class ShipInterior {
     if (room.id === 'greenhouse') b.ring(7.3, 0.05, v.center.x, 0.012, v.center.z, 'glowGreen', 64);
   }
 
-  /** Framed forward viewport: bezel + inset star display (not a raw window). */
-  private addBridgeViewportPanel(
-    parent: THREE.Group,
-    x: number,
-    y: number,
-    z: number,
-    rotY: number,
-    w: number,
-    h: number,
-  ) {
-    const g = new THREE.Group();
-    g.position.set(x, y, z);
-    g.rotation.y = rotY;
-    const bezel = 0.11;
-    const depth = 0.06;
-    const ow = w + bezel * 2;
-    const oh = h + bezel * 2;
-    const frameMat = MAT.frame.clone();
-
-    const back = new THREE.Mesh(
-      new THREE.PlaneGeometry(ow, oh),
-      new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false }),
-    );
-    back.position.z = -0.015;
-    g.add(back);
-
-    const bar = (bw: number, bh: number, bx: number, by: number) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, depth), frameMat);
-      m.position.set(bx, by, depth / 2);
-      g.add(m);
-    };
-    bar(ow, bezel, 0, oh / 2 - bezel / 2);
-    bar(ow, bezel, 0, -oh / 2 + bezel / 2);
-    bar(bezel, h, -ow / 2 + bezel / 2, 0);
-    bar(bezel, h, ow / 2 - bezel / 2, 0);
-
-    const display = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.starscape.viewportDisplayMaterial(1));
-    display.position.z = depth * 0.82;
-    g.add(display);
-    this.viewportMeshes.push(display);
-
-    const gloss = new THREE.Mesh(
-      new THREE.PlaneGeometry(w * 0.97, h * 0.97),
-      new THREE.MeshBasicMaterial({
-        color: 0xb8dcff,
-        transparent: true,
-        opacity: 0.04,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        toneMapped: false,
-      }),
-    );
-    gloss.position.z = depth * 0.88;
-    g.add(gloss);
-
-    parent.add(g);
-  }
-
+  /** One continuous fore monitor across the bridge nose (panorama UV 0..1). */
   private bridgeScreens(v: SpaceView, b: Batch) {
     const edges: [Pt, Pt][] = [
       [BRIDGE_POLY[3], BRIDGE_POLY[4]],
       [BRIDGE_POLY[4], BRIDGE_POLY[5]],
       [BRIDGE_POLY[5], BRIDGE_POLY[6]],
     ];
+    const yBot = 1.52;
+    const yTop = 3.78;
+    const off = WALL_T / 2 + 0.03;
+    const face = 0.025;
+    const stations: { x: number; z: number; u: number; nx: number; nz: number }[] = [];
+
+    let totalLen = 0;
+    const lens = edges.map(([p, q]) => Math.hypot(q[0] - p[0], q[1] - p[1]));
+    totalLen = lens.reduce((a, b) => a + b, 0);
+
+    let uAcc = 0;
+    for (let e = 0; e < edges.length; e++) {
+      const [p, q] = edges[e];
+      const len = lens[e];
+      const steps = Math.max(6, Math.round(len / 0.32));
+      const dx = (q[0] - p[0]) / len;
+      const dz = (q[1] - p[1]) / len;
+      const inx = -dz;
+      const inz = dx;
+      for (let i = 0; i <= steps; i++) {
+        if (e > 0 && i === 0) continue;
+        const t = i / steps;
+        const along = t * len;
+        const u = (uAcc + along) / totalLen;
+        stations.push({
+          x: p[0] + dx * along + inx * (off + face),
+          z: p[1] + dz * along + inz * (off + face),
+          u,
+          nx: inx,
+          nz: inz,
+        });
+      }
+      uAcc += len;
+    }
+
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    for (let i = 0; i < stations.length; i++) {
+      const s = stations[i];
+      positions.push(s.x, yBot, s.z, s.x, yTop, s.z);
+      uvs.push(s.u, 0, s.u, 1);
+      if (i > 0) {
+        const a = (i - 1) * 2;
+        const b = i * 2;
+        indices.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const fore = new THREE.Group();
+    fore.name = 'bridge-fore-panorama';
+    const display = new THREE.Mesh(geo, this.starscape.bridgeForeMaterial());
+    fore.add(display);
+    this.viewportMeshes.push(display);
+
+    const gloss = new THREE.Mesh(
+      geo.clone(),
+      new THREE.MeshBasicMaterial({
+        color: 0xc8e8ff,
+        transparent: true,
+        opacity: 0.035,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    );
+    gloss.position.y = 0.001;
+    fore.add(gloss);
+
+    const bezel = 0.1;
+    const depth = 0.055;
+    const frameMat = MAT.frame.clone();
+    const barAlong = (y: number, thick: number) => {
+      for (let i = 0; i < stations.length - 1; i++) {
+        const a = stations[i];
+        const c = stations[i + 1];
+        const mx = (a.x + c.x) / 2;
+        const mz = (a.z + c.z) / 2;
+        const seg = Math.hypot(c.x - a.x, c.z - a.z);
+        const ang = Math.atan2(c.x - a.x, c.z - a.z);
+        const m = new THREE.Mesh(new THREE.BoxGeometry(seg + 0.04, thick, depth), frameMat);
+        m.position.set(mx, y, mz);
+        m.rotation.y = ang;
+        fore.add(m);
+      }
+    };
+    barAlong(yBot - bezel / 2, bezel);
+    barAlong(yTop + bezel / 2, bezel);
+
+    const cap = (s: { x: number; z: number; nx: number; nz: number }, side: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(bezel, yTop - yBot + bezel * 2, depth), frameMat);
+      m.position.set(s.x + s.nx * side * 0.02, (yBot + yTop) / 2, s.z + s.nz * side * 0.02);
+      m.rotation.y = Math.atan2(s.nx, s.nz);
+      fore.add(m);
+    };
+    cap(stations[0], -1);
+    cap(stations[stations.length - 1], 1);
+
+    const mullionAt = (pt: Pt) => {
+      let best = stations[0];
+      let bestD = Infinity;
+      for (const s of stations) {
+        const d = (s.x - pt[0]) ** 2 + (s.z - pt[1]) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = s;
+        }
+      }
+      const m = new THREE.Mesh(new THREE.BoxGeometry(bezel * 0.55, yTop - yBot + bezel, depth * 1.1), frameMat);
+      m.position.set(best.x, (yBot + yTop) / 2, best.z);
+      m.rotation.y = Math.atan2(best.nx, best.nz);
+      fore.add(m);
+    };
+    mullionAt(BRIDGE_POLY[4]);
+    mullionAt(BRIDGE_POLY[5]);
+
+    v.group.add(fore);
+
     for (const [p, q] of edges) {
       const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
       const dx = (q[0] - p[0]) / len;
       const dz = (q[1] - p[1]) / len;
       const inx = -dz;
       const inz = dx;
-      const n = Math.max(1, Math.round(len / 2.8));
-      const pw = (len - 0.5) / n - 0.1;
-      for (let i = 0; i < n; i++) {
-        const t = 0.25 + ((i + 0.5) * (len - 0.5)) / n;
-        const off = WALL_T / 2 + 0.03;
-        this.addBridgeViewportPanel(
-          v.group,
-          p[0] + dx * t + inx * off,
-          2.65,
-          p[1] + dz * t + inz * off,
-          Math.atan2(inx, inz),
-          pw,
-          2.3,
-        );
-      }
       b.beam(p[0] + dx * 0.2 + inx * 0.22, 1.4, p[1] + dz * 0.2 + inz * 0.22, q[0] - dx * 0.2 + inx * 0.22, 1.4, q[1] - dz * 0.2 + inz * 0.22, 0.07, 'glowCyan');
     }
   }
