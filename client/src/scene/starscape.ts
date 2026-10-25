@@ -146,8 +146,8 @@ export class StarscapeRenderer {
       uniforms: this.baseUniforms(opacity, displayChrome),
       vertexShader: VIEWPORT_VERTEX,
       fragmentShader: VIEWPORT_FRAGMENT,
-      transparent: true,
-      depthWrite: false,
+      transparent: displayChrome < 0.5,
+      depthWrite: displayChrome > 0.5,
       side: THREE.DoubleSide,
       toneMapped: false,
     });

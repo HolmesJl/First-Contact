@@ -615,7 +615,7 @@ export class ShipInterior {
     bar(bezel, h, -ow / 2 + bezel / 2, 0);
     bar(bezel, h, ow / 2 - bezel / 2, 0);
 
-    const display = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.starscape.viewportDisplayMaterial(0.9));
+    const display = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.starscape.viewportDisplayMaterial(1));
     display.position.z = depth * 0.82;
     g.add(display);
     this.viewportMeshes.push(display);
@@ -625,7 +625,7 @@ export class ShipInterior {
       new THREE.MeshBasicMaterial({
         color: 0xb8dcff,
         transparent: true,
-        opacity: 0.08,
+        opacity: 0.04,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         toneMapped: false,
