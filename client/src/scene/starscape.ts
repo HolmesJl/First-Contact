@@ -206,8 +206,8 @@ export class StarscapeRenderer {
       this.uScroll.value = 52;
       this.uStreak.value = 1.45;
     } else if (motion === 'warp') {
-      this.uScroll.value = 13;
-      this.uStreak.value = 0.58;
+      this.uScroll.value = 6.5;
+      this.uStreak.value = 0.29;
     } else {
       this.uScroll.value = 0.02;
       this.uStreak.value = 0;
