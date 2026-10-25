@@ -70,9 +70,9 @@ const VIEWPORT_FRAGMENT = `
     acc /= 6.0;
     colAcc /= 6.0;
 
-    vec3 bg = vec3(0.01, 0.02, 0.05);
+    vec3 bg = vec3(0.0);
     vec3 col = bg + colAcc * (1.2 + uStreak * 1.5);
-    float alpha = uOpacity * clamp(acc * 2.8 + 0.02, 0.0, 1.0);
+    float alpha;
 
     if (uDisplayChrome > 0.5) {
       vec2 uv = vUv;
@@ -80,10 +80,13 @@ const VIEWPORT_FRAGMENT = `
         * smoothstep(0.0, 0.12, uv.y) * smoothstep(1.0, 0.88, uv.y);
       float scan = 0.93 + 0.07 * sin(uv.y * 520.0 + uTime * 3.5);
       float vignette = 1.0 - 0.4 * length((uv - 0.5) * vec2(1.0, 1.15));
-      col = mix(vec3(0.008, 0.012, 0.022), col, edge) * scan * vignette;
-      alpha = uOpacity * edge * clamp(acc * 2.6 + 0.04, 0.0, 1.0);
+      col = mix(vec3(0.0), col, edge) * scan * vignette;
+      alpha = uOpacity * edge;
       float gloss = pow(1.0 - abs(uv.y - 0.22), 3.0) * 0.12;
       col += vec3(0.35, 0.5, 0.65) * gloss * edge;
+    } else {
+      float starMix = clamp(acc * 2.8 + 0.06, 0.0, 1.0);
+      alpha = uOpacity * mix(0.92, 1.0, starMix);
     }
 
     if (alpha < 0.01) discard;

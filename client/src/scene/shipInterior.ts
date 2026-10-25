@@ -597,9 +597,11 @@ export class ShipInterior {
     const ow = w + bezel * 2;
     const oh = h + bezel * 2;
     const frameMat = MAT.frame.clone();
-    const darkMat = MAT.dark.clone();
 
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(ow, oh), darkMat);
+    const back = new THREE.Mesh(
+      new THREE.PlaneGeometry(ow, oh),
+      new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false }),
+    );
     back.position.z = -0.015;
     g.add(back);
 
@@ -631,25 +633,6 @@ export class ShipInterior {
     );
     gloss.position.z = depth * 0.88;
     g.add(gloss);
-
-    const labelTex = canvasTexture(220, 28, (ctx) => {
-      ctx.fillStyle = 'rgba(4, 12, 22, 0.92)';
-      ctx.fillRect(0, 0, 220, 28);
-      ctx.strokeStyle = '#46d9ff';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(0.5, 0.5, 219, 27);
-      ctx.fillStyle = '#9fd8ff';
-      ctx.font = '600 11px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('EXT · FORWARD VIEW', 110, 15);
-    });
-    const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(w * 0.92, 0.16),
-      new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, toneMapped: false, depthWrite: false }),
-    );
-    label.position.set(0, -h / 2 + 0.12, depth * 0.84);
-    g.add(label);
 
     parent.add(g);
   }
