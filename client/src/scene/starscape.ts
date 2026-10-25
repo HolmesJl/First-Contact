@@ -19,9 +19,9 @@ export const STARSCAPE_TUNING = {
   /** Hash above this → hero star (halo + 4-point spikes). */
   heroThreshold: 0.94,
   /** Brightness cap for hero cores. */
-  brightGain: 1.39,
+  brightGain: 1.95,
   /** Multiplier on lit pixels only (gaps stay black). */
-  starGain: 1.34,
+  starGain: 1.88,
 };
 
 const VIEWPORT_VERTEX = `
@@ -80,19 +80,19 @@ const VIEWPORT_FRAGMENT = `
       peak = uBrightGain;
     } else if (mag > 0.76) {
       radius = 0.011 + (mag - 0.76) * 0.02;
-      peak = 0.31 + (mag - 0.76) * 1.2;
+      peak = 0.43 + (mag - 0.76) * 1.68;
     } else {
       radius = 0.004 + mag * 0.005;
-      peak = 0.07 + mag * 0.155;
+      peak = 0.098 + mag * 0.217;
     }
 
     float core = smoothstep(radius, radius * 0.1, dist);
     float lum = core * peak;
 
     if (mag >= uHeroThreshold) {
-      float halo = exp(-dist * dist / (radius * radius * 4.5)) * 0.36;
+      float halo = exp(-dist * dist / (radius * radius * 4.5)) * 0.5;
       vec2 sp = d / max(radius, 0.001);
-      float spike = (exp(-abs(sp.x) * 10.0) + exp(-abs(sp.y) * 10.0)) * exp(-length(sp) * 0.5) * 0.56;
+      float spike = (exp(-abs(sp.x) * 10.0) + exp(-abs(sp.y) * 10.0)) * exp(-length(sp) * 0.5) * 0.78;
       lum += halo + spike;
     }
 
