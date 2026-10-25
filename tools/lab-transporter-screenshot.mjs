@@ -53,11 +53,10 @@ const pos = await page.evaluate(
     }
     window.__fc.highlightTransporter('lab-transporter');
     await new Promise((r) => setTimeout(r, 1500));
-    const lab = window.__fc.lab;
-    if (lab?.camera) {
-      const cam = lab.camera;
-      cam.position.set(STAND.x, 1.55, STAND.z);
-      cam.lookAt(PAD.x, PAD.y, PAD.z);
+    const cam = window.__fc.lab?.camera;
+    if (cam) {
+      cam.position.set(STAND.x + 0.4, 1.65, STAND.z - 0.35);
+      cam.lookAt(PAD.x, PAD.y + 0.05, PAD.z);
     }
     await new Promise((r) => setTimeout(r, 500));
     return window.__fc.lab.localPos();
