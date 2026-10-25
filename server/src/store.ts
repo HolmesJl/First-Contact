@@ -5,6 +5,7 @@ import type { QuestStep } from '../../shared/opening';
 import type { PadArchiveItem, PadScanLog } from '../../shared/datapad';
 import type { Inventory, PadFile, Slots } from '../../shared/items';
 import type { ScavengerState } from '../../shared/scavenger';
+import type { ShipNavigation } from '../../shared/navigation';
 import type { ScanResultEntry, ScanningSkill } from '../../shared/scanning';
 
 /**
@@ -70,6 +71,7 @@ export interface ShipRecord {
   cargoHoldStock?: Record<string, number>;
   /** Shared contact log from Bridge scans (newest last; capped on normalize). */
   scanResults?: ScanResultEntry[];
+  navigation?: ShipNavigation;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

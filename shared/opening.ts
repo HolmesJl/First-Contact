@@ -191,7 +191,7 @@ export function interactPrompt(interactId: string): string | null {
     case 'bunk-desk-pad':
       return 'Pick up data pad';
     case 'star-map':
-      return 'Log in at the helm';
+      return 'Helm console';
     case REPORT_IN_INTERACT_ID:
       return 'Report in';
     case 'lab-bench':

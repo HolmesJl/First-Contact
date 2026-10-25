@@ -19,6 +19,7 @@ import { normalizeScavenger } from '../../shared/scavenger';
 import { normalizeScanningSkill } from '../../shared/scanning';
 import { LAB_TRANSPORTER_INTERACT_ID, LAB_QUEST_TERMINAL_INTERACT_ID, normalizeTransporterSkill } from '../../shared/transporter';
 import { normalizeMemberDatapad } from './datapad';
+import { navigationMeta, shipNavigation } from './navigation';
 import { normalizeShipScanResults, shipScanResults } from './scanning';
 import { normalizeShipStocks } from './transporter';
 import type { MemberRecord, ShipRecord } from './store';
@@ -35,6 +36,7 @@ export function shipMeta(ship: ShipRecord) {
     refineryStock: ship.refineryStock!,
     cargoHoldStock: ship.cargoHoldStock!,
     scanResults: shipScanResults(ship),
+    navigation: navigationMeta(ship),
   };
 }
 
@@ -71,6 +73,7 @@ export function normalizeShip(ship: ShipRecord): ShipRecord {
   ship.stock = normalizeStock(ship.stock);
   normalizeShipStocks(ship);
   normalizeShipScanResults(ship);
+  ship.navigation = shipNavigation(ship);
   for (const m of Object.values(ship.members)) normalizeMember(m);
   return ship;
 }

@@ -1,3 +1,10 @@
+import {
+  APPROACH_DISTANCE_KM,
+  KM_PER_LIGHT_YEAR,
+  SCAN_DISTANCE_CAP_KM,
+  formatDistanceKm,
+  parseDistanceKm,
+} from './navigation';
 import { PROPS, SPACE_NAMES, deskPadMount } from './shipInterior';
 import type { Facing } from './shipLayout';
 import { SHIP_MATERIALS } from './items';
@@ -312,10 +319,21 @@ export function pickScanOutcome(roll: number): ScanOutcomeKind {
   return 'debris';
 }
 
-/** Distance label for a new contact; range/format TBD — placeholder km string for now. */
+/** Distance label for a new contact; from &lt;20 km up to 5.0 LY (scan cap). */
 export function pickScanDistanceLabel(roll: number): string {
-  const km = 12 + Math.floor(roll * (480 - 12 + 1));
-  return `${km} km`;
+  const forced = process.env.SCAN_FORCE_DISTANCE;
+  if (forced) {
+    const km = parseDistanceKm(forced);
+    if (km !== null) return formatDistanceKm(km);
+  }
+  if (roll < 0.08) return `<${APPROACH_DISTANCE_KM} km`;
+  if (roll < 0.45) {
+    const km = APPROACH_DISTANCE_KM + 1 + Math.floor(((roll - 0.08) / 0.37) * (12_000 - APPROACH_DISTANCE_KM));
+    return formatDistanceKm(km);
+  }
+  const ly = 0.01 + ((roll - 0.45) / 0.55) * (5.0 - 0.01);
+  const km = Math.min(SCAN_DISTANCE_CAP_KM, ly * KM_PER_LIGHT_YEAR);
+  return formatDistanceKm(km);
 }
 
 export interface ScanLootRoll {

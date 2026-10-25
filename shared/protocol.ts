@@ -2,6 +2,7 @@ import type { PadArchiveItem, PadScanLog } from './datapad';
 import type { QuestStep } from './opening';
 import { isItemId, validSlotRef, type EquipSlot, type Inventory, type ItemId, type ItemStack, type PadFile, type SlotRef, type Slots } from './items';
 import type { ScavengerState } from './scavenger';
+import type { ShipNavigation } from './navigation';
 import type { ScanResultEntry, ScanningSkill } from './scanning';
 
 export const JOBS = ['Captain', 'Engineer', 'Military', 'Doctor', 'Botanist'] as const;
@@ -139,6 +140,7 @@ export interface ShipMeta {
   /** Ship materials in the cargo hold (beamed from debris finds). */
   cargoHoldStock: Record<string, number>;
   scanResults: ScanResultEntry[];
+  navigation: ShipNavigation;
 }
 
 /** The only uniform so far; everyone starts with the crew jumpsuit equipped. */
@@ -238,7 +240,9 @@ export type ClientMsg =
   /** Beam material from a scan contact at a transporter pad. */
   | { t: 'transportStart'; padId: string; scanId: string; materialId: string; qty: number; x: number; z: number }
   /** Move an active datapad entry into the bunk archive. */
-  | { t: 'padArchive'; kind: import('./datapad').PadArchiveKind; id: string };
+  | { t: 'padArchive'; kind: import('./datapad').PadArchiveKind; id: string }
+  /** Captain starts warp to a scan contact from the helm console. */
+  | { t: 'helmStart'; scanId: string; mode: 'warp' | 'f-warp'; x: number; z: number };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -313,7 +317,9 @@ export type ServerMsg =
       scanResults: ScanResultEntry[];
       refineryStock: Record<string, number>;
       cargoHoldStock: Record<string, number>;
-    };
+    }
+  | { t: 'helmProgress'; endsAt: number; mode: 'warp' | 'f-warp' }
+  | { t: 'helmComplete'; scanId: string; scanResults: ScanResultEntry[] };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
 
@@ -388,6 +394,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'scanStart':
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       return { t: m.t, x: m.x as number, z: m.z as number };
+    case 'helmStart':
+      if (typeof m.scanId !== 'string' || (m.mode !== 'warp' && m.mode !== 'f-warp')) return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'helmStart', scanId: m.scanId, mode: m.mode, x: m.x as number, z: m.z as number };
     case 'transportStart':
       if (typeof m.padId !== 'string' || typeof m.scanId !== 'string' || typeof m.materialId !== 'string') return null;
       if (typeof m.qty !== 'number' || !Number.isFinite(m.qty)) return null;

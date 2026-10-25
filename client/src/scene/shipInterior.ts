@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { starfield, canvasTexture } from './common';
-import { Batch, MAT, labelSprite, screenMaterial, type MatKey } from './interior/kit';
+import { canvasTexture } from './common';
+import { StarscapeRenderer } from './starscape';
+import type { ShipMotionState } from '../../../shared/navigation';
+import { Batch, MAT, labelSprite, type MatKey } from './interior/kit';
 import { buildProp, type PodFx, type PropAnim, type PropContext } from './interior/props';
 import { QuestTerminalLayer } from './questTerminals';
 import { MemoryStationLayer } from './memoryStations';
@@ -313,8 +315,11 @@ export class ShipInterior {
   private cabinDoorTargetFrac = 0;
   private keypadGlow: THREE.Mesh | null = null;
   private keypadInGlow: THREE.Mesh | null = null;
+  private starscape: StarscapeRenderer;
+  private viewportMeshes: THREE.Mesh[] = [];
 
-  constructor() {
+  constructor(renderer: THREE.WebGLRenderer) {
+    this.starscape = new StarscapeRenderer(renderer);
     this.buildEnvironment();
     for (const m of SHIP_LAYOUT.modules) for (const room of m.rooms) if (room.level === 0 && room.walkable !== false) this.buildRoom(room);
     for (const c of SHIP_LAYOUT.corridors) if (c.level === 0 && c.id !== 'c-dorm') this.buildCorridor(c);
@@ -393,15 +398,10 @@ export class ShipInterior {
       s.add(light);
       this.lightPool.push({ light, id: null, target: 0 });
     }
-    const stars = starfield(2600, 260, 1.4);
-    stars.position.set(-35, 0, -10);
-    s.add(stars);
-    const moon = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(9, 3),
-      new THREE.MeshStandardMaterial({ color: 0xa4a4ac, roughness: 1, flatShading: true, fog: false, emissive: 0x1a1a22 }),
-    );
-    moon.position.set(14, 8, -60);
-    s.add(moon);
+  }
+
+  setShipMotion(motion: ShipMotionState) {
+    this.starscape.setMotion(motion);
   }
 
   // ---------------------------------------------------------------- spaces
@@ -521,13 +521,6 @@ export class ShipInterior {
     const mesh = new THREE.Mesh(ceilingGeometry(pts, hole), MAT.ceiling);
     mesh.position.y = h;
     g.add(mesh);
-    if (hole) {
-      // Flush skylight: a hole in the ceiling with faint glass.
-      const glass = new THREE.Mesh(new THREE.PlaneGeometry(hole.maxX - hole.minX, hole.maxZ - hole.minZ), MAT.glass);
-      glass.rotation.x = Math.PI / 2;
-      glass.position.set((hole.minX + hole.maxX) / 2, h - 0.01, (hole.minZ + hole.maxZ) / 2);
-      g.add(glass);
-    }
   }
 
   private buildDome(room: Room, v: SpaceView) {
@@ -536,7 +529,8 @@ export class ShipInterior {
     const rise = 4.5;
     const rs = (base * base + rise * rise) / (2 * rise);
     const theta = Math.asin(base / rs);
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(rs, 56, 12, 0, Math.PI * 2, 0, theta), MAT.glassDome);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(rs, 56, 12, 0, Math.PI * 2, 0, theta), this.starscape.viewportMaterial(0.88));
+    this.viewportMeshes.push(dome);
     dome.position.set(c.x, room.height + rise - rs, c.z);
     dome.renderOrder = 3;
     v.group.add(dome);
@@ -566,13 +560,7 @@ export class ShipInterior {
   /** Per-room details that are not tied to a single prop: floor strips, windows, signage. */
   private roomExtras(room: Room, b: Batch, v: SpaceView) {
     if (room.id === 'bay') {
-      // Floor strips and the stern window (glass, mullions, sill light).
       for (let x = -8; x <= 8; x += 4) b.box(0.1, 0.03, 9, x, 0.01, 1.5, 'glowCyan');
-      for (let x = -10; x <= 10; x += 4) b.box(0.4, 1.8, 0.5, x, 1.9, -6.15, 'frame');
-      b.box(20.4, 0.08, 0.1, 0, 1.9, -5.98, 'glowCyan');
-      const glass = new THREE.Mesh(new THREE.PlaneGeometry(19.4, 1.8), MAT.glass);
-      glass.position.set(0, 2.8, -6.1);
-      v.group.add(glass);
       b.box(20.4, 0.06, 0.1, 0, 0.62, 7.1, 'glowCyan');
     }
     if (room.id === 'commons') {
@@ -592,14 +580,12 @@ export class ShipInterior {
   }
 
   private bridgeScreens(v: SpaceView, b: Batch) {
-    // Wide view screens along the flat front face and both angled facets of the nose.
-    const mats = [screenMaterial('STAR MAP · SOL', 'cyan'), screenMaterial('NAV · LUNAR ORBIT', 'amber'), screenMaterial('SCAN · LONG RANGE', 'green')];
+    const screenMat = this.starscape.viewportMaterial(0.95);
     const edges: [Pt, Pt][] = [
       [BRIDGE_POLY[3], BRIDGE_POLY[4]],
       [BRIDGE_POLY[4], BRIDGE_POLY[5]],
       [BRIDGE_POLY[5], BRIDGE_POLY[6]],
     ];
-    let k = 0;
     for (const [p, q] of edges) {
       const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
       const dx = (q[0] - p[0]) / len;
@@ -610,11 +596,12 @@ export class ShipInterior {
       const pw = (len - 0.5) / n - 0.1;
       for (let i = 0; i < n; i++) {
         const t = 0.25 + ((i + 0.5) * (len - 0.5)) / n;
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, 2.3), mats[k++ % mats.length]);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, 2.3), screenMat);
         const off = WALL_T / 2 + 0.02;
         m.position.set(p[0] + dx * t + inx * off, 2.65, p[1] + dz * t + inz * off);
         m.rotation.y = Math.atan2(inx, inz);
         v.group.add(m);
+        this.viewportMeshes.push(m);
       }
       b.beam(p[0] + dx * 0.2 + inx * 0.22, 1.4, p[1] + dz * 0.2 + inz * 0.22, q[0] - dx * 0.2 + inx * 0.22, 1.4, q[1] - dz * 0.2 + inz * 0.22, 0.07, 'glowCyan');
     }
@@ -674,6 +661,45 @@ export class ShipInterior {
       b.add(geo, 'rib', m);
     }
     b.build(detail);
+    this.addCorridorViewports(v, axis, cx, start, t1);
+  }
+
+  /** Side viewport strips along corridor tubes (exterior starscape). */
+  private addCorridorViewports(v: SpaceView, axis: 'x' | 'z', cx: number, start: number, t1: number) {
+    const mat = this.starscape.viewportMaterial(0.9);
+    const len = t1 - start;
+    const mid = (start + t1) / 2;
+    const panelH = 1.35;
+    const panelW = Math.min(1.05, len / 4);
+    const y = 1.55;
+    const inset = 1.18;
+    const count = Math.max(1, Math.floor(len / 5));
+    for (let i = 0; i < count; i++) {
+      const t = start + ((i + 0.5) / count) * len;
+      for (const side of [-1, 1]) {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(panelW, panelH), mat);
+        if (axis === 'z') {
+          m.position.set(cx + side * inset, y, t);
+          m.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        } else {
+          m.position.set(t, y, cx + side * inset);
+          m.rotation.y = side < 0 ? 0 : Math.PI;
+        }
+        v.group.add(m);
+        this.viewportMeshes.push(m);
+      }
+    }
+    // One wider panel near the middle for readability in screenshots.
+    const wide = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.2, len * 0.35), panelH + 0.2), mat);
+    if (axis === 'z') {
+      wide.position.set(cx + inset, y + 0.05, mid);
+      wide.rotation.y = -Math.PI / 2;
+    } else {
+      wide.position.set(mid, y + 0.05, cx + inset);
+      wide.rotation.y = 0;
+    }
+    v.group.add(wide);
+    this.viewportMeshes.push(wide);
   }
 
   // ---------------------------------------------------------------- doors, ports, signs
@@ -931,6 +957,11 @@ export class ShipInterior {
    */
   update(dt: number, focus: THREE.Vector3, camera: THREE.PerspectiveCamera) {
     this.time += dt;
+    this.starscape.update(dt);
+    for (const m of this.viewportMeshes) {
+      const mat = m.material as THREE.MeshBasicMaterial;
+      if (mat.map !== this.starscape.texture) mat.map = this.starscape.texture;
+    }
     this.questTerminals.update(this.time);
     this.memoryStations.update(this.time, camera);
     this.itemStations.update(dt);

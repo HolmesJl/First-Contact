@@ -48,6 +48,7 @@ import { applyTransportStart, cancelTransport, finishDueTransports } from './tra
 import type { TransporterPadId } from '../../shared/transporter';
 import { isTransporterStationId } from '../../shared/transporter';
 import { applyPadArchive } from './datapad';
+import { applyHelmStart, finishDueTransits } from './navigation';
 
 installScavengerQuest();
 
@@ -425,6 +426,18 @@ wss.on('connection', (ws) => {
         finishInventory(me, applyInventoryAction(ship, me, msg.action));
         break;
       }
+      case 'helmStart': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyHelmStart(ship, me, msg.scanId, msg.mode, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'shipState', ship: shipMeta(ship) });
+        broadcast(ship.code, { t: 'helmProgress', endsAt: res.endsAt, mode: msg.mode });
+        break;
+      }
       case 'scanStart': {
         const obs = cabinDoorObstaclesForShip(ship);
         const p = clampToShip(msg.x, msg.z, 0, obs);
@@ -557,6 +570,15 @@ setInterval(() => {
           broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
         }
         if (row.hit) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
+      }
+    }
+    const transits = finishDueTransits(ship, now);
+    if (transits.length) {
+      store.save();
+      broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
+      for (const row of transits) {
+        broadcast(code, { t: 'helmComplete', scanId: row.scanId, scanResults: shipScanResults(ship) });
+        broadcast(code, { t: 'notice', message: row.notice });
       }
     }
     const transported = finishDueTransports(ship, now);

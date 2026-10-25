@@ -18,6 +18,8 @@ import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt,
 import { isOnBridge, scavengerAwaiting, scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
 import { isScanStationId } from '../../shared/scanning';
 import { ScanStationOverlay } from './scanStation';
+import { HelmConsoleOverlay } from './helmConsole';
+import { HELM_INTERACT_ID } from '../../shared/navigation';
 import { isTransporterStationId, LAB_QUEST_TERMINAL_INTERACT_ID, transporterStationById } from '../../shared/transporter';
 import { TransporterStationOverlay } from './transporterStation';
 import { JOB_STATION_INTERACT } from '../../shared/opening';
@@ -78,6 +80,7 @@ let memoryUpload: MemoryUploadOverlay | null = null;
 let bunkConsole: BunkConsoleOverlay | null = null;
 let inventory: InventoryOverlay | null = null;
 let scanStation: ScanStationOverlay | null = null;
+let helmConsole: HelmConsoleOverlay | null = null;
 let transporterStation: TransporterStationOverlay | null = null;
 let selfId = '';
 let shipCode = '';
@@ -225,6 +228,7 @@ function onWelcome(m: Extract<ServerMsg, { t: 'welcome' }>) {
   selfId = m.you;
   shipCode = m.code;
   shipMeta = m.ship;
+  syncShipMotion();
   players.clear();
   m.players.forEach((p) => players.set(p.id, p));
   history.replaceState(null, '', `?ship=${m.code}`);
@@ -326,6 +330,12 @@ async function startLab() {
         lab?.setScanHover(null);
         return;
       }
+      if (id === HELM_INTERACT_ID) {
+        hud?.setInteractPrompt('Helm console');
+        lab?.setScanHover(null);
+        lab?.setTransporterHover(null);
+        return;
+      }
       if (id !== null && isScanStationId(id)) {
         hud?.setInteractPrompt('Sensor scan');
         lab?.setScanHover(id);
@@ -395,6 +405,15 @@ async function startLab() {
         else requestScavengerIssue();
         return;
       }
+      if (id === HELM_INTERACT_ID) {
+        const me = players.get(selfId);
+        if (me?.character?.job === 'Captain' && me.questStep === 'captain-helm') {
+          net?.send({ t: 'interact', id, x, z });
+          return;
+        }
+        openHelmConsole();
+        return;
+      }
       if (isScanStationId(id)) {
         openScanStation();
         return;
@@ -427,11 +446,15 @@ async function startLab() {
         openScan(): void;
         scanStart(): void;
         highlightTransporter(id: string | null): void;
+        setShipMotion(motion: import('../../shared/navigation').ShipMotionState): void;
+        openHelm(): void;
       };
     }).__fc = {
       lab,
       teleport: (x, z, rot) => lab?.devTeleport(x, z, rot),
       highlightTransporter: (id) => lab?.setTransporterHover(id),
+      setShipMotion: (motion) => lab?.setShipMotion(motion),
+      openHelm: () => openHelmConsole(),
       cabinDoorFrac: (f) => lab?.setCabinDoor({ codeSet: true, open: f > 0.5, animAt: Date.now(), openFrac: f }, true),
       interact: (id) => {
         const { x, z } = lab!.localPos();
@@ -576,6 +599,29 @@ function openTransporterStation(padId: string) {
   });
 }
 
+function syncShipMotion() {
+  if (shipMeta) lab?.setShipMotion(shipMeta.navigation.motion);
+}
+
+function openHelmConsole() {
+  const me = players.get(selfId);
+  if (!me?.character || !shipMeta || !lab) return;
+  helmConsole?.close();
+  lab.releaseInput();
+  helmConsole = new HelmConsoleOverlay(shipMeta.scanResults, shipMeta.navigation, {
+    isCaptain: () => players.get(selfId)?.character?.job === 'Captain',
+    onStart: (scanId, mode) => {
+      if (!helmConsole?.isOpen) return;
+      helmConsole.setPending(true);
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'helmStart', scanId, mode, x, z });
+    },
+    onClose: () => {
+      helmConsole = null;
+    },
+  });
+}
+
 function openScanStation() {
   const me = players.get(selfId);
   if (!me?.character || !shipMeta || !lab) return;
@@ -698,12 +744,24 @@ function handle(m: ServerMsg) {
     }
     case 'shipState':
       shipMeta = m.ship;
+      syncShipMotion();
       lab?.setCabinDoor(m.ship.cabinDoor);
       inventory?.setStock(m.ship.stock);
       inventory?.setShipStocks(m.ship.refineryStock, m.ship.cargoHoldStock);
       scanStation?.setResults(m.ship.scanResults);
       transporterStation?.setResults(m.ship.scanResults);
+      helmConsole?.setResults(m.ship.scanResults);
+      helmConsole?.setNavigation(m.ship.navigation);
       wakeIntro?.enableContinue(() => beginCreator());
+      break;
+    case 'helmProgress':
+      helmConsole?.beginTransit(m.endsAt, m.mode);
+      syncShipMotion();
+      break;
+    case 'helmComplete':
+      if (shipMeta) shipMeta = { ...shipMeta, scanResults: m.scanResults };
+      helmConsole?.endTransit(m.scanResults);
+      syncShipMotion();
       break;
     case 'scanProgress':
       scanStation?.beginScan(m.endsAt);
@@ -767,6 +825,7 @@ function handle(m: ServerMsg) {
       break;
     case 'error':
       scanStation?.setPendingStart(false);
+      helmConsole?.setPending(false);
       if (m.fatal && net) net.onClose = null;
       if (!m.fatal) {
         if (transporterStation?.isOpen) transporterStation.failStart(m.message);

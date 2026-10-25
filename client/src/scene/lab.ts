@@ -10,6 +10,7 @@ import { ITEMS } from '../../../shared/items';
 import { TUBE_X, TUBE_Y, TUBE_Z } from '../../../shared/lab';
 import { clampMoveToShip, clampToShip, spaceAt, type Space } from '../../../shared/shipInterior';
 import type { BerthOwner } from '../../../shared/bunks';
+import type { ShipMotionState } from '../../../shared/navigation';
 import { SPRINT_SPEED, Stamina, WALK_SPEED, type Gait } from '../../../shared/movement';
 import { JOB_INFO, type Appearance, type CabinDoorState, type Job, type PlayerState, type SnapEntry } from '../../../shared/protocol';
 
@@ -105,7 +106,7 @@ export class LabScene implements View {
     container.appendChild(this.labels.domElement);
     this.scene.background = new THREE.Color(0x04060c);
     this.scene.fog = new THREE.Fog(0x04060c, 34, 95);
-    this.interior = new ShipInterior();
+    this.interior = new ShipInterior(renderer);
     this.scene.add(this.interior.root);
     this.composer = makeComposer(renderer, this.scene, this.camera, { strength: 0.4, radius: 0.35, threshold: 1.1 });
     this.controls = new Controls(renderer.domElement, {
@@ -338,6 +339,10 @@ export class LabScene implements View {
 
   setTransporterHover(interactId: string | null) {
     this.interior.setTransporterHover(interactId);
+  }
+
+  setShipMotion(motion: ShipMotionState) {
+    this.interior.setShipMotion(motion);
   }
 
   setBerthOwners(owners: Map<number, BerthOwner>) {
