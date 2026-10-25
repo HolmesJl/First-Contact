@@ -4,6 +4,24 @@ import type { ShipMotionState } from '../../../shared/navigation';
 /** Seed ship heading in world space (+Z = bridge forward). */
 export const SHIP_FORWARD = new THREE.Vector3(0, 0, 1);
 
+/**
+ * Star density knobs (shader uniforms). Higher `keep` = sparser field.
+ * Tuned against `media/starscape-still-reference.png` in the project store.
+ * @see docs/starscape-tuning.md
+ */
+export const STARSCAPE_TUNING = {
+  /** Primary catalog grid (one star candidate per cell). */
+  cell: 4.6,
+  keep: 0.9,
+  /** Distant smaller layer. */
+  cellFar: 9.2,
+  keepFar: 0.93,
+  /** Hash above this → hero star (halo + 4-point spikes). */
+  heroThreshold: 0.94,
+  /** Brightness cap for hero cores. */
+  brightGain: 1.05,
+};
+
 const VIEWPORT_VERTEX = `
   varying vec3 vWorldPos;
   varying vec2 vUv;
@@ -24,6 +42,12 @@ const VIEWPORT_FRAGMENT = `
   uniform float uOpacity;
   uniform float uDisplayChrome;
   uniform float uPanorama;
+  uniform float uStarCell;
+  uniform float uStarKeep;
+  uniform float uStarCellFar;
+  uniform float uStarKeepFar;
+  uniform float uHeroThreshold;
+  uniform float uBrightGain;
   varying vec3 vWorldPos;
   varying vec2 vUv;
 
@@ -33,53 +57,72 @@ const VIEWPORT_FRAGMENT = `
     return fract((p.x + p.y) * p.z);
   }
 
-  float hash21(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  float fbm(vec2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 4; i++) {
-      v += a * noise(p);
-      p *= 2.05;
-      a *= 0.5;
-    }
-    return v;
-  }
-
-  float starLayer(vec3 p, float cell, float keep) {
+  vec3 starAt(vec3 p, float cell, float keep, float layerGain) {
     vec3 id = floor(p * cell);
-    vec3 f = fract(p * cell) - 0.5;
     float h = hash31(id);
-    if (h > keep) return 0.0;
-    float r = 0.05 + h * 0.16;
-    float d = length(f);
-    float core = smoothstep(r, 0.0, d);
-    float tw = 0.45 + 0.55 * sin(uTime * (1.2 + h * 7.0) + h * 22.0);
-    float glam = smoothstep(0.32, 0.0, abs(f.x)) * smoothstep(0.32, 0.0, abs(f.y));
-    return core * tw + glam * 0.12 * tw;
+    if (h < keep) return vec3(0.0);
+
+    vec3 f = fract(p * cell) - 0.5;
+    vec2 jitter = vec2(hash31(id + 1.7), hash31(id + 2.3)) - 0.5;
+    jitter *= 0.74;
+    vec2 d = (f.xy - jitter) * 2.2;
+
+    float mag = hash31(id + 4.1);
+    float dist = length(d);
+
+    float radius;
+    float peak;
+    if (mag >= uHeroThreshold) {
+      radius = 0.028;
+      peak = uBrightGain;
+    } else if (mag > 0.76) {
+      radius = 0.011 + (mag - 0.76) * 0.02;
+      peak = 0.28 + (mag - 0.76) * 1.1;
+    } else {
+      radius = 0.004 + mag * 0.005;
+      peak = 0.06 + mag * 0.14;
+    }
+
+    float core = smoothstep(radius, radius * 0.1, dist);
+    float lum = core * peak;
+
+    if (mag >= uHeroThreshold) {
+      float halo = exp(-dist * dist / (radius * radius * 4.5)) * 0.32;
+      vec2 sp = d / max(radius, 0.001);
+      float spike = (exp(-abs(sp.x) * 10.0) + exp(-abs(sp.y) * 10.0)) * exp(-length(sp) * 0.5) * 0.5;
+      lum += halo + spike;
+    }
+
+    if (lum < 0.002) return vec3(0.0);
+
+    float tw = 0.84 + 0.16 * sin(uTime * (0.45 + mag * 1.4) + h * 11.0);
+    return vec3(lum * tw * layerGain);
   }
 
-  vec3 starTint(vec3 id) {
-    float h = hash31(id + 0.42);
-    float warm = step(0.82, h);
-    vec3 cool = vec3(0.92, 0.95, 1.0);
-    vec3 gold = vec3(1.0, 0.94, 0.82);
-    return mix(cool, gold, warm * 0.35);
+  vec3 stampStars(vec3 p, float cellMul, float keepDelta) {
+    float cellN = uStarCell * cellMul;
+    float cellF = uStarCellFar * cellMul;
+    float keepN = clamp(uStarKeep + keepDelta, 0.82, 0.985);
+    float keepF = clamp(uStarKeepFar + keepDelta * 0.7, 0.86, 0.99);
+    vec3 near = starAt(p, cellN, keepN, 1.0);
+    vec3 far = starAt(p * 1.03 + 0.35, cellF, keepF, 0.62);
+    return max(near, far);
+  }
+
+  // Fly-through: advect along the view ray (stars rush toward camera ahead, sparse on the sides).
+  vec3 sampleField(vec3 ray, float forward, float flyDist, float streakLen) {
+    float cellMul = 1.0 / (1.0 + forward * streakLen * 0.62);
+    float keepDelta = -forward * streakLen * 0.055;
+    float depth = 112.0 / (1.0 + forward * streakLen * 0.28);
+    vec3 anchor = ray * depth - ray * flyDist;
+    vec3 col = stampStars(anchor, cellMul, keepDelta);
+    if (uStreak > 0.08) {
+      col = max(col, stampStars(anchor - ray * (streakLen * 1.1), cellMul, keepDelta));
+      col = max(col, stampStars(anchor - ray * (streakLen * 2.5), cellMul, keepDelta));
+      col = max(col, stampStars(anchor - ray * (streakLen * 4.2), cellMul, keepDelta));
+      col = max(col, stampStars(anchor - ray * (streakLen * 6.5), cellMul, keepDelta));
+    }
+    return col;
   }
 
   void main() {
@@ -90,34 +133,13 @@ const VIEWPORT_FRAGMENT = `
       vec3 pano = normalize(vec3(sin(az), el, cos(az) + 0.35));
       ray = normalize(mix(ray, pano, 0.9));
     }
-    vec3 drift = uShipForward * uTime * uScroll;
-    float align = abs(dot(ray, uShipForward));
-    float streakLen = uStreak * (0.3 + 0.7 * align);
+    float forward = max(dot(ray, uShipForward), 0.0);
+    float flyDist = uStreak > 0.001 ? uTime * uScroll * (0.2 + forward * 1.25) : 0.0;
+    float streakLen = uStreak * (0.35 + 0.65 * forward);
 
-    float acc = 0.0;
-    vec3 colAcc = vec3(0.0);
-    for (int i = 0; i < 7; i++) {
-      float t = float(i) / 6.0;
-      vec3 offset = uShipForward * (streakLen * t * 7.5);
-      vec3 p = ray * 88.0 - drift - offset;
-      float s1 = starLayer(p, 16.0, 0.78);
-      float s2 = starLayer(p * 1.9 + 1.3, 20.0, 0.84);
-      float s3 = starLayer(p * 3.7 - 2.1, 26.0, 0.88);
-      float layer = s1 + s2 * 0.75 + s3 * 0.45;
-      if (layer > 0.004) {
-        colAcc += starTint(floor(p * 18.0)) * layer;
-        acc += layer;
-      }
-    }
-    acc /= 7.0;
-    colAcc /= 7.0;
+    vec3 col = sampleField(ray, forward, flyDist, streakLen);
+    col *= 1.0 + uStreak * forward * 0.42;
 
-    vec2 nebUv = ray.xz * 2.4 + drift.xz * 0.015 + vec2(uTime * 0.01);
-    float neb = fbm(nebUv) * fbm(nebUv * 1.6 + 3.7);
-    vec3 nebCol = vec3(0.05, 0.035, 0.09) * neb * (0.2 + 0.45 * (1.0 - align));
-    if (uDisplayChrome > 0.5) nebCol *= 0.35;
-
-    vec3 col = nebCol + colAcc * (1.55 + uStreak * 2.0);
     float alpha;
 
     if (uDisplayChrome > 0.5) {
@@ -130,15 +152,15 @@ const VIEWPORT_FRAGMENT = `
         edge = smoothstep(0.0, 0.14, uv.x) * smoothstep(1.0, 0.86, uv.x)
           * smoothstep(0.0, 0.12, uv.y) * smoothstep(1.0, 0.88, uv.y);
       }
-      float scan = 0.96 + 0.04 * sin(uv.y * 480.0 + uTime * 2.8);
-      float vignette = 1.0 - 0.28 * length((uv - 0.5) * vec2(1.0, 1.1));
-      col = mix(vec3(0.0), col, edge) * scan * vignette;
+      float scan = 0.99 + 0.01 * sin(uv.y * 380.0 + uTime * 1.8);
+      float vignette = 1.0 - 0.18 * length((uv - 0.5) * vec2(1.0, 1.06));
+      col = col * edge * scan * vignette;
       alpha = uOpacity * edge;
-      float gloss = pow(1.0 - abs(uv.y - 0.18), 3.0) * 0.08;
-      col += vec3(0.4, 0.55, 0.7) * gloss * edge;
+      float gloss = pow(1.0 - abs(uv.y - 0.18), 3.0) * 0.035;
+      col += vec3(1.0) * gloss * edge;
     } else {
-      float starMix = clamp(acc * 2.4 + 0.05, 0.0, 1.0);
-      alpha = uOpacity * mix(0.9, 1.0, starMix);
+      float lum = max(col.r, max(col.g, col.b));
+      alpha = uOpacity * mix(0.9, 1.0, smoothstep(0.0, 0.2, lum));
     }
 
     if (alpha < 0.01) discard;
@@ -150,7 +172,7 @@ type UniformNum = { value: number };
 type UniformVec3 = { value: THREE.Vector3 };
 
 /**
- * Procedural exterior field for interior glass: one continuous 3D star volume advected along ship forward.
+ * Procedural exterior field for interior glass: sparse 3D star catalog advected along ship forward.
  * Bridge fore uses panorama UVs so the nose reads as one wide monitor.
  */
 export class StarscapeRenderer {
@@ -160,6 +182,12 @@ export class StarscapeRenderer {
   private readonly uCameraPos: UniformVec3 = { value: new THREE.Vector3() };
   private readonly uShipForward: UniformVec3 = { value: SHIP_FORWARD.clone() };
   private readonly uPanorama: UniformNum = { value: 0 };
+  private readonly uStarCell: UniformNum = { value: STARSCAPE_TUNING.cell };
+  private readonly uStarKeep: UniformNum = { value: STARSCAPE_TUNING.keep };
+  private readonly uStarCellFar: UniformNum = { value: STARSCAPE_TUNING.cellFar };
+  private readonly uStarKeepFar: UniformNum = { value: STARSCAPE_TUNING.keepFar };
+  private readonly uHeroThreshold: UniformNum = { value: STARSCAPE_TUNING.heroThreshold };
+  private readonly uBrightGain: UniformNum = { value: STARSCAPE_TUNING.brightGain };
   private bridgeForeMat: THREE.ShaderMaterial | null = null;
   private motion: ShipMotionState = 'still';
   private time = 0;
@@ -177,8 +205,8 @@ export class StarscapeRenderer {
       this.uScroll.value = 13;
       this.uStreak.value = 0.58;
     } else {
-      this.uScroll.value = 0.07;
-      this.uStreak.value = 0.02;
+      this.uScroll.value = 0.02;
+      this.uStreak.value = 0;
     }
   }
 
@@ -193,6 +221,12 @@ export class StarscapeRenderer {
       uOpacity: { value: opacity },
       uDisplayChrome: { value: displayChrome },
       uPanorama: this.uPanorama,
+      uStarCell: this.uStarCell,
+      uStarKeep: this.uStarKeep,
+      uStarCellFar: this.uStarCellFar,
+      uStarKeepFar: this.uStarKeepFar,
+      uHeroThreshold: this.uHeroThreshold,
+      uBrightGain: this.uBrightGain,
     };
   }
 
