@@ -12,16 +12,16 @@ export const SHIP_FORWARD = new THREE.Vector3(0, 0, 1);
 export const STARSCAPE_TUNING = {
   /** Primary catalog grid (one star candidate per cell). */
   cell: 4.6,
-  keep: 0.89,
+  keep: 0.868,
   /** Distant smaller layer. */
   cellFar: 9.2,
-  keepFar: 0.92,
+  keepFar: 0.904,
   /** Hash above this → hero star (halo + 4-point spikes). */
   heroThreshold: 0.94,
   /** Brightness cap for hero cores. */
-  brightGain: 1.16,
+  brightGain: 1.39,
   /** Multiplier on lit pixels only (gaps stay black). */
-  starGain: 1.12,
+  starGain: 1.34,
 };
 
 const VIEWPORT_VERTEX = `
