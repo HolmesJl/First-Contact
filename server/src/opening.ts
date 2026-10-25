@@ -17,7 +17,9 @@ import { cabinDoorPublic } from './cabinDoor';
 import { CLOSET_SLOTS, normalizeInventory, normalizePadFiles, normalizeSlots, normalizeStock } from '../../shared/items';
 import { normalizeScavenger } from '../../shared/scavenger';
 import { normalizeScanningSkill } from '../../shared/scanning';
+import { normalizeTransporterSkill } from '../../shared/transporter';
 import { normalizeShipScanResults, shipScanResults } from './scanning';
+import { normalizeShipStocks } from './transporter';
 import type { MemberRecord, ShipRecord } from './store';
 
 export function shipMeta(ship: ShipRecord) {
@@ -29,6 +31,8 @@ export function shipMeta(ship: ShipRecord) {
     transitYears: ship.transitYears!,
     cabinDoor: cabinDoorPublic(ship),
     stock: ship.stock!,
+    refineryStock: ship.refineryStock!,
+    cargoHoldStock: ship.cargoHoldStock!,
     scanResults: shipScanResults(ship),
   };
 }
@@ -49,8 +53,9 @@ export function normalizeMember(m: MemberRecord): MemberRecord {
   m.closet = normalizeSlots(m.closet, CLOSET_SLOTS);
   m.padFiles = normalizePadFiles(m.padFiles);
   m.scavenger = normalizeScavenger(m.scavenger);
-  m.skills ??= { scanning: normalizeScanningSkill(null) };
+  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: normalizeTransporterSkill(null) };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
+  m.skills.transporter = normalizeTransporterSkill(m.skills.transporter);
   return m;
 }
 
@@ -62,6 +67,7 @@ export function normalizeShip(ship: ShipRecord): ShipRecord {
   ship.cabinDoorCode ??= null;
   ship.cabinDoorOpen ??= false;
   ship.stock = normalizeStock(ship.stock);
+  normalizeShipStocks(ship);
   normalizeShipScanResults(ship);
   for (const m of Object.values(ship.members)) normalizeMember(m);
   return ship;

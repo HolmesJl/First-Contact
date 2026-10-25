@@ -1,9 +1,11 @@
 import {
   SCAN_DURATION_MS,
   SCAN_POSITIVES_FOR_LEVEL,
+  scanFindTitle,
   type ScanResultEntry,
   type ScanningSkill,
 } from '../../shared/scanning';
+import { formatLootSummary } from '../../shared/transporter';
 
 const ui = document.getElementById('ui')!;
 
@@ -181,7 +183,7 @@ export class ScanStationOverlay {
       .slice(0, 8)
       .map(
         (r) =>
-          `<li><span class="scan-log-type">${esc(r.type)}</span> · ${esc(r.distanceLabel)} · ${esc(r.foundBy)} <time>${esc(formatTime(r.foundAt))}</time></li>`,
+          `<li><span class="scan-log-type">${esc(scanFindTitle(r))}</span> · ${esc(r.distanceLabel)} · ${esc(formatLootSummary(r))} · ${esc(r.foundBy)} <time>${esc(formatTime(r.foundAt))}</time></li>`,
       )
       .join('');
   }
@@ -231,7 +233,7 @@ export class ScanStationOverlay {
       ${levelNote}
       <div class="scan-toast hit">
         <div class="scan-find-title">Contact logged</div>
-        <div>${esc(find?.type ?? 'signal')} · ${esc(find?.distanceLabel ?? '')}</div>
+        <div>${esc(find ? scanFindTitle(find) : 'signal')} · ${esc(find?.distanceLabel ?? '')} · ${esc(find ? formatLootSummary(find) : '')}</div>
       </div>`;
   }
 

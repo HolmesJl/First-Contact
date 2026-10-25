@@ -20,6 +20,15 @@ import { CLOSETS, MATERIALS_PAD_INTERACT_ID, STARTING_STOCK, STOCK_PANELS, WORLD
 import { SCAVENGER_FILE_NAME, SCAVENGER_TASKS } from './scavenger';
 import { BRIDGE_SCAN_INTERACT_ID, BRIDGE_SCAN_PROP_ID, SCAN_STATIONS } from './scanning';
 import {
+  CARGO_HOLD_CAPACITY,
+  REFINERY_CAPACITY,
+  TRANSPORTER_STATIONS,
+  defaultCargoHoldStock,
+  defaultRefineryStock,
+  isTransporterStationId,
+  stockTotal,
+} from './transporter';
+import {
   BERTHS,
   CABIN_KEYPAD,
   PROPS,
@@ -403,6 +412,24 @@ for (const [job, berth] of homeCases) {
       const deskErr = deskPadPlacementProblem(p, s, s.stand, `scan station ${s.interactId}`, s.face);
       if (deskErr) fail(deskErr);
     }
+  }
+}
+
+// Transporter pads + default material stocks fit shared capacity.
+{
+  const refTotal = stockTotal(defaultRefineryStock());
+  if (refTotal > REFINERY_CAPACITY) fail(`default refinery stock ${refTotal} exceeds capacity ${REFINERY_CAPACITY}`);
+  const cargoTotal = stockTotal(defaultCargoHoldStock());
+  if (cargoTotal > CARGO_HOLD_CAPACITY) fail(`default cargo hold stock ${cargoTotal} exceeds capacity ${CARGO_HOLD_CAPACITY}`);
+  for (const s of TRANSPORTER_STATIONS) {
+    if (!isTransporterStationId(s.interactId)) fail(`unknown transporter id ${s.interactId}`);
+    if (interactPrompt(s.interactId) !== 'Use transporter') fail(`transporter prompt missing for ${s.interactId}`);
+    const stand = positionForInteract(s.interactId);
+    if (!stand) fail(`transporter ${s.interactId} has no stand`);
+    if (!isWalkable(s.stand.x, s.stand.z)) fail(`transporter ${s.interactId} stand not walkable`);
+    if (!reachable(s.stand.x, s.stand.z, 0.3)) fail(`transporter ${s.interactId} stand unreachable`);
+    const dist = Math.hypot(s.stand.x - s.x, s.stand.z - s.z);
+    if (dist > INTERACT_RADIUS) fail(`transporter ${s.interactId} is ${dist.toFixed(2)}m from pad (max ${INTERACT_RADIUS}m)`);
   }
 }
 

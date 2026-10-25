@@ -318,6 +318,7 @@ export const RAW_MATERIALS: readonly MaterialDef[] = [
   { id: 'iron', name: 'Iron' },
   { id: 'tin', name: 'Tin' },
   { id: 'minerals', name: 'Minerals' },
+  { id: 'seeds', name: 'Plant seeds' },
 ];
 
 export const SHIP_MATERIALS: readonly MaterialDef[] = [

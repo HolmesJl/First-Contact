@@ -2,17 +2,21 @@ import { inRange } from '../../shared/opening';
 import {
   BRIDGE_SCAN_INTERACT_ID,
   SCAN_DURATION_MS,
+  SCAN_OUTCOME_KINDS,
   SCAN_STATIONS,
   applyPositiveScan,
-  nextScanFindType,
   normalizeScanResults,
   normalizeScanningSkill,
   pickScanDistanceLabel,
+  pickScanOutcome,
+  rollScanLoot,
   scanStationById,
   scanSucceeded,
+  type ScanOutcomeKind,
   type ScanResultEntry,
   type ScanningSkill,
 } from '../../shared/scanning';
+import { normalizeTransporterSkill } from '../../shared/transporter';
 import type { MemberRecord, ShipRecord } from './store';
 
 const activeScans = new Map<string, { shipCode: string; endsAt: number }>();
@@ -34,8 +38,9 @@ export function memberScanningSkill(m: MemberRecord): ScanningSkill {
 }
 
 function normalizeMemberSkills(m: MemberRecord) {
-  m.skills ??= { scanning: normalizeScanningSkill(null) };
+  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: normalizeTransporterSkill(null) };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
+  m.skills.transporter = normalizeTransporterSkill(m.skills.transporter);
 }
 
 export function normalizeShipScanResults(ship: ShipRecord) {
@@ -103,13 +108,22 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
     skill = prog.skill;
     leveledUp = prog.leveledUp;
     member.skills!.scanning = skill;
-    const prev = ship.scanResults?.length ? ship.scanResults[ship.scanResults.length - 1] : null;
+    let outcome = pickScanOutcome(scanRoll());
+    const forcedOutcome = process.env.SCAN_FORCE_OUTCOME;
+    if (forcedOutcome && (SCAN_OUTCOME_KINDS as readonly string[]).includes(forcedOutcome)) {
+      outcome = forcedOutcome as ScanOutcomeKind;
+    }
+    const loot =
+      outcome === 'distress' || outcome === 'firstContact'
+        ? []
+        : rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()]);
     find = {
       id: crypto.randomUUID(),
-      type: nextScanFindType(prev?.type ?? null),
+      outcome,
       distanceLabel: pickScanDistanceLabel(scanRoll()),
       foundAt: now,
       foundBy: `${member.character!.firstName} ${member.character!.lastName}`,
+      loot,
     };
     normalizeShipScanResults(ship);
     ship.scanResults = [...(ship.scanResults ?? []), find].slice(-30);

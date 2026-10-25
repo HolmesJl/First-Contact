@@ -41,7 +41,7 @@ export interface MemberRecord {
   padFiles?: PadFile[];
   /** Quest 2 (scavenger hunt) progress, or null until issued. */
   scavenger?: ScavengerState | null;
-  skills?: { scanning?: ScanningSkill };
+  skills?: { scanning?: ScanningSkill; transporter?: import('../../shared/transporter').TransporterSkill };
 }
 
 export interface ShipRecord {
@@ -59,6 +59,10 @@ export interface ShipRecord {
   cabinDoorOpen?: boolean;
   /** Ship-wide item and material counts by id (see shared/items.ts STARTING_STOCK). */
   stock?: Record<string, number>;
+  /** Raw materials beamed into the refinery (capacity in shared/transporter.ts). */
+  refineryStock?: Record<string, number>;
+  /** Ship materials beamed into the cargo hold (capacity in shared/transporter.ts). */
+  cargoHoldStock?: Record<string, number>;
   /** Shared contact log from Bridge scans (newest last; capped on normalize). */
   scanResults?: ScanResultEntry[];
 }

@@ -4,6 +4,7 @@ import { berthFromMemoryStationId, berthLabel, memoryStationFor, memoryStationId
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 import { isItemInteractId, itemInteractPosition, itemInteractPrompt } from './items';
 import { SCAN_STATIONS, isScanStationId, scanStationById } from './scanning';
+import { TRANSPORTER_STATIONS, isTransporterStationId, transporterStationById } from './transporter';
 
 export const TRANSIT_YEARS = 60;
 export const SHIP_DISPLAY_NAME = 'First Contact';
@@ -178,6 +179,7 @@ export function interactPrompt(interactId: string): string | null {
   if (isCabinKeypadId(interactId)) return 'Use cabin keypad';
   if (isItemInteractId(interactId)) return itemInteractPrompt(interactId);
   if (isScanStationId(interactId)) return 'Sensor scan';
+  if (isTransporterStationId(interactId)) return 'Use transporter';
   switch (interactId) {
     case 'captain-desk':
     case 'bunk-desk-pad':
@@ -201,11 +203,14 @@ export function interactPrompt(interactId: string): string | null {
 
 export function interactIdForProp(id: string): string | null {
   if (isScanStationId(id)) return id;
+  if (isTransporterStationId(id)) return id;
   if (isCabinKeypadId(id)) return id;
   if (berthFromMemoryStationId(id) !== null) return id;
   if (isItemInteractId(id)) return id;
   const scan = SCAN_STATIONS.find((s) => s.propId === id);
   if (scan) return scan.interactId;
+  const trans = TRANSPORTER_STATIONS.find((s) => s.propId === id);
+  if (trans) return trans.interactId;
   return INTERACT_IDS.has(id) ? id : null;
 }
 
@@ -214,6 +219,8 @@ export function positionForInteract(interactId: string): { x: number; z: number 
   if (isItemInteractId(interactId)) return itemInteractPosition(interactId);
   const scan = scanStationById(interactId);
   if (scan) return scan.stand;
+  const trans = transporterStationById(interactId);
+  if (trans) return trans.stand;
   const berth = berthFromMemoryStationId(interactId);
   if (berth !== null) return memoryStationFor(berth)?.stand ?? null;
   const t = terminalMeta(interactId);
