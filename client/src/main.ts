@@ -17,6 +17,9 @@ import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt,
 import { isOnBridge, scavengerAwaiting, scavengerHighlightId, scavengerIssueBlock, scavengerObjective } from '../../shared/scavenger';
 import { isScanStationId } from '../../shared/scanning';
 import { ScanStationOverlay } from './scanStation';
+import { isTransporterStationId, LAB_QUEST_TERMINAL_INTERACT_ID, transporterStationById } from '../../shared/transporter';
+import { TransporterStationOverlay } from './transporterStation';
+import { JOB_STATION_INTERACT } from '../../shared/opening';
 import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -73,6 +76,7 @@ let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
 let inventory: InventoryOverlay | null = null;
 let scanStation: ScanStationOverlay | null = null;
+let transporterStation: TransporterStationOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let shipMeta: ShipMeta | null = null;
@@ -323,9 +327,17 @@ async function startLab() {
       if (id !== null && isScanStationId(id)) {
         hud?.setInteractPrompt('Sensor scan');
         lab?.setScanHover(id);
+        lab?.setTransporterHover(null);
+        return;
+      }
+      if (id !== null && isTransporterStationId(id)) {
+        hud?.setInteractPrompt('Use transporter');
+        lab?.setTransporterHover(id);
+        lab?.setScanHover(null);
         return;
       }
       lab?.setScanHover(null);
+      lab?.setTransporterHover(null);
       hud?.setInteractPrompt(prompt);
     },
     onInteract: (id) => {
@@ -383,6 +395,15 @@ async function startLab() {
       }
       if (isScanStationId(id)) {
         openScanStation();
+        return;
+      }
+      if (isTransporterStationId(id)) {
+        openTransporterStation(id);
+        const me = players.get(selfId);
+        if (me?.questStep === 'job-station' && me.character && id === transporterStationById(id)?.interactId) {
+          const questId = JOB_STATION_INTERACT[me.character.job];
+          if (questId === LAB_QUEST_TERMINAL_INTERACT_ID) net?.send({ t: 'interact', id: questId, x, z });
+        }
         return;
       }
       net?.send({ t: 'interact', id, x, z });
@@ -528,6 +549,25 @@ async function logout() {
   location.replace(location.pathname);
 }
 
+function openTransporterStation(padId: string) {
+  const pad = transporterStationById(padId);
+  const me = players.get(selfId);
+  if (!pad || !me?.character || !shipMeta || !lab) return;
+  transporterStation?.close();
+  lab.releaseInput();
+  transporterStation = new TransporterStationOverlay(pad, me.skills.transporter, shipMeta.scanResults, {
+    onStart: ({ scanId, materialId, qty }) => {
+      if (!transporterStation?.isOpen) return;
+      transporterStation.setPendingStart(true);
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'transportStart', padId: pad.interactId, scanId, materialId, qty, x, z });
+    },
+    onClose: () => {
+      transporterStation = null;
+    },
+  });
+}
+
 function openScanStation() {
   const me = players.get(selfId);
   if (!me?.character || !shipMeta || !lab) return;
@@ -598,6 +638,7 @@ function handle(m: ServerMsg) {
       if (p.id !== selfId && players.get(selfId)?.questStep === 'upload-memories') syncHudSelf();
       if (p.id === selfId) {
         scanStation?.updateSkill(p.skills.scanning);
+        transporterStation?.updateSkill(p.skills.transporter);
         if (p.hasPad && !hadPad) {
           hadPad = true;
           toast('Data pad added to communicator slot.');
@@ -635,6 +676,7 @@ function handle(m: ServerMsg) {
       inventory?.setStock(m.ship.stock);
       inventory?.setShipStocks(m.ship.refineryStock, m.ship.cargoHoldStock);
       scanStation?.setResults(m.ship.scanResults);
+      transporterStation?.setResults(m.ship.scanResults);
       wakeIntro?.enableContinue(() => beginCreator());
       break;
     case 'scanProgress':
@@ -643,7 +685,25 @@ function handle(m: ServerMsg) {
     case 'scanComplete':
       if (shipMeta) shipMeta = { ...shipMeta, scanResults: m.scanResults };
       scanStation?.showComplete(m.hit, m.find, m.skill, m.leveledUp, m.scanResults);
+      transporterStation?.setResults(m.scanResults);
       if (m.leveledUp) toast('Scanning skill increased!');
+      break;
+    case 'transportProgress':
+      transporterStation?.beginBeam(m.endsAt);
+      break;
+    case 'transportComplete':
+      if (shipMeta) {
+        shipMeta = {
+          ...shipMeta,
+          scanResults: m.scanResults,
+          refineryStock: m.refineryStock,
+          cargoHoldStock: m.cargoHoldStock,
+        };
+      }
+      transporterStation?.showComplete(m.ok, m.message, m.skill, m.scanResults);
+      inventory?.setShipStocks(m.refineryStock, m.cargoHoldStock);
+      if (m.leveledUp) toast('Transporter skill increased!');
+      if (m.message && m.ok) toast(m.message);
       break;
     case 'closet':
       inventory?.setCloset(m.slots);
@@ -681,8 +741,12 @@ function handle(m: ServerMsg) {
       break;
     case 'error':
       scanStation?.setPendingStart(false);
+      transporterStation?.setPendingStart(false);
       if (m.fatal && net) net.onClose = null;
-      if (!m.fatal) toast(m.message);
+      if (!m.fatal) {
+        toast(m.message);
+        transporterStation?.showMessage(m.message);
+      }
       else banner(m.message, m.fatal ? { label: 'Reload', run: () => location.reload() } : undefined);
       break;
     case 'welcome':

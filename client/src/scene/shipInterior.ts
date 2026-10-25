@@ -7,6 +7,7 @@ import { QuestTerminalLayer } from './questTerminals';
 import { MemoryStationLayer } from './memoryStations';
 import { ItemStationLayer } from './itemStations';
 import { ScanStationLayer } from './scanStations';
+import { TransporterStationLayer } from './transporterStations';
 import { isItemInteractId } from '../../../shared/items';
 import type { BerthOwner } from '../../../shared/bunks';
 import { SHIP_LAYOUT, type Corridor, type Door, type Obstacle, type Rect, type Room } from '../../../shared/shipLayout';
@@ -303,6 +304,7 @@ export class ShipInterior {
   private memoryStations = new MemoryStationLayer();
   private itemStations = new ItemStationLayer();
   private scanStations = new ScanStationLayer();
+  private transporterStations = new TransporterStationLayer();
   private cabinDoorPanel: THREE.Group | null = null;
   private cabinDoorOpenFrac = 0;
   private cabinDoorTargetFrac = 0;
@@ -321,6 +323,7 @@ export class ShipInterior {
     this.memoryStations.attach(this.root);
     this.itemStations.attach(this.root);
     this.scanStations.attach(this.root);
+    this.transporterStations.attach(this.root);
     this.setFocus(null);
   }
 
@@ -347,6 +350,10 @@ export class ShipInterior {
 
   setScanHover(interactId: string | null) {
     this.scanStations.setHighlight(interactId);
+  }
+
+  setTransporterHover(interactId: string | null) {
+    this.transporterStations.setHighlight(interactId);
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {
@@ -917,6 +924,7 @@ export class ShipInterior {
     this.memoryStations.update(this.time, camera);
     this.itemStations.update(dt);
     this.scanStations.update(this.time);
+    this.transporterStations.update(this.time);
     if (this.cabinDoorPanel) {
       const t = Math.min(1, dt * 8);
       this.cabinDoorOpenFrac += (this.cabinDoorTargetFrac - this.cabinDoorOpenFrac) * t;

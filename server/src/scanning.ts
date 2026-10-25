@@ -2,6 +2,7 @@ import { inRange } from '../../shared/opening';
 import {
   BRIDGE_SCAN_INTERACT_ID,
   SCAN_DURATION_MS,
+  SCAN_OUTCOME_KINDS,
   SCAN_STATIONS,
   applyPositiveScan,
   normalizeScanResults,
@@ -11,9 +12,11 @@ import {
   rollScanLoot,
   scanStationById,
   scanSucceeded,
+  type ScanOutcomeKind,
   type ScanResultEntry,
   type ScanningSkill,
 } from '../../shared/scanning';
+import { normalizeTransporterSkill } from '../../shared/transporter';
 import type { MemberRecord, ShipRecord } from './store';
 
 const activeScans = new Map<string, { shipCode: string; endsAt: number }>();
@@ -35,8 +38,9 @@ export function memberScanningSkill(m: MemberRecord): ScanningSkill {
 }
 
 function normalizeMemberSkills(m: MemberRecord) {
-  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: undefined };
+  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: normalizeTransporterSkill(null) };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
+  m.skills.transporter = normalizeTransporterSkill(m.skills.transporter);
 }
 
 export function normalizeShipScanResults(ship: ShipRecord) {
@@ -104,7 +108,11 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
     skill = prog.skill;
     leveledUp = prog.leveledUp;
     member.skills!.scanning = skill;
-    const outcome = pickScanOutcome(scanRoll());
+    let outcome = pickScanOutcome(scanRoll());
+    const forcedOutcome = process.env.SCAN_FORCE_OUTCOME;
+    if (forcedOutcome && (SCAN_OUTCOME_KINDS as readonly string[]).includes(forcedOutcome)) {
+      outcome = forcedOutcome as ScanOutcomeKind;
+    }
     const loot =
       outcome === 'distress' || outcome === 'firstContact'
         ? []

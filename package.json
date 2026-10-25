@@ -14,6 +14,7 @@
     "check:controls": "tsx client/src/input/controlMath.check.ts",
     "smoke:characters": "tsx tools/character-persistence-smoke.ts",
     "smoke:scan": "tsx tools/scan-smoke.ts",
+    "smoke:transport": "tsx tools/transport-smoke.ts",
     "smoke:items": "tsx tools/items-smoke.ts",
     "smoke:steer": "node tools/steer-smoke.mjs"
   },

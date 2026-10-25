@@ -84,9 +84,15 @@ export function normalizeTransporterSkill(raw: unknown): TransporterSkill {
 const RAW_IDS = new Set(RAW_MATERIALS.map((m) => m.id));
 const SHIP_IDS = new Set(SHIP_MATERIALS.map((m) => m.id));
 
+/**
+ * Starting qty per raw on a new ship. Seven types × 14 = 98 total, under {@link REFINERY_CAPACITY} (100).
+ * (items.md still lists 20 each on the view-only panel copy; live stock uses this seed.)
+ */
+export const REFINERY_START_PER_RAW = 14;
+
 export function defaultRefineryStock(): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const m of RAW_MATERIALS) out[m.id] = 20;
+  for (const m of RAW_MATERIALS) out[m.id] = REFINERY_START_PER_RAW;
   return out;
 }
 
