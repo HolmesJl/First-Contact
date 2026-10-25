@@ -2,17 +2,18 @@ import * as THREE from 'three';
 import { TRANSPORTER_STATIONS } from '../../../shared/transporter';
 import { FACE_OUT } from '../../../shared/shipInterior';
 
-/** Quest / hover highlight on the datapad screen and floor ring (matches item station amber). */
+/** Matches stock panels / scavenger terminals (visible yellow idle, brighter on hover). */
+const IDLE_PAD_COLOR = 0xffb347;
+const IDLE_EMISSIVE = new THREE.Color(0xa86a1c);
 const HOVER_PAD_COLOR = 0xffc46b;
-const HOVER_EMISSIVE = new THREE.Color(0xa86a1c);
+const HOVER_EMISSIVE = new THREE.Color(0xd4922a);
 
-/** Floor beacons and pick volumes for Science Lab and Cargo Bay transporter pads. */
+/** Floor beacons and chest-height consoles for Science Lab and Cargo Bay transporter pads. */
 export class TransporterStationLayer {
   readonly root = new THREE.Group();
   private beacons = new Map<string, THREE.Mesh>();
   private padGlows = new Map<string, THREE.Mesh>();
   private screens = new Map<string, THREE.MeshStandardMaterial>();
-  private baseEmissive = new Map<string, THREE.Color>();
   private highlightId: string | null = null;
 
   constructor() {
@@ -23,54 +24,58 @@ export class TransporterStationLayer {
       const f = FACE_OUT[s.face];
       g.rotation.y = Math.atan2(f.dx, f.dz);
 
-      const color = s.lootKind === 'raw' ? 0x5fd8ff : 0xffc46a;
-      const emissive = new THREE.Color(s.lootKind === 'raw' ? 0x2a8cb8 : 0xb8862a);
-      const screenMat = new THREE.MeshStandardMaterial({
-        color,
-        emissive: emissive.clone(),
-        emissiveIntensity: 0.85,
-        roughness: 0.35,
-      });
-      const screen = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.02), screenMat);
-      screen.position.z = 0.035;
-      screen.userData.interactId = s.interactId;
+      const pedestal = new THREE.Mesh(
+        new THREE.BoxGeometry(0.48, 0.92, 0.38),
+        new THREE.MeshStandardMaterial({ color: 0x3a4557, roughness: 0.55, metalness: 0.35 }),
+      );
+      pedestal.position.y = -0.5;
 
       const panel = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.28, 0.06),
+        new THREE.BoxGeometry(0.58, 0.36, 0.08),
         new THREE.MeshStandardMaterial({ color: 0x1a2438, roughness: 0.45, metalness: 0.35 }),
       );
+      panel.position.y = 0.02;
+
+      const screenMat = new THREE.MeshStandardMaterial({
+        color: IDLE_PAD_COLOR,
+        emissive: IDLE_EMISSIVE.clone(),
+        emissiveIntensity: 1.05,
+        roughness: 0.35,
+      });
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.02), screenMat);
+      screen.position.z = 0.045;
+      screen.userData.interactId = s.interactId;
       panel.add(screen);
 
       const padGlow = new THREE.Mesh(
-        new THREE.RingGeometry(0.2, 0.34, 32),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+        new THREE.RingGeometry(0.26, 0.44, 32),
+        new THREE.MeshBasicMaterial({ color: IDLE_PAD_COLOR, transparent: true, opacity: 0.65, side: THREE.DoubleSide }),
       );
       padGlow.rotation.x = -Math.PI / 2;
-      padGlow.position.y = -0.22;
+      padGlow.position.y = -0.58;
 
-      const pick = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.52, 0.42), pickMat);
-      pick.position.z = 0.05;
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.62, 0.5), pickMat);
+      pick.position.set(0, 0.05, 0.08);
       pick.userData.interactId = s.interactId;
 
-      const standPick = new THREE.Mesh(new THREE.BoxGeometry(1.35, 2.35, 1.35), pickMat);
-      standPick.position.set(s.stand.x, 1.15, s.stand.z);
+      const standPick = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.1, 1.1), pickMat);
+      standPick.position.set(s.stand.x, 1.1, s.stand.z);
       standPick.userData.interactId = s.interactId;
 
       const beacon = new THREE.Mesh(
-        new THREE.RingGeometry(0.28, 0.48, 32),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, side: THREE.DoubleSide }),
+        new THREE.RingGeometry(0.32, 0.52, 32),
+        new THREE.MeshBasicMaterial({ color: IDLE_PAD_COLOR, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
       );
       beacon.rotation.x = -Math.PI / 2;
       beacon.position.set(s.stand.x, 0.04, s.stand.z);
 
-      g.add(panel, padGlow, pick);
+      g.add(pedestal, panel, padGlow, pick);
       this.root.add(g);
       this.root.add(standPick);
       this.root.add(beacon);
       this.beacons.set(s.interactId, beacon);
       this.padGlows.set(s.interactId, padGlow);
       this.screens.set(s.interactId, screenMat);
-      this.baseEmissive.set(s.interactId, emissive.clone());
     }
   }
 
@@ -84,15 +89,16 @@ export class TransporterStationLayer {
 
   update(time: number) {
     const pulse = 0.45 + 0.35 * Math.sin(time * 3.2);
-    const hot = 0.75 + 0.2 * Math.sin(time * 4.5);
-    for (const [id, beacon] of this.beacons) {
-      const hover = id === this.highlightId;
-      (beacon.material as THREE.MeshBasicMaterial).opacity = hover ? hot : pulse * 0.55;
-    }
+    const hot = 0.82 + 0.18 * Math.sin(time * 4.5);
     for (const s of TRANSPORTER_STATIONS) {
       const id = s.interactId;
-      const idle = s.lootKind === 'raw' ? 0x5fd8ff : 0xffc46a;
       const hover = id === this.highlightId;
+      const beacon = this.beacons.get(id);
+      if (beacon) {
+        const mat = beacon.material as THREE.MeshBasicMaterial;
+        mat.opacity = hover ? hot : 0.42 + pulse * 0.22;
+        mat.color.setHex(hover ? HOVER_PAD_COLOR : IDLE_PAD_COLOR);
+      }
       const pad = this.padGlows.get(id);
       if (pad) {
         const mat = pad.material as THREE.MeshBasicMaterial;
@@ -100,21 +106,20 @@ export class TransporterStationLayer {
           mat.color.setHex(HOVER_PAD_COLOR);
           mat.opacity = hot;
         } else {
-          mat.color.setHex(idle);
-          mat.opacity = 0.5 + pulse * 0.25;
+          mat.color.setHex(IDLE_PAD_COLOR);
+          mat.opacity = 0.55 + pulse * 0.2;
         }
       }
       const screen = this.screens.get(id);
-      const base = this.baseEmissive.get(id);
-      if (screen && base) {
+      if (screen) {
         if (hover) {
           screen.emissive.copy(HOVER_EMISSIVE);
-          screen.emissiveIntensity = 0.95 + hot * 0.35;
+          screen.emissiveIntensity = 1.25 + hot * 0.35;
           screen.color.setHex(HOVER_PAD_COLOR);
         } else {
-          screen.emissive.copy(base);
-          screen.emissiveIntensity = 0.85;
-          screen.color.setHex(idle);
+          screen.emissive.copy(IDLE_EMISSIVE);
+          screen.emissiveIntensity = 1.05;
+          screen.color.setHex(IDLE_PAD_COLOR);
         }
       }
     }

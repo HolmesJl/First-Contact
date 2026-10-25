@@ -232,13 +232,13 @@ export function buildProp(p: Prop, ctx: PropContext) {
     case 'pad': {
       const r = p.sx / 2;
       b.cyl(r, r + 0.1, p.h, p.x, y0, p.z, 'metal', 32);
-      b.ring(r - 0.12, 0.04, p.x, y0 + p.h + 0.01, p.z, p.id === 'teleporter-pad' ? 'glowCyan' : 'glowAmber', 40);
+      b.ring(r - 0.12, 0.04, p.x, y0 + p.h + 0.01, p.z, 'glowAmber', 40);
       b.cyl(r * 0.45, r * 0.45, 0.02, p.x, y0 + p.h, p.z, 'dark', 24);
       if (p.id === 'teleporter-pad') {
         for (let i = 0; i < 3; i++) {
           const a = (i / 3) * Math.PI * 2 + 0.5;
           b.box(0.18, 2.2, 0.18, p.x + Math.cos(a) * (r + 0.2), 0, p.z + Math.sin(a) * (r + 0.2), 'metal');
-          b.box(0.22, 0.1, 0.22, p.x + Math.cos(a) * (r + 0.2), 2.2, p.z + Math.sin(a) * (r + 0.2), 'glowCyan');
+          b.box(0.22, 0.1, 0.22, p.x + Math.cos(a) * (r + 0.2), 2.2, p.z + Math.sin(a) * (r + 0.2), 'metal');
         }
       }
       if (p.id === LAB_TRANSPORTER_PROP_ID) {

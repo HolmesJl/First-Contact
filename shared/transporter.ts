@@ -1,5 +1,5 @@
 import { RAW_MATERIALS, SHIP_MATERIALS, materialName } from './items';
-import { PROPS, SPACE_NAMES, questTerminalPosition } from './shipInterior';
+import { PROPS, SPACE_NAMES, floorTransporterTerminalMount, questTerminalPosition } from './shipInterior';
 import type { Facing } from './shipLayout';
 import type { Job } from './protocol';
 import { SURFACE_ANOMALY_LABEL, scanContactAwayMissionStub, type ScanLootLine, type ScanOutcomeKind, type ScanResultEntry } from './scanning';
@@ -45,7 +45,8 @@ export interface TransporterStation {
 function placePad(propId: string, interactId: TransporterPadId, lootKind: 'raw' | 'ship', destination: 'refinery' | 'cargoHold'): TransporterStation {
   const prop = PROPS.find((p) => p.id === propId);
   if (!prop) throw new Error(`transporter: missing prop ${propId}`);
-  const { x, z, y, face, stand } = questTerminalPosition(propId);
+  const { x, z, y, face, stand } =
+    prop.kind === 'pad' ? floorTransporterTerminalMount(prop) : questTerminalPosition(propId);
   return {
     interactId,
     propId,

@@ -426,10 +426,12 @@ async function startLab() {
         armor(on: boolean | string | null, playerId?: string): void;
         openScan(): void;
         scanStart(): void;
+        highlightTransporter(id: string | null): void;
       };
     }).__fc = {
       lab,
       teleport: (x, z, rot) => lab?.devTeleport(x, z, rot),
+      highlightTransporter: (id) => lab?.setTransporterHover(id),
       cabinDoorFrac: (f) => lab?.setCabinDoor({ codeSet: true, open: f > 0.5, animAt: Date.now(), openFrac: f }, true),
       interact: (id) => {
         const { x, z } = lab!.localPos();

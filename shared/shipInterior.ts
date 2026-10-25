@@ -299,7 +299,13 @@ cyl('hold', 'beam-in-pad', 'pad', -20.2, -6.5, 1.4, 0.08, { solid: false, label:
 box('hold', 'hold-net', 'board', -24.9, -8.5, 0.3, 3.6, 2.2, { solid: false, face: 'E', label: 'CARGO NET' });
 
 // Science lab.
-cyl('science', 'teleporter-pad', 'pad', -53.2, -21.0, 1.5, 0.12, { solid: false, label: 'TELEPORTER PAD', station: 'teleporter', job: 'engineer' });
+cyl('science', 'teleporter-pad', 'pad', -53.2, -21.0, 1.5, 0.12, {
+  solid: false,
+  face: 'S',
+  label: 'TELEPORTER PAD',
+  station: 'teleporter',
+  job: 'engineer',
+});
 box('science', 'refinery', 'machine', -57.3, -24.5, 1.8, 2.0, 1.8, { face: 'E', label: 'REFINERY', station: 'refinery', job: 'engineer' });
 box('science', 'robotics-bench', 'bench', -57.7, -17.0, 1.2, 2.4, 0.95, { face: 'E', label: 'ROBOTICS BENCH', station: 'robotics', job: 'engineer' });
 box('science', 'printer', 'machine', -49.5, -25.3, 1.4, 1.2, 1.3, { face: 'N', label: 'PRINTER', station: 'printer', job: 'engineer' });
@@ -563,6 +569,23 @@ export function standPointOnFace(prop: Prop, standOff = 0.22, slide = 0): { x: n
     if (isWalkable(x, z)) return { x, z, face };
   }
   throw new Error(`${prop.id}: no walkable stand point on ${face} face`);
+}
+
+/**
+ * Chest-height transporter console on the rim of a floor pad, facing the walkable stand (amber terminal style).
+ */
+export function floorTransporterTerminalMount(prop: Prop, standOff = 0.22) {
+  const face = prop.face ?? 'S';
+  const stand = standPointOnFace(prop, standOff, 0);
+  const y0 = prop.y ?? 0;
+  const r = prop.sx / 2;
+  const dx = stand.x - prop.x;
+  const dz = stand.z - prop.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const x = prop.x + (dx / len) * r * 0.52;
+  const z = prop.z + (dz / len) * r * 0.52;
+  const y = y0 + 1.08;
+  return { x, z, y, face, stand: { x: stand.x, z: stand.z } };
 }
 
 /** Quest-terminal pad mount and stand for a prop id. */
