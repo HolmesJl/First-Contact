@@ -249,6 +249,12 @@ export function buildProp(p: Prop, ctx: PropContext) {
         pick.position.set(p.x, y0 + 1.2, p.z);
         pick.userData.interactId = LAB_TRANSPORTER_INTERACT_ID;
         ctx.group.add(pick);
+        // Arches and the pad cylinder are merged meshes that steal raycasts from the transporter datapad above.
+        ctx.group.traverse((obj) => {
+          if (!(obj instanceof THREE.Mesh)) return;
+          if (obj.userData.interactId === LAB_TRANSPORTER_INTERACT_ID) return;
+          obj.raycast = () => {};
+        });
       }
       break;
     }

@@ -16,6 +16,7 @@
     "smoke:scan": "tsx tools/scan-smoke.ts",
     "smoke:transport": "tsx tools/transport-smoke.ts",
     "smoke:datapad": "tsx tools/datapad-smoke.ts",
+    "smoke:transporter-pick": "tsx tools/transporter-pick-smoke.ts",
     "smoke:items": "tsx tools/items-smoke.ts",
     "smoke:steer": "node tools/steer-smoke.mjs"
   },

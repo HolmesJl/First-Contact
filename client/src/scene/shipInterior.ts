@@ -306,6 +306,8 @@ export class ShipInterior {
   private itemStations = new ItemStationLayer();
   private scanStations = new ScanStationLayer();
   private transporterStations = new TransporterStationLayer();
+  private transporterHoverId: string | null = null;
+  private transporterQuestId: string | null = null;
   private cabinDoorPanel: THREE.Group | null = null;
   private cabinDoorOpenFrac = 0;
   private cabinDoorTargetFrac = 0;
@@ -338,9 +340,13 @@ export class ShipInterior {
     const keypadLit = interactId === CABIN_KEYPAD_INTERACT_ID;
     if (this.keypadGlow) this.keypadGlow.visible = keypadLit;
     if (this.keypadInGlow) this.keypadInGlow.visible = keypadLit;
-    const transQuest =
+    this.transporterQuestId =
       interactId === LAB_QUEST_TERMINAL_INTERACT_ID ? LAB_TRANSPORTER_INTERACT_ID : null;
-    this.transporterStations.setHighlight(transQuest);
+    this.syncTransporterHighlight();
+  }
+
+  private syncTransporterHighlight() {
+    this.transporterStations.setHighlight(this.transporterHoverId ?? this.transporterQuestId);
   }
 
   setBerthOwners(owners: Map<number, BerthOwner>) {
@@ -357,7 +363,8 @@ export class ShipInterior {
   }
 
   setTransporterHover(interactId: string | null) {
-    this.transporterStations.setHighlight(interactId);
+    this.transporterHoverId = interactId;
+    this.syncTransporterHighlight();
   }
 
   setCabinDoor(door: CabinDoorState, snap = false) {

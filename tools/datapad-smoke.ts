@@ -98,7 +98,12 @@ const is =
     m.t === t;
 
 async function main() {
-  const WS = await startServer({ SCAN_FORCE_ROLL: '0', SCAN_FORCE_OUTCOME: 'atmosphere', SCAN_FORCE_ANOMALY_ROLL: '1' });
+  const WS = await startServer({
+    SCAN_FORCE_ROLL: '0',
+    SCAN_FORCE_OUTCOME: 'atmosphere',
+    SCAN_FORCE_ANOMALY_ROLL: '0.99',
+    TRANSPORT_FORCE_ROLL: '0',
+  });
   const hostId = `dp-host-${crypto.randomUUID()}`;
   const c = new Client(WS);
   await c.open();

@@ -573,7 +573,14 @@ export function questTerminalPosition(propId: string, standOff = 0.22) {
   if (prop.kind === 'pad') {
     if (!isWalkable(prop.x, prop.z)) throw new Error(`quest pad ${propId} not on walkable floor`);
     const face = prop.face ?? 'S';
-    return { x: prop.x, z: prop.z, y: y0 + 0.92, face, stand: { x: prop.x, z: prop.z }, prop };
+    const stand = standPointOnFace(prop, standOff, 0);
+    const f = FACE_OUT[face];
+    const right = operatorRight(face);
+    const inset = prop.sx / 2 * 0.28;
+    const x = prop.x + f.dx * inset + right.dx * DESK_PAD_RIGHT_OFFSET;
+    const z = prop.z + f.dz * inset + right.dz * DESK_PAD_RIGHT_OFFSET;
+    const y = y0 + prop.h + 0.78;
+    return { x, z, y, face, stand, prop };
   }
   const mount = deskPadMount(prop, 0, standOff);
   return { x: mount.x, z: mount.z, y: mount.y, face: mount.face, stand: mount.stand, prop };
