@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { SCAN_STATIONS } from '../shared/scanning';
+import { SCAN_STATIONS, SURFACE_ANOMALY_LABEL } from '../shared/scanning';
+import { beamableLootForPad, formatLootSummary } from '../shared/transporter';
 import {
   CARGO_TRANSPORTER_INTERACT_ID,
   LAB_TRANSPORTER_INTERACT_ID,
@@ -30,6 +31,19 @@ const assert = (cond: unknown, msg: string) => {
   if (!cond) throw new Error(msg);
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const labPad = TRANSPORTER_STATIONS.find((s) => s.interactId === LAB_TRANSPORTER_INTERACT_ID)!;
+const anomalyContact = {
+  id: 'anomaly-smoke',
+  outcome: 'atmosphere' as const,
+  distanceLabel: '88 km',
+  foundAt: 0,
+  foundBy: 'Smoke',
+  loot: [],
+  awayMissionCapable: true,
+};
+assert(beamableLootForPad(labPad, anomalyContact).length === 0, 'surface anomaly not a lab beam material');
+assert(formatLootSummary(anomalyContact) === SURFACE_ANOMALY_LABEL, 'surface anomaly contact summary');
 
 const LAB_STAND = TRANSPORTER_STATIONS.find((s) => s.interactId === LAB_TRANSPORTER_INTERACT_ID)!.stand;
 const CARGO_STAND = TRANSPORTER_STATIONS.find((s) => s.interactId === CARGO_TRANSPORTER_INTERACT_ID)!.stand;
@@ -122,7 +136,12 @@ async function main() {
   let shipCode = '';
   let engineerId = '';
 
-  const ws1 = await startServer({ SCAN_FORCE_ROLL: '0', SCAN_FORCE_OUTCOME: 'atmosphere', TRANSPORT_FORCE_ROLL: '0' });
+  const ws1 = await startServer({
+    SCAN_FORCE_ROLL: '0',
+    SCAN_FORCE_OUTCOME: 'atmosphere',
+    SCAN_FORCE_ANOMALY_ROLL: '0.99',
+    TRANSPORT_FORCE_ROLL: '0',
+  });
 
   const bot = new Client(ws1);
   await bot.open();
@@ -181,7 +200,12 @@ async function main() {
   eng.close();
   await stopServer();
 
-  const ws2 = await startServer({ SCAN_FORCE_ROLL: '0', SCAN_FORCE_OUTCOME: 'debris', TRANSPORT_FORCE_ROLL: '0' });
+  const ws2 = await startServer({
+    SCAN_FORCE_ROLL: '0',
+    SCAN_FORCE_OUTCOME: 'debris',
+    SCAN_FORCE_ANOMALY_ROLL: '0.99',
+    TRANSPORT_FORCE_ROLL: '0',
+  });
   const eng2 = new Client(ws2);
   await eng2.open();
   eng2.send({ t: 'join', clientId: hostId, code: shipCode });

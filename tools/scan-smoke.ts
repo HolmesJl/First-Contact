@@ -10,10 +10,13 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import {
   SCAN_POSITIVES_FOR_LEVEL,
+  SURFACE_ANOMALY_LABEL,
   applyPositiveScan,
+  rollScanLoot,
   scanSucceeded,
   scanSuccessChance,
 } from '../shared/scanning';
+import { beamableLootForPad, formatLootSummary, TRANSPORTER_STATIONS } from '../shared/transporter';
 import { SCAN_STATIONS } from '../shared/scanning';
 import type { ClientMsg, ServerMsg } from '../shared/protocol';
 
@@ -38,6 +41,25 @@ const up = applyPositiveScan({ level: 1, positiveScans: SCAN_POSITIVES_FOR_LEVEL
 assert(up.leveledUp && up.skill.level === 2 && up.skill.positiveScans === 0, '100th positive levels up');
 const capped = applyPositiveScan({ level: 5, positiveScans: 50 });
 assert(capped.skill.level === 5 && capped.skill.positiveScans === 50, 'max level does not increment');
+
+const labPad = TRANSPORTER_STATIONS.find((s) => s.interactId === 'lab-transporter')!;
+const anomalyOnly = rollScanLoot('atmosphere', [0.1, 0.2, 0.3, 0.4], 0);
+assert(anomalyOnly.awayMissionCapable && anomalyOnly.loot.length === 0, 'surface anomaly uses a result slot');
+const anomalyPlusMat = rollScanLoot('atmosphere', [0.9, 0.2, 0.3, 0.4], 0);
+assert(anomalyPlusMat.awayMissionCapable && anomalyPlusMat.loot.length === 1, 'anomaly plus one material');
+const noAnomaly = rollScanLoot('atmosphere', [0.9, 0.2, 0.3, 0.4], 0.5);
+assert(!noAnomaly.awayMissionCapable && noAnomaly.loot.length >= 1, 'material-only atmosphere roll');
+const anomalyEntry = {
+  id: 'x',
+  outcome: 'atmosphere' as const,
+  distanceLabel: '12 km',
+  foundAt: 0,
+  foundBy: 'Test',
+  loot: [],
+  awayMissionCapable: true,
+};
+assert(formatLootSummary(anomalyEntry) === SURFACE_ANOMALY_LABEL, 'anomaly summary label');
+assert(beamableLootForPad(labPad, anomalyEntry).length === 0, 'anomaly-only not lab beamable');
 
 // ---------------------------------------------------------------- server
 

@@ -2,7 +2,7 @@ import { RAW_MATERIALS, SHIP_MATERIALS, materialName } from './items';
 import { PROPS, SPACE_NAMES, questTerminalPosition } from './shipInterior';
 import type { Facing } from './shipLayout';
 import type { Job } from './protocol';
-import type { ScanLootLine, ScanOutcomeKind, ScanResultEntry } from './scanning';
+import { SURFACE_ANOMALY_LABEL, scanContactAwayMissionStub, type ScanLootLine, type ScanOutcomeKind, type ScanResultEntry } from './scanning';
 
 export const TRANSPORTER_DURATION_MS = 5000;
 export const TRANSPORTER_POSITIVES_FOR_LEVEL = 100;
@@ -193,7 +193,7 @@ export function beamableLootForPad(
   pad: TransporterStation,
   entry: ScanResultEntry,
 ): ScanLootLine[] {
-  if (entry.outcome === 'distress' || entry.outcome === 'firstContact') return [];
+  if (scanContactAwayMissionStub(entry) && entry.outcome !== 'atmosphere') return [];
   if (pad.lootKind === 'raw' && entry.outcome !== 'atmosphere') return [];
   if (pad.lootKind === 'ship' && entry.outcome !== 'debris') return [];
   return entry.loot.filter((l) => l.remaining > 0 && (pad.lootKind === 'raw' ? RAW_IDS.has(l.materialId) : SHIP_IDS.has(l.materialId)));
@@ -201,7 +201,10 @@ export function beamableLootForPad(
 
 export function formatLootSummary(entry: ScanResultEntry): string {
   if (entry.outcome === 'distress' || entry.outcome === 'firstContact') return 'Away mission';
-  const parts = entry.loot.map((l) => `${l.remaining} ${materialName(l.materialId)}`);
+  const parts: string[] = [];
+  if (entry.outcome === 'atmosphere' && entry.awayMissionCapable) parts.push(SURFACE_ANOMALY_LABEL);
+  const materialParts = entry.loot.map((l) => `${l.remaining} ${materialName(l.materialId)}`);
+  if (materialParts.length) parts.push(materialParts.join(' · '));
   if (!parts.length) return 'Nothing left to collect';
   return parts.join(' · ');
 }

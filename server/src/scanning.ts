@@ -32,6 +32,15 @@ function scanRoll(): number {
   return Math.random();
 }
 
+function scanAnomalyRoll(): number {
+  const forced = process.env.SCAN_FORCE_ANOMALY_ROLL;
+  if (forced !== undefined && forced !== '') {
+    const n = Number(forced);
+    if (Number.isFinite(n)) return Math.min(0.999999, Math.max(0, n));
+  }
+  return scanRoll();
+}
+
 export function memberScanningSkill(m: MemberRecord): ScanningSkill {
   normalizeMemberSkills(m);
   return m.skills!.scanning!;
@@ -113,10 +122,13 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
     if (forcedOutcome && (SCAN_OUTCOME_KINDS as readonly string[]).includes(forcedOutcome)) {
       outcome = forcedOutcome as ScanOutcomeKind;
     }
-    const loot =
-      outcome === 'distress' || outcome === 'firstContact'
-        ? []
-        : rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()]);
+    let loot: ScanResultEntry['loot'] = [];
+    let awayMissionCapable: boolean | undefined;
+    if (outcome !== 'distress' && outcome !== 'firstContact') {
+      const rolled = rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()], scanAnomalyRoll());
+      loot = rolled.loot;
+      awayMissionCapable = rolled.awayMissionCapable;
+    }
     find = {
       id: crypto.randomUUID(),
       outcome,
@@ -124,6 +136,7 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
       foundAt: now,
       foundBy: `${member.character!.firstName} ${member.character!.lastName}`,
       loot,
+      ...(awayMissionCapable ? { awayMissionCapable: true } : {}),
     };
     normalizeShipScanResults(ship);
     ship.scanResults = [...(ship.scanResults ?? []), find].slice(-30);
