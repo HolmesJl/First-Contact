@@ -416,6 +416,22 @@ for (const [job, berth] of homeCases) {
   }
 }
 
+// FC-18: walkable bridge nose toward fore view (aisle past scan / star-map consoles).
+{
+  const fore = [
+    [-38.2, 40.5],
+    [-38.2, 35.8],
+    [-36.2, 39.2],
+    [-40.4, 39.2],
+  ] as const;
+  for (const [x, z] of fore) {
+    if (!isWalkable(x, z)) fail(`bridge nose (${x}, ${z}) not walkable`);
+    if (spaceAt(x, z)?.id !== 'bridge') fail(`bridge nose (${x}, ${z}) not in bridge space`);
+  }
+  if (!reachable(-38.2, 40.5, 0.3)) fail('bridge fore deck unreachable from pod 1');
+  if (isWalkable(-38.2, 43.0)) fail('bridge walk extends through fore viewport');
+}
+
 // Transporter pads + default material stocks fit shared capacity.
 {
   const refTotal = stockTotal(defaultRefineryStock());

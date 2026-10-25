@@ -306,7 +306,7 @@ export const SHIP_LAYOUT: ShipLayout = {
     mod('bridge', 'room', 0, {
       id: 'bridge',
       outer: R(-44.2, -32.2, 25.3, 43.3),
-      walk: R(-43.3, -33.1, 26.2, 36),
+      walk: R(-43.3, -33.1, 26.2, 42.4),
       shape: 'wedge',
       nose: 8,
       noseLength: 7,

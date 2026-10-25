@@ -24,7 +24,10 @@ import {
   type Station,
 } from './shipLayout';
 
-export type WalkShape = ({ k: 'rect' } & Rect) | { k: 'circle'; x: number; z: number; r: number };
+export type WalkShape =
+  | ({ k: 'rect' } & Rect)
+  | { k: 'circle'; x: number; z: number; r: number }
+  | { k: 'poly'; pts: readonly [number, number][] };
 
 export type PropKind =
   | 'pod'
@@ -128,6 +131,7 @@ export const SPACE_NAMES: Record<string, string> = {
 const R = (minX: number, maxX: number, minZ: number, maxZ: number): Rect => ({ minX, maxX, minZ, maxZ });
 const rect = (r: Rect): WalkShape => ({ k: 'rect', ...r });
 const circle = (x: number, z: number, r: number): WalkShape => ({ k: 'circle', x, z, r });
+const poly = (pts: readonly [number, number][]): WalkShape => ({ k: 'poly', pts });
 
 /** Width of the walkable lane through a door (corridor walk width). */
 export const DOOR_LANE = 2.2;
@@ -151,8 +155,19 @@ const WALK_OVERRIDES: Partial<Record<RoomId, WalkShape[]>> = {
   'aft-node': nodeShapes(-38.2, -17.2),
   cabin: [circle(-51.2, 18.3, 3.1)],
   greenhouse: [circle(-70.7, -9.5, 7.6)],
-  // The bridge's rear plan corners are cut 1.5 m, so the rear strip is narrower than the rest.
-  bridge: [rect(R(-43.3, -33.1, 27.1, 36)), rect(R(-42.8, -33.6, 26.2, 27.1))],
+  // Rear strip is narrower; nose poly extends walk z≈36–42.4 toward fore view (~0.9 m stand-off from glass). FC-18.
+  bridge: [
+    rect(R(-43.3, -33.1, 27.1, 36)),
+    rect(R(-42.8, -33.6, 26.2, 27.1)),
+    poly([
+      [-43.3, 36],
+      [-43.45, 36.35],
+      [-41.35, 42.4],
+      [-34.95, 42.4],
+      [-32.95, 36.35],
+      [-33.1, 36],
+    ]),
+  ],
 };
 
 export const BRIDGE_POLY: [number, number][] = [
@@ -420,8 +435,45 @@ export function areaFor(level: Level): Area {
   return a;
 }
 
+function insidePoly(pts: readonly [number, number][], x: number, z: number) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i];
+    const [xj, zj] = pts[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function nearestOnSegment(ax: number, az: number, bx: number, bz: number, px: number, pz: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  if (len2 < 1e-12) return { x: ax, z: az };
+  let t = ((px - ax) * dx + (pz - az) * dz) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return { x: ax + dx * t, z: az + dz * t };
+}
+
+function nearestInPoly(pts: readonly [number, number][], x: number, z: number) {
+  if (insidePoly(pts, x, z)) return { x, z };
+  let best = { x: pts[0][0], z: pts[0][1] };
+  let bestD = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const p = nearestOnSegment(pts[i][0], pts[i][1], pts[j][0], pts[j][1], x, z);
+    const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
+    if (d2 < bestD) {
+      bestD = d2;
+      best = p;
+    }
+  }
+  return best;
+}
+
 function insideShape(s: WalkShape, x: number, z: number) {
   if (s.k === 'rect') return x >= s.minX && x <= s.maxX && z >= s.minZ && z <= s.maxZ;
+  if (s.k === 'poly') return insidePoly(s.pts, x, z);
   return Math.hypot(x - s.x, z - s.z) <= s.r;
 }
 
@@ -690,6 +742,10 @@ function nearestInShapes(shapes: WalkShape[], x: number, z: number): { x: number
     if (s.k === 'rect') {
       px = Math.min(s.maxX, Math.max(s.minX, x));
       pz = Math.min(s.maxZ, Math.max(s.minZ, z));
+    } else if (s.k === 'poly') {
+      const p = nearestInPoly(s.pts, x, z);
+      px = p.x;
+      pz = p.z;
     } else {
       const dx = x - s.x;
       const dz = z - s.z;
