@@ -48,7 +48,7 @@ import { applyTransportStart, cancelTransport, finishDueTransports } from './tra
 import type { TransporterPadId } from '../../shared/transporter';
 import { isTransporterStationId } from '../../shared/transporter';
 import { applyPadArchive } from './datapad';
-import { applyHelmStart, finishDueTransits } from './navigation';
+import { applyHelmCruiseMode, applyHelmResume, applyHelmStart, finishDueTransits } from './navigation';
 
 installScavengerQuest();
 
@@ -424,6 +424,28 @@ wss.on('connection', (ws) => {
         me.x = p.x;
         me.z = p.z;
         finishInventory(me, applyInventoryAction(ship, me, msg.action));
+        break;
+      }
+      case 'helmResume': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyHelmResume(ship, me, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'shipState', ship: shipMeta(ship) });
+        break;
+      }
+      case 'helmCruiseMode': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyHelmCruiseMode(ship, me, msg.mode, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'shipState', ship: shipMeta(ship) });
         break;
       }
       case 'helmStart': {

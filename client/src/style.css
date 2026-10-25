@@ -1747,6 +1747,91 @@ kbd {
   margin-top: -6px;
 }
 
+.helm-mission {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 214, 120, 0.35);
+  background: rgba(255, 200, 100, 0.06);
+  cursor: pointer;
+}
+
+.helm-mission.selected {
+  border-color: rgba(255, 214, 120, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 214, 120, 0.15);
+}
+
+.helm-mission.on-course {
+  border-color: rgba(124, 240, 196, 0.45);
+  background: rgba(42, 154, 114, 0.12);
+}
+
+.helm-mission-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ffe08a;
+  margin-bottom: 4px;
+}
+
+.helm-mission-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.helm-mission-meta,
+.helm-mission-coords {
+  font-size: 13px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  margin-top: 2px;
+}
+
+.helm-resume {
+  margin-top: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 214, 120, 0.4);
+  background: rgba(255, 200, 100, 0.15);
+  color: #fff0d0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.helm-resume:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.helm-divider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.helm-divider small {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.helm-row-tag {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: #9fb3c8;
+}
+
+.helm-hint-course {
+  color: #b8f5d8;
+}
+
 .helm-list {
   list-style: none;
   margin: 0;

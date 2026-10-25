@@ -14,7 +14,14 @@ export const F_WARP_MS_PER_LY = 30 * 1000;
 export const HELM_INTERACT_ID = 'star-map';
 export const BRIDGE_HELM_STAND = { x: -38.2, z: 34.4 };
 
-export interface ShipTransit {
+/** Primary end-goal row on the helm console (not a scan contact). */
+export const FIRST_CONTACT_DESTINATION_ID = 'first-contact';
+export const FIRST_CONTACT_DISPLAY_NAME = 'First Contact';
+export const FIRST_CONTACT_DISTANCE_LABEL = 'Unknown';
+/** Flavor coords for the seed-ship’s open voyage (not tied to real astrometry). */
+export const FIRST_CONTACT_COORDINATES = 'FC-VECTOR 7.2 / −1.4 / 0.0';
+
+export interface ShipScanTransit {
   scanId: string;
   mode: WarpMode;
   startedAt: number;
@@ -23,19 +30,30 @@ export interface ShipTransit {
 
 export interface ShipNavigation {
   motion: ShipMotionState;
-  transit: ShipTransit | null;
+  /** Open cruise toward First Contact (no timer; ends when Captain diverts). */
+  firstContactCourse: boolean;
+  /** Warp mode while on {@link firstContactCourse}. */
+  cruiseMode: WarpMode;
+  /** Timed divert to a scan contact only. */
+  transit: ShipScanTransit | null;
 }
 
 export function defaultNavigation(): ShipNavigation {
-  return { motion: 'still', transit: null };
+  return { motion: 'still', firstContactCourse: false, cruiseMode: 'warp', transit: null };
+}
+
+export function syncNavigationMotion(nav: ShipNavigation) {
+  if (nav.transit) nav.motion = motionForMode(nav.transit.mode);
+  else if (nav.firstContactCourse) nav.motion = motionForMode(nav.cruiseMode);
+  else nav.motion = 'still';
 }
 
 export function normalizeNavigation(raw: unknown): ShipNavigation {
   if (!raw || typeof raw !== 'object') return defaultNavigation();
   const r = raw as Record<string, unknown>;
-  let motion: ShipMotionState = 'still';
-  if (r.motion === 'warp' || r.motion === 'f-warp' || r.motion === 'still') motion = r.motion;
-  let transit: ShipTransit | null = null;
+  const firstContactCourse = r.firstContactCourse === true;
+  let cruiseMode: WarpMode = r.cruiseMode === 'f-warp' ? 'f-warp' : 'warp';
+  let transit: ShipScanTransit | null = null;
   if (r.transit && typeof r.transit === 'object') {
     const t = r.transit as Record<string, unknown>;
     if (
@@ -46,11 +64,11 @@ export function normalizeNavigation(raw: unknown): ShipNavigation {
       t.endsAt > t.startedAt
     ) {
       transit = { scanId: t.scanId, mode: t.mode, startedAt: t.startedAt, endsAt: t.endsAt };
-      motion = t.mode;
     }
   }
-  if (!transit && motion !== 'still') motion = 'still';
-  return { motion, transit };
+  const nav: ShipNavigation = { motion: 'still', firstContactCourse, cruiseMode, transit };
+  syncNavigationMotion(nav);
+  return nav;
 }
 
 /** Parse scan distance labels (`<20 km`, `142 km`, `0.4 LY`, `5.0 LY`). */

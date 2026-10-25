@@ -17,7 +17,7 @@ import {
   distanceNeedsTransit,
 } from '../shared/navigation';
 import { pickScanDistanceLabel, SCAN_STATIONS } from '../shared/scanning';
-import { applyHelmStart, finishDueTransits } from '../server/src/navigation';
+import { applyHelmResume, applyHelmStart, finishDueTransits } from '../server/src/navigation';
 import type { ShipRecord } from '../server/src/store';
 import type { ClientMsg, ServerMsg } from '../shared/protocol';
 
@@ -53,10 +53,47 @@ const ship: ShipRecord = {
       loot: [],
     },
   ],
-  navigation: { motion: 'still', transit: { scanId: 's1', mode: 'f-warp', startedAt: Date.now() - 10, endsAt: Date.now() - 1 } },
+  navigation: {
+    motion: 'still',
+    firstContactCourse: true,
+    cruiseMode: 'warp',
+    transit: { scanId: 's1', mode: 'f-warp', startedAt: Date.now() - 10, endsAt: Date.now() - 1 },
+  },
 };
 const done = finishDueTransits(ship, Date.now());
 assert(done.length === 1 && ship.scanResults![0].distanceLabel.startsWith('<'), 'finish transit sets 20 km hold');
+assert(!ship.navigation!.firstContactCourse, 'divert end clears first contact course');
+
+const resumeShip: ShipRecord = {
+  code: 'R',
+  hostId: 'h',
+  createdAt: 0,
+  members: {
+    c: {
+      id: 'c',
+      ownerId: 'c',
+      tube: 0,
+      character: {
+        sex: 'male',
+        face: 'neutral',
+        hairStyle: 'parted',
+        facialHair: 'none',
+        hairColor: '#1',
+        eyeColor: '#3a78c9',
+        job: 'Captain',
+        firstName: 'C',
+        lastName: 'C',
+      },
+      x: -38.2,
+      z: 34.4,
+      rot: 0,
+      joinedAt: 0,
+    },
+  },
+  navigation: defaultNavigation(),
+};
+const resumeOk = applyHelmResume(resumeShip, resumeShip.members.c, -38.2, 34.4);
+assert(resumeOk.ok && resumeShip.navigation!.firstContactCourse && resumeShip.navigation!.motion === 'warp', 'resume sets course + warp');
 
 const denyShip: ShipRecord = {
   code: 'DENY',
@@ -191,7 +228,13 @@ async function main() {
   assert(distanceNeedsTransit(scanDone.find!.distanceLabel), 'scan needs transit');
   const scanId = scanDone.find!.id;
 
+  cap.send({ t: 'helmResume', x: -38.2, z: 34.4 });
+  const resumed = await cap.wait((m) => m.t === 'shipState' && m.ship.navigation.firstContactCourse);
+  assert(resumed.ship.navigation.motion === 'warp', 'resume sets warp motion');
+
   cap.send({ t: 'helmStart', scanId, mode: 'f-warp', x: -38.2, z: 34.4 });
+  const diverted = await cap.wait((m) => m.t === 'shipState' && !m.ship.navigation.firstContactCourse);
+  assert(!diverted.ship.navigation.firstContactCourse, 'divert clears first contact course');
   await cap.wait(is('helmProgress'));
   let motionWarp = false;
   let arrived = false;
@@ -211,6 +254,10 @@ async function main() {
   }
   assert(motionWarp, 'motion was f-warp');
   assert(arrived, 'arrived at 20 km hold');
+
+  cap.send({ t: 'helmResume', x: -38.2, z: 34.4 });
+  const restored = await cap.wait((m) => m.t === 'shipState' && m.ship.navigation.firstContactCourse);
+  assert(restored.ship.navigation.motion === 'warp', 'resume restores first contact warp');
 
   cap.close();
   server?.kill('SIGTERM');

@@ -242,7 +242,9 @@ export type ClientMsg =
   /** Move an active datapad entry into the bunk archive. */
   | { t: 'padArchive'; kind: import('./datapad').PadArchiveKind; id: string }
   /** Captain starts warp to a scan contact from the helm console. */
-  | { t: 'helmStart'; scanId: string; mode: 'warp' | 'f-warp'; x: number; z: number };
+  | { t: 'helmStart'; scanId: string; mode: 'warp' | 'f-warp'; x: number; z: number }
+  | { t: 'helmResume'; x: number; z: number }
+  | { t: 'helmCruiseMode'; mode: 'warp' | 'f-warp'; x: number; z: number };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -398,6 +400,13 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (typeof m.scanId !== 'string' || (m.mode !== 'warp' && m.mode !== 'f-warp')) return null;
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       return { t: 'helmStart', scanId: m.scanId, mode: m.mode, x: m.x as number, z: m.z as number };
+    case 'helmResume':
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'helmResume', x: m.x as number, z: m.z as number };
+    case 'helmCruiseMode':
+      if (m.mode !== 'warp' && m.mode !== 'f-warp') return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'helmCruiseMode', mode: m.mode, x: m.x as number, z: m.z as number };
     case 'transportStart':
       if (typeof m.padId !== 'string' || typeof m.scanId !== 'string' || typeof m.materialId !== 'string') return null;
       if (typeof m.qty !== 'number' || !Number.isFinite(m.qty)) return null;

@@ -616,6 +616,16 @@ function openHelmConsole() {
       const { x, z } = lab!.localPos();
       net?.send({ t: 'helmStart', scanId, mode, x, z });
     },
+    onResume: () => {
+      if (!helmConsole?.isOpen) return;
+      helmConsole.setPendingResume(true);
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'helmResume', x, z });
+    },
+    onCruiseMode: (mode) => {
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'helmCruiseMode', mode, x, z });
+    },
     onClose: () => {
       helmConsole = null;
     },
@@ -752,6 +762,9 @@ function handle(m: ServerMsg) {
       transporterStation?.setResults(m.ship.scanResults);
       helmConsole?.setResults(m.ship.scanResults);
       helmConsole?.setNavigation(m.ship.navigation);
+      helmConsole?.setPending(false);
+      helmConsole?.setPendingResume(false);
+      syncShipMotion();
       wakeIntro?.enableContinue(() => beginCreator());
       break;
     case 'helmProgress':
@@ -826,6 +839,7 @@ function handle(m: ServerMsg) {
     case 'error':
       scanStation?.setPendingStart(false);
       helmConsole?.setPending(false);
+      helmConsole?.setPendingResume(false);
       if (m.fatal && net) net.onClose = null;
       if (!m.fatal) {
         if (transporterStation?.isOpen) transporterStation.failStart(m.message);
