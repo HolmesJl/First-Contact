@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { SCAN_STATIONS, SURFACE_ANOMALY_LABEL } from '../shared/scanning';
+import { LV_427_DESIGNATION, PLANET_DESIGNATIONS_COMMON, SCAN_STATIONS, SURFACE_ANOMALY_LABEL } from '../shared/scanning';
 import { beamableLootForPad, formatLootSummary } from '../shared/transporter';
 import {
   CARGO_TRANSPORTER_INTERACT_ID,
@@ -181,6 +181,12 @@ async function main() {
   await eng.wait(is('scanProgress'));
   const scanned = await eng.wait(is('scanComplete'), 15000);
   assert(scanned.find?.outcome === 'atmosphere', 'atmosphere scan');
+  const designation = scanned.find!.planetDesignation;
+  assert(typeof designation === 'string' && designation.length > 0, 'planet designation on atmosphere find');
+  assert(
+    designation === LV_427_DESIGNATION || PLANET_DESIGNATIONS_COMMON.includes(designation),
+    'designation from catalog',
+  );
   const rawLine = scanned.find!.loot[0];
   assert(rawLine && rawLine.remaining > 0, 'loot on scan');
 

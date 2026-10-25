@@ -180,7 +180,7 @@ export function scanOutcomeLabel(outcome: ScanOutcomeKind): string {
     case 'rings':
       return 'Planet rings';
     case 'atmosphere':
-      return 'Planet with atmosphere';
+      return 'Planet';
     case 'distress':
       return 'Ship in distress';
     case 'firstContact':

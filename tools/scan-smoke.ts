@@ -9,12 +9,17 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import {
+  LV_427_DESIGNATION,
+  PLANET_DESIGNATIONS_COMMON,
   SCAN_POSITIVES_FOR_LEVEL,
   SURFACE_ANOMALY_LABEL,
   applyPositiveScan,
+  pickPlanetDesignation,
   rollScanLoot,
+  scanContactHeadline,
   scanSucceeded,
   scanSuccessChance,
+  shipHasLv427Planet,
 } from '../shared/scanning';
 import { beamableLootForPad, formatLootSummary, TRANSPORTER_STATIONS } from '../shared/transporter';
 import { SCAN_STATIONS } from '../shared/scanning';
@@ -60,6 +65,27 @@ const anomalyEntry = {
 };
 assert(formatLootSummary(anomalyEntry) === SURFACE_ANOMALY_LABEL, 'anomaly summary label');
 assert(beamableLootForPad(labPad, anomalyEntry).length === 0, 'anomaly-only not lab beamable');
+
+assert(pickPlanetDesignation(0, 0, []) === LV_427_DESIGNATION, 'lv-427 rare roll');
+assert(PLANET_DESIGNATIONS_COMMON.includes(pickPlanetDesignation(0, 0.99, [])), 'catalog designation');
+const lvExisting = [
+  {
+    id: 'lv',
+    outcome: 'atmosphere' as const,
+    distanceLabel: '1 km',
+    foundAt: 0,
+    foundBy: 'X',
+    loot: [],
+    planetDesignation: LV_427_DESIGNATION,
+  },
+];
+assert(shipHasLv427Planet(lvExisting), 'detect lv-427 on ship');
+assert(pickPlanetDesignation(0, 0, lvExisting) !== LV_427_DESIGNATION, 'lv-427 once per ship');
+assert(
+  scanContactHeadline({ id: 'p', outcome: 'atmosphere', distanceLabel: '142 km', foundAt: 0, foundBy: 'Y', loot: [], planetDesignation: 'Alpha-Vega' }) ===
+    'Planet · Alpha-Vega',
+  'planet headline',
+);
 
 // ---------------------------------------------------------------- server
 
