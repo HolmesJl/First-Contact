@@ -18,7 +18,9 @@ import {
   type ScanResultEntry,
   type ScanningSkill,
 } from '../../shared/scanning';
+import { padScanLogFromFind } from '../../shared/datapad';
 import { normalizeTransporterSkill } from '../../shared/transporter';
+import { appendPadScanLog } from './datapad';
 import type { MemberRecord, ShipRecord } from './store';
 
 const activeScans = new Map<string, { shipCode: string; endsAt: number }>();
@@ -157,6 +159,7 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
       ...(planetDesignation ? { planetDesignation } : {}),
     };
     ship.scanResults = [...(ship.scanResults ?? []), find].slice(-30);
+    appendPadScanLog(member, padScanLogFromFind(find, now));
   }
   return { memberId: member.id, hit, find, skill, leveledUp };
 }

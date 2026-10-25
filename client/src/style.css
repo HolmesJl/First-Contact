@@ -1350,6 +1350,115 @@ kbd {
   color: var(--accent);
 }
 
+.bunk-console-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.bunk-console-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bunk-console {
+  width: min(92vw, 420px);
+  max-height: min(82vh, 520px);
+  display: flex;
+  flex-direction: column;
+}
+
+.bunk-console-scroll {
+  overflow: auto;
+  padding: 0 16px 16px;
+}
+
+.bunk-upload {
+  width: 100%;
+  margin: 8px 0 4px;
+}
+
+.bunk-upload-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.bunk-archive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bunk-archive-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(140, 210, 255, 0.12);
+}
+
+.bunk-archive-time {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bunk-archive-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-right: 8px;
+}
+
+.pad-scan-logs {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pad-scan-log {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(140, 210, 255, 0.14);
+}
+
+.pad-scan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pad-scan-head b {
+  flex: 1 1 auto;
+}
+
+.pad-archive-row {
+  margin: 8px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pad-file .pad-archive {
+  margin: 4px 0 0 4px;
+}
+
 .memory-upload-overlay {
   position: absolute;
   inset: 0;

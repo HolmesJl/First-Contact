@@ -8,6 +8,7 @@ import { MemoryStationLayer } from './memoryStations';
 import { ItemStationLayer } from './itemStations';
 import { ScanStationLayer } from './scanStations';
 import { TransporterStationLayer } from './transporterStations';
+import { LAB_QUEST_TERMINAL_INTERACT_ID, LAB_TRANSPORTER_INTERACT_ID } from '../../../shared/transporter';
 import { isItemInteractId } from '../../../shared/items';
 import type { BerthOwner } from '../../../shared/bunks';
 import { SHIP_LAYOUT, type Corridor, type Door, type Obstacle, type Rect, type Room } from '../../../shared/shipLayout';
@@ -337,6 +338,9 @@ export class ShipInterior {
     const keypadLit = interactId === CABIN_KEYPAD_INTERACT_ID;
     if (this.keypadGlow) this.keypadGlow.visible = keypadLit;
     if (this.keypadInGlow) this.keypadInGlow.visible = keypadLit;
+    const transQuest =
+      interactId === LAB_QUEST_TERMINAL_INTERACT_ID ? LAB_TRANSPORTER_INTERACT_ID : null;
+    this.transporterStations.setHighlight(transQuest);
   }
 
   setBerthOwners(owners: Map<number, BerthOwner>) {

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { upgradeLegacyCharacter, type Character, type MemorySnapshot, type Uniform } from '../../shared/protocol';
 import type { QuestStep } from '../../shared/opening';
+import type { PadArchiveItem, PadScanLog } from '../../shared/datapad';
 import type { Inventory, PadFile, Slots } from '../../shared/items';
 import type { ScavengerState } from '../../shared/scavenger';
 import type { ScanResultEntry, ScanningSkill } from '../../shared/scanning';
@@ -39,6 +40,10 @@ export interface MemberRecord {
   closet?: Slots;
   /** Read Me Files opened from the inventory, saved to the data pad. */
   padFiles?: PadFile[];
+  /** Successful scan finds on the personal datapad (newest first). */
+  padScanLogs?: PadScanLog[];
+  /** Archived datapad entries (bunk memory console). */
+  padArchive?: PadArchiveItem[];
   /** Quest 2 (scavenger hunt) progress, or null until issued. */
   scavenger?: ScavengerState | null;
   skills?: { scanning?: ScanningSkill; transporter?: import('../../shared/transporter').TransporterSkill };

@@ -17,7 +17,8 @@ import { cabinDoorPublic } from './cabinDoor';
 import { CLOSET_SLOTS, normalizeInventory, normalizePadFiles, normalizeSlots, normalizeStock } from '../../shared/items';
 import { normalizeScavenger } from '../../shared/scavenger';
 import { normalizeScanningSkill } from '../../shared/scanning';
-import { normalizeTransporterSkill } from '../../shared/transporter';
+import { LAB_TRANSPORTER_INTERACT_ID, LAB_QUEST_TERMINAL_INTERACT_ID, normalizeTransporterSkill } from '../../shared/transporter';
+import { normalizeMemberDatapad } from './datapad';
 import { normalizeShipScanResults, shipScanResults } from './scanning';
 import { normalizeShipStocks } from './transporter';
 import type { MemberRecord, ShipRecord } from './store';
@@ -52,6 +53,7 @@ export function normalizeMember(m: MemberRecord): MemberRecord {
   m.inventory = normalizeInventory(m.inventory);
   m.closet = normalizeSlots(m.closet, CLOSET_SLOTS);
   m.padFiles = normalizePadFiles(m.padFiles);
+  normalizeMemberDatapad(m);
   m.scavenger = normalizeScavenger(m.scavenger);
   m.skills ??= { scanning: normalizeScanningSkill(null), transporter: normalizeTransporterSkill(null) };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
@@ -101,8 +103,14 @@ export function startGame(ship: ShipRecord): boolean {
 
 function stationKindForInteract(id: string): string | null {
   if (id === 'captain-desk' || id === 'bunk-desk-pad') return null;
+  if (id === LAB_TRANSPORTER_INTERACT_ID) return 'teleporter';
   const s = STATIONS.find((x) => x.id === id);
   return s?.kind ?? null;
+}
+
+function atJobStationInteract(job: Job, interactId: string): boolean {
+  const target = JOB_STATION_INTERACT[job];
+  return interactId === target || (interactId === LAB_TRANSPORTER_INTERACT_ID && target === LAB_QUEST_TERMINAL_INTERACT_ID);
 }
 
 function padInteractId(job: Job) {
@@ -147,7 +155,7 @@ function wrongOrderHint(member: MemberRecord, interactId: string): string | null
       : 'Upload your memories at a bunk pad in the bunk room first.';
   }
 
-  if (step === 'job-station' && kind === JOB_STATION_KIND[job]) {
+  if (step === 'job-station' && (kind === JOB_STATION_KIND[job] || atJobStationInteract(job, interactId))) {
     if (!member.hasPad) return 'You need your data pad first — get it from the bunk room desk.';
     return null;
   }
@@ -216,7 +224,7 @@ export function applyInteract(ship: ShipRecord, member: MemberRecord, interactId
     };
   }
 
-  if (job !== 'Captain' && member.questStep === 'job-station' && interactId === JOB_STATION_INTERACT[job]) {
+  if (job !== 'Captain' && member.questStep === 'job-station' && atJobStationInteract(job, interactId)) {
     if (!member.hasPad) return { ok: false, message: 'You need your data pad first — get it from the bunk room desk.' };
     const prev = member.questStep;
     member.questStep = 'report';

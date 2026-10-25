@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { QUEST_TERMINALS } from '../../../shared/opening';
+import { LAB_QUEST_TERMINAL_INTERACT_ID } from '../../../shared/transporter';
 import { FACE_OUT } from '../../../shared/shipInterior';
 
 export class QuestTerminalLayer {
@@ -9,6 +10,8 @@ export class QuestTerminalLayer {
 
   constructor() {
     for (const t of QUEST_TERMINALS) {
+      // Science Lab transporter uses TransporterStationLayer + pad pick volume (same slot as the opening quest terminal).
+      if (t.interactId === LAB_QUEST_TERMINAL_INTERACT_ID) continue;
       const g = new THREE.Group();
       g.position.set(t.x, t.y, t.z);
       const f = FACE_OUT[t.face];

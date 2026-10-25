@@ -9,8 +9,9 @@ import { CharacterPickScreen, CreatorPanel, DataPadOverlay, Hud, IntroOverlay, T
 import { CabinKeypadOverlay, isCabinKeypadId } from './cabinKeypad';
 import { CABIN_KEYPAD_IN_INTERACT_ID } from '../../shared/cabinDoor';
 import { cabinKeypadHoverPrompt } from '../../shared/cabinDoorUi';
-import { berthFromMemoryStationId, berthOwners, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
+import { berthFromMemoryStationId, berthOwners, isMemoryStationId, memoryStationHoverPrompt, uploadObjectiveStationIds } from '../../shared/bunks';
 import { MemoryUploadOverlay } from './memoryUpload';
+import { BunkConsoleOverlay } from './bunkConsole';
 import { InventoryOverlay } from './inventory';
 import { REPORT_IN_INTERACT_ID, objectiveInteractId, questObjective } from '../../shared/opening';
 import { berthFromClosetId, isItemInteractId, isWorldFileId, itemInteractPrompt, stockPanelById } from '../../shared/items';
@@ -74,6 +75,7 @@ let wakeIntro: WakeIntro | null = null;
 let pad: DataPadOverlay | null = null;
 let cabinKeypad: CabinKeypadOverlay | null = null;
 let memoryUpload: MemoryUploadOverlay | null = null;
+let bunkConsole: BunkConsoleOverlay | null = null;
 let inventory: InventoryOverlay | null = null;
 let scanStation: ScanStationOverlay | null = null;
 let transporterStation: TransporterStationOverlay | null = null;
@@ -406,6 +408,10 @@ async function startLab() {
         }
         return;
       }
+      if (isMemoryStationId(id)) {
+        openBunkConsole(id);
+        return;
+      }
       net?.send({ t: 'interact', id, x, z });
     },
   });
@@ -587,6 +593,23 @@ function openScanStation() {
   });
 }
 
+function openBunkConsole(interactId: string) {
+  const me = players.get(selfId);
+  if (!me?.character) return;
+  lab?.releaseInput();
+  bunkConsole?.destroy();
+  bunkConsole = new BunkConsoleOverlay(interactId, me, {
+    onUpload: () => {
+      const { x, z } = lab!.localPos();
+      net?.send({ t: 'interact', id: interactId, x, z });
+    },
+    onClose: () => {
+      bunkConsole?.destroy();
+      bunkConsole = null;
+    },
+  });
+}
+
 function openPad() {
   const me = players.get(selfId);
   if (!me?.character || !me.hasPad || !shipMeta) return;
@@ -594,6 +617,7 @@ function openPad() {
   pad = new DataPadOverlay(shipMeta, me, players, onBridge(), {
     onReportIn: () => net?.send({ t: 'reportIn' }),
     onAcceptOrders: () => requestScavengerIssue(true),
+    onArchive: (kind, id) => net?.send({ t: 'padArchive', kind, id }),
     onClose: () => {
       pad?.destroy();
       pad = null;

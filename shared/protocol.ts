@@ -1,3 +1,4 @@
+import type { PadArchiveItem, PadScanLog } from './datapad';
 import type { QuestStep } from './opening';
 import { isItemId, validSlotRef, type EquipSlot, type Inventory, type ItemId, type ItemStack, type PadFile, type SlotRef, type Slots } from './items';
 import type { ScavengerState } from './scavenger';
@@ -193,6 +194,10 @@ export interface PlayerState {
   inventory: Inventory;
   /** Read Me Files opened from the inventory, saved to the data pad (newest first). */
   padFiles: PadFile[];
+  /** Successful scan finds on the personal datapad (newest first). */
+  padScanLogs: PadScanLog[];
+  /** Archived datapad entries (view at the bunk memory console). */
+  padArchive: PadArchiveItem[];
   /** Quest 2 progress, or null until the pad issues it on the Bridge. */
   scavenger: ScavengerState | null;
   skills: { scanning: ScanningSkill; transporter: import('./transporter').TransporterSkill };
@@ -231,7 +236,9 @@ export type ClientMsg =
   /** Start a Bridge sensor scan (server owns the timer and the roll). */
   | { t: 'scanStart'; x: number; z: number }
   /** Beam material from a scan contact at a transporter pad. */
-  | { t: 'transportStart'; padId: string; scanId: string; materialId: string; qty: number; x: number; z: number };
+  | { t: 'transportStart'; padId: string; scanId: string; materialId: string; qty: number; x: number; z: number }
+  /** Move an active datapad entry into the bunk archive. */
+  | { t: 'padArchive'; kind: import('./datapad').PadArchiveKind; id: string };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -422,6 +429,12 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       const action = parseInventoryAction(m.action);
       return action ? { t: 'inv', action, x: m.x as number, z: m.z as number } : null;
+    }
+    case 'padArchive': {
+      const kind = m.kind;
+      if (kind !== 'scan' && kind !== 'file' && kind !== 'scavenger') return null;
+      if (typeof m.id !== 'string' || !m.id) return null;
+      return { t: 'padArchive', kind, id: m.id };
     }
     default:
       return null;

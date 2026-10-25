@@ -47,6 +47,7 @@ import { applyScanStart, cancelScan, finishDueScans, shipScanResults } from './s
 import { applyTransportStart, cancelTransport, finishDueTransports } from './transporter';
 import type { TransporterPadId } from '../../shared/transporter';
 import { isTransporterStationId } from '../../shared/transporter';
+import { applyPadArchive } from './datapad';
 
 installScavengerQuest();
 
@@ -107,6 +108,8 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     lastUploadAt: m.memory?.at ?? null,
     inventory: m.inventory!,
     padFiles: m.padFiles ?? [],
+    padScanLogs: m.padScanLogs ?? [],
+    padArchive: m.padArchive ?? [],
     scavenger: m.scavenger ?? null,
     skills: { scanning: m.skills!.scanning!, transporter: m.skills!.transporter! },
   };
@@ -447,6 +450,13 @@ wss.on('connection', (ws) => {
         send(ws, { t: 'transportProgress', endsAt: res.endsAt });
         break;
       }
+      case 'padArchive': {
+        const res = applyPadArchive(me, msg.kind, msg.id);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'playerUpdated', player: toState(ship, me) });
+        break;
+      }
       case 'scavengerIssue': {
         // Same as `interact`: take the client's position (clamped) before the Bridge check. The last `move` can sit a
         // step behind after a budget-limited sprint, since a standing client stops repeating its position.
@@ -547,6 +557,7 @@ setInterval(() => {
             leveledUp: row.leveledUp,
             scanResults: shipScanResults(ship),
           });
+          send(peer, { t: 'playerUpdated', player: toState(ship, member) });
           broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
         }
         if (row.hit) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });

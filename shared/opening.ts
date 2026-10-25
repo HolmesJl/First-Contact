@@ -4,7 +4,13 @@ import { berthFromMemoryStationId, berthLabel, memoryStationFor, memoryStationId
 import { QUEST_TERMINALS, STATIONS } from './shipInterior';
 import { isItemInteractId, itemInteractPosition, itemInteractPrompt } from './items';
 import { SCAN_STATIONS, isScanStationId, scanStationById } from './scanning';
-import { TRANSPORTER_STATIONS, isTransporterStationId, transporterStationById } from './transporter';
+import {
+  LAB_TRANSPORTER_INTERACT_ID,
+  LAB_TRANSPORTER_PROP_ID,
+  TRANSPORTER_STATIONS,
+  isTransporterStationId,
+  transporterStationById,
+} from './transporter';
 
 export const TRANSIT_YEARS = 60;
 export const SHIP_DISPLAY_NAME = 'First Contact';
@@ -211,6 +217,7 @@ export function interactIdForProp(id: string): string | null {
   if (scan) return scan.interactId;
   const trans = TRANSPORTER_STATIONS.find((s) => s.propId === id);
   if (trans) return trans.interactId;
+  if (id === LAB_TRANSPORTER_PROP_ID) return LAB_TRANSPORTER_INTERACT_ID;
   return INTERACT_IDS.has(id) ? id : null;
 }
 

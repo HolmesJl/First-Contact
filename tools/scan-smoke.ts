@@ -194,6 +194,12 @@ async function main() {
   assert(done.skill.positiveScans === 1, 'hit increments positiveScans');
   assert(done.scanResults.length === 1, 'ship log has one entry');
   assert(done.find?.foundBy === 'Scan Tester', 'finder name on result');
+  const withLog = await c.wait(
+    (m): m is Extract<ServerMsg, { t: 'playerUpdated' }> =>
+      m.t === 'playerUpdated' && m.player.id === characterId && m.player.padScanLogs.length === 1,
+    4000,
+  );
+  assert(withLog.player.padScanLogs[0].scanResultId === done.find!.id, 'datapad scan log after hit');
 
   c.close();
   await sleep(200);

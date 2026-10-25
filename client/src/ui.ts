@@ -35,6 +35,7 @@ import {
   scavengerObjective,
   type ScavengerState,
 } from '../../shared/scavenger';
+import type { PadArchiveKind } from '../../shared/datapad';
 
 const ui = document.getElementById('ui')!;
 
@@ -453,7 +454,7 @@ export class DataPadOverlay {
     me: PlayerState,
     players: Map<string, PlayerState>,
     onBridge: boolean,
-    private handlers: { onReportIn(): void; onAcceptOrders(): void; onClose(): void },
+    private handlers: { onReportIn(): void; onAcceptOrders(): void; onArchive(kind: PadArchiveKind, id: string): void; onClose(): void },
   ) {
     this.el.innerHTML = `
       <div class="pad panel">
@@ -470,6 +471,11 @@ export class DataPadOverlay {
     });
     this.body.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.pad-accept')) return handlers.onAcceptOrders();
+      const arch = (e.target as HTMLElement).closest<HTMLElement>('[data-archive-kind]');
+      if (arch) {
+        handlers.onArchive(arch.dataset.archiveKind as PadArchiveKind, arch.dataset.archiveId!);
+        return;
+      }
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-file]');
       if (!b) return;
       const name = b.dataset.file!;
@@ -506,14 +512,26 @@ export class DataPadOverlay {
       me.berth === null
         ? 'No berth claimed · no memory upload on record'
         : `${esc(berthLabel(me.berth))} · last upload ${me.lastUploadAt ? formatUploadTime(me.lastUploadAt) : 'never'}`;
+    const scanLogs = me.padScanLogs.length
+      ? `<ul class="pad-scan-logs">${me.padScanLogs
+          .map(
+            (s) =>
+              `<li class="pad-scan-log"><div class="pad-scan-head"><span class="pad-file-time">${esc(formatPadTime(s.at))}</span><b>${esc(s.headline)}</b><button type="button" class="btn ghost small pad-archive" data-archive-kind="scan" data-archive-id="${esc(s.id)}">Archive</button></div><p class="muted">${esc(s.distanceLabel)} · ${esc(s.summary)}</p></li>`,
+          )
+          .join('')}</ul>`
+      : '<p class="muted">No scan contacts logged yet. Run a successful Bridge sensor scan.</p>';
     const files = me.padFiles.length
       ? `<ul class="pad-files">${me.padFiles
           .map(
             (f) =>
-              `<li class="pad-file${this.openFile === f.name ? ' open' : ''}" data-file="${esc(f.name)}"><button type="button" class="pad-file-row" data-file="${esc(f.name)}"><span class="pad-file-time">${esc(formatPadTime(f.at))}</span><span class="pad-file-name">${esc(f.name)}</span></button><p class="pad-file-text">${esc(f.text)}</p></li>`,
+              `<li class="pad-file${this.openFile === f.name ? ' open' : ''}" data-file="${esc(f.name)}"><button type="button" class="pad-file-row" data-file="${esc(f.name)}"><span class="pad-file-time">${esc(formatPadTime(f.at))}</span><span class="pad-file-name">${esc(f.name)}</span></button><button type="button" class="btn ghost small pad-archive" data-archive-kind="file" data-archive-id="${esc(f.name)}">Archive</button><p class="pad-file-text">${esc(f.text)}</p></li>`,
           )
           .join('')}</ul>`
       : '<p class="muted">No files saved. Open a File from your inventory to keep a copy here.</p>';
+    const scavengerArchive =
+      me.scavenger && scavengerComplete(me.scavenger)
+        ? `<div class="pad-archive-row"><p class="muted">Scavenger hunt complete.</p><button type="button" class="btn ghost small pad-archive" data-archive-kind="scavenger" data-archive-id="scavenger">Archive quest log</button></div>`
+        : '';
     this.body.innerHTML = `
       <p class="kicker">Welcome back</p>
       <p>Ship <b>${esc(ship.shipName)}</b> · ${ship.transitYears} years in transit · hull &amp; life support <i>nominal (placeholder)</i></p>
@@ -525,6 +543,9 @@ export class DataPadOverlay {
       <p>${esc(task)}</p>
       ${scavengerAwaiting(me) ? ordersHtml(onBridge) : ''}
       ${me.scavenger ? scavengerListHtml(me.scavenger) : ''}
+      ${scavengerArchive}
+      <h4>Scan log</h4>
+      ${scanLogs}
       <h4>Files</h4>
       ${files}`;
     this.footer.hidden = !isCaptainComms;

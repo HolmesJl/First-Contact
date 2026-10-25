@@ -26,6 +26,8 @@ import {
   defaultCargoHoldStock,
   defaultRefineryStock,
   isTransporterStationId,
+  LAB_TRANSPORTER_INTERACT_ID,
+  LAB_TRANSPORTER_PROP_ID,
   stockTotal,
 } from './transporter';
 import {
@@ -421,6 +423,9 @@ for (const [job, berth] of homeCases) {
   if (refTotal > REFINERY_CAPACITY) fail(`default refinery stock ${refTotal} exceeds capacity ${REFINERY_CAPACITY}`);
   const cargoTotal = stockTotal(defaultCargoHoldStock());
   if (cargoTotal > CARGO_HOLD_CAPACITY) fail(`default cargo hold stock ${cargoTotal} exceeds capacity ${CARGO_HOLD_CAPACITY}`);
+  if (interactIdForProp(LAB_TRANSPORTER_PROP_ID) !== LAB_TRANSPORTER_INTERACT_ID) {
+    fail('teleporter-pad prop id must map to lab-transporter');
+  }
   for (const s of TRANSPORTER_STATIONS) {
     if (!isTransporterStationId(s.interactId)) fail(`unknown transporter id ${s.interactId}`);
     if (interactPrompt(s.interactId) !== 'Use transporter') fail(`transporter prompt missing for ${s.interactId}`);

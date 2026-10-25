@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TUBE_Y } from '../../../../shared/lab';
 import type { Facing } from '../../../../shared/shipLayout';
 import { BRIDGE_SCAN_INTERACT_ID, BRIDGE_SCAN_PROP_ID } from '../../../../shared/scanning';
+import { LAB_TRANSPORTER_INTERACT_ID, LAB_TRANSPORTER_PROP_ID } from '../../../../shared/transporter';
 import { BUNK_SLAB_Y, type Prop } from '../../../../shared/shipInterior';
 import { canvasTexture } from '../common';
 import { buildShip } from '../ship';
@@ -239,6 +240,15 @@ export function buildProp(p: Prop, ctx: PropContext) {
           b.box(0.18, 2.2, 0.18, p.x + Math.cos(a) * (r + 0.2), 0, p.z + Math.sin(a) * (r + 0.2), 'metal');
           b.box(0.22, 0.1, 0.22, p.x + Math.cos(a) * (r + 0.2), 2.2, p.z + Math.sin(a) * (r + 0.2), 'glowCyan');
         }
+      }
+      if (p.id === LAB_TRANSPORTER_PROP_ID) {
+        const pick = new THREE.Mesh(
+          new THREE.CylinderGeometry(r + 0.35, r + 0.35, 2.4, 20),
+          new THREE.MeshBasicMaterial({ visible: false }),
+        );
+        pick.position.set(p.x, y0 + 1.2, p.z);
+        pick.userData.interactId = LAB_TRANSPORTER_INTERACT_ID;
+        ctx.group.add(pick);
       }
       break;
     }
