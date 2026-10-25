@@ -24,7 +24,7 @@ import {
   REFINERY_CAPACITY,
   TRANSPORTER_STATIONS,
   defaultCargoHoldStock,
-  defaultRefineryStock,
+  defaultRefineryUnrefinedStock,
   isTransporterStationId,
   LAB_TRANSPORTER_INTERACT_ID,
   LAB_TRANSPORTER_PROP_ID,
@@ -434,7 +434,7 @@ for (const [job, berth] of homeCases) {
 
 // Transporter pads + default material stocks fit shared capacity.
 {
-  const refTotal = stockTotal(defaultRefineryStock());
+  const refTotal = stockTotal(defaultRefineryUnrefinedStock());
   if (refTotal > REFINERY_CAPACITY) fail(`default refinery stock ${refTotal} exceeds capacity ${REFINERY_CAPACITY}`);
   const cargoTotal = stockTotal(defaultCargoHoldStock());
   if (cargoTotal > CARGO_HOLD_CAPACITY) fail(`default cargo hold stock ${cargoTotal} exceeds capacity ${CARGO_HOLD_CAPACITY}`);

@@ -47,7 +47,11 @@ export interface MemberRecord {
   padArchive?: PadArchiveItem[];
   /** Quest 2 (scavenger hunt) progress, or null until issued. */
   scavenger?: ScavengerState | null;
-  skills?: { scanning?: ScanningSkill; transporter?: import('../../shared/transporter').TransporterSkill };
+  skills?: {
+    scanning?: ScanningSkill;
+    transporter?: import('../../shared/transporter').TransporterSkill;
+    engineer?: import('../../shared/refining').EngineerSkill;
+  };
 }
 
 export interface ShipRecord {
@@ -65,8 +69,16 @@ export interface ShipRecord {
   cabinDoorOpen?: boolean;
   /** Ship-wide item and material counts by id (see shared/items.ts STARTING_STOCK). */
   stock?: Record<string, number>;
-  /** Raw materials beamed into the refinery (capacity in shared/transporter.ts). */
+  /** @deprecated Legacy single refinery blob; migrated to unrefined/refined on load. */
   refineryStock?: Record<string, number>;
+  /** Unrefined materials in the refinery (beamed from atmosphere finds). */
+  refineryUnrefined?: Record<string, number>;
+  /** Refined materials in the refinery (Printer inputs). */
+  refineryRefined?: Record<string, number>;
+  /** Macro minerals routed to the Armory. */
+  armoryStock?: Record<string, number>;
+  /** Macro minerals routed to Medical Bay storage. */
+  medicalStock?: Record<string, number>;
   /** Ship materials beamed into the cargo hold (capacity in shared/transporter.ts). */
   cargoHoldStock?: Record<string, number>;
   /** Shared contact log from Bridge scans (newest last; capped on normalize). */

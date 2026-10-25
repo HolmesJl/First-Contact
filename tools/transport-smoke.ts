@@ -159,7 +159,7 @@ async function main() {
     t: 'transportStart',
     padId: LAB_TRANSPORTER_INTERACT_ID,
     scanId: 'x',
-    materialId: 'lithium',
+    materialId: 'lithium_bilge',
     qty: 1,
     x: LAB_STAND.x,
     z: LAB_STAND.z,
@@ -241,7 +241,8 @@ async function main() {
   await engBeam.wait(is('transportProgress'));
   const beamed = await engBeam.wait(is('transportComplete'), 15000);
   assert(beamed.ok, 'engineer beam ok');
-  assert(beamed.refineryStock[rawLine.materialId] === REFINERY_START_PER_RAW + 1, 'refinery gained one unit');
+  const beamId = rawLine.materialId === 'lithium' ? 'lithium_bilge' : rawLine.materialId;
+  assert(beamed.refineryUnrefined[beamId] === REFINERY_START_PER_RAW + 1, 'refinery unrefined gained one unit');
   engBeam.close();
   await stopServer();
 
@@ -280,12 +281,12 @@ async function main() {
 
   const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) as {
     ships: {
-      refineryStock: Record<string, number>;
+      refineryUnrefined: Record<string, number>;
       scanResults: { id: string; outcome: string; distanceLabel: string; foundAt: number; foundBy: string; loot: { materialId: string; qty: number; remaining: number }[] }[];
     }[];
   };
   const ship = raw.ships[0];
-  const keys = Object.keys(ship.refineryStock);
+  const keys = Object.keys(ship.refineryUnrefined);
   const fill: Record<string, number> = {};
   let left = REFINERY_CAPACITY;
   for (const k of keys) {
@@ -293,17 +294,17 @@ async function main() {
     fill[k] = n;
     left -= n;
   }
-  ship.refineryStock = fill;
+  ship.refineryUnrefined = fill;
   ship.scanResults.push({
     id: 'smoke-find-full',
     outcome: 'atmosphere',
     distanceLabel: '50 km',
     foundAt: Date.now(),
     foundBy: 'Smoke',
-    loot: [{ materialId: 'lithium', qty: 5, remaining: 5 }],
+    loot: [{ materialId: 'lithium_bilge', qty: 5, remaining: 5 }],
   });
   fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2));
-  assert(stockTotal(ship.refineryStock) === REFINERY_CAPACITY, 'refinery seeded to capacity');
+  assert(stockTotal(ship.refineryUnrefined) === REFINERY_CAPACITY, 'refinery seeded to capacity');
 
   const ws3 = await startServer({ TRANSPORT_FORCE_ROLL: '0' });
   const eng3 = new Client(ws3);
@@ -316,7 +317,7 @@ async function main() {
     t: 'transportStart',
     padId: LAB_TRANSPORTER_INTERACT_ID,
     scanId: 'smoke-find-full',
-    materialId: 'lithium',
+    materialId: 'lithium_bilge',
     qty: 1,
     x: LAB_STAND.x,
     z: LAB_STAND.z,

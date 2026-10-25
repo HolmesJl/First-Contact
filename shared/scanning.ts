@@ -7,7 +7,7 @@ import {
 } from './navigation';
 import { PROPS, SPACE_NAMES, deskPadMount } from './shipInterior';
 import type { Facing } from './shipLayout';
-import { SHIP_MATERIALS } from './items';
+import { migrateUnrefinedMaterialId, SHIP_MATERIALS } from './items';
 
 export const SCAN_DURATION_MS = 5000;
 export const SCAN_POSITIVES_FOR_LEVEL = 100;
@@ -148,7 +148,7 @@ function normalizeLoot(raw: unknown): ScanLootLine[] {
     let remaining = Math.max(0, Math.floor(r.remaining));
     if (remaining > qty) remaining = qty;
     if (qty <= 0) continue;
-    out.push({ materialId: r.materialId, qty, remaining });
+    out.push({ materialId: migrateUnrefinedMaterialId(r.materialId), qty, remaining });
   }
   return out;
 }
@@ -255,11 +255,11 @@ const DEBRIS_WEIGHTS: { id: string; w: number }[] = [
 ];
 
 const ATMOSPHERE_MATERIAL_WEIGHTS: { id: string; w: number }[] = [
-  { id: 'lithium', w: 2 },
-  { id: 'plastics', w: 2 },
-  { id: 'copper', w: 2 },
-  { id: 'iron', w: 2 },
-  { id: 'tin', w: 2 },
+  { id: 'lithium_bilge', w: 2 },
+  { id: 'plastic_resin', w: 2 },
+  { id: 'copper_ore', w: 2 },
+  { id: 'iron_ore', w: 2 },
+  { id: 'tin_ore', w: 2 },
   { id: 'minerals', w: 2 },
   { id: 'seeds', w: 1 },
 ];

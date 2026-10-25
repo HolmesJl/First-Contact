@@ -17,6 +17,7 @@ import { cabinDoorPublic } from './cabinDoor';
 import { CLOSET_SLOTS, normalizeInventory, normalizePadFiles, normalizeSlots, normalizeStock } from '../../shared/items';
 import { normalizeScavenger } from '../../shared/scavenger';
 import { normalizeScanningSkill } from '../../shared/scanning';
+import { normalizeEngineerSkill } from '../../shared/refining';
 import { LAB_TRANSPORTER_INTERACT_ID, LAB_QUEST_TERMINAL_INTERACT_ID, normalizeTransporterSkill } from '../../shared/transporter';
 import { normalizeMemberDatapad } from './datapad';
 import { navigationMeta, shipNavigation } from './navigation';
@@ -33,7 +34,10 @@ export function shipMeta(ship: ShipRecord) {
     transitYears: ship.transitYears!,
     cabinDoor: cabinDoorPublic(ship),
     stock: ship.stock!,
-    refineryStock: ship.refineryStock!,
+    refineryUnrefined: ship.refineryUnrefined!,
+    refineryRefined: ship.refineryRefined!,
+    armoryStock: ship.armoryStock!,
+    medicalStock: ship.medicalStock!,
     cargoHoldStock: ship.cargoHoldStock!,
     scanResults: shipScanResults(ship),
     navigation: navigationMeta(ship),
@@ -57,9 +61,14 @@ export function normalizeMember(m: MemberRecord): MemberRecord {
   m.padFiles = normalizePadFiles(m.padFiles);
   normalizeMemberDatapad(m);
   m.scavenger = normalizeScavenger(m.scavenger);
-  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: normalizeTransporterSkill(null) };
+  m.skills ??= {
+    scanning: normalizeScanningSkill(null),
+    transporter: normalizeTransporterSkill(null),
+    engineer: normalizeEngineerSkill(null),
+  };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
   m.skills.transporter = normalizeTransporterSkill(m.skills.transporter);
+  m.skills.engineer = normalizeEngineerSkill(m.skills.engineer);
   return m;
 }
 

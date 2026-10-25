@@ -13,7 +13,8 @@ import {
   fileText,
   findRoom,
   materialName,
-  RAW_MATERIALS,
+  REFINED_MATERIALS,
+  UNREFINED_MATERIALS,
   SHIP_MATERIALS,
   normalizeInventory,
   normalizePadFiles,
@@ -34,9 +35,11 @@ import {
 import { inRange } from '../../shared/opening';
 import type { InventoryAction } from '../../shared/protocol';
 import type { MemberRecord, ShipRecord } from './store';
+import { getRefineryStocks, normalizeShipRefinery } from './refining';
 import { normalizeShipStocks } from './transporter';
 
-const RAW_MATERIAL_IDS = new Set(RAW_MATERIALS.map((m) => m.id));
+const UNREFINED_MATERIAL_IDS = new Set(UNREFINED_MATERIALS.map((m) => m.id));
+const REFINED_MATERIAL_IDS = new Set(REFINED_MATERIALS.map((m) => m.id));
 const SHIP_MATERIAL_IDS = new Set(SHIP_MATERIALS.map((m) => m.id));
 
 export type InvResult =
@@ -335,13 +338,22 @@ export function applyDestroyMaterial(ship: ShipRecord, member: MemberRecord, sta
   if (!panel) return fail('Nothing to destroy there.');
   if (!inRange(member.x, member.z, panel.stand.x, panel.stand.z)) return fail('Move closer.');
   normalizeShipStocks(ship);
+  normalizeShipRefinery(ship);
   if (panel.kind === 'refinery') {
-    if (!RAW_MATERIAL_IDS.has(materialId)) return fail('Unknown material.');
-    const stock = ship.refineryStock!;
-    const have = stock[materialId] ?? 0;
-    if (have <= 0) return fail('Nothing to destroy.');
-    stock[materialId] = have - 1;
-    return { ok: true, message: `Destroyed 1 ${materialName(materialId)}.`, shipStocks: true };
+    const { unrefined, refined } = getRefineryStocks(ship);
+    if (UNREFINED_MATERIAL_IDS.has(materialId)) {
+      const have = unrefined[materialId] ?? 0;
+      if (have <= 0) return fail('Nothing to destroy.');
+      unrefined[materialId] = have - 1;
+      return { ok: true, message: `Destroyed 1 ${materialName(materialId)}.`, shipStocks: true };
+    }
+    if (REFINED_MATERIAL_IDS.has(materialId)) {
+      const have = refined[materialId] ?? 0;
+      if (have <= 0) return fail('Nothing to destroy.');
+      refined[materialId] = have - 1;
+      return { ok: true, message: `Destroyed 1 ${materialName(materialId)}.`, shipStocks: true };
+    }
+    return fail('Unknown material.');
   }
   if (panel.kind === 'materials' || panel.kind === 'printer') {
     if (!SHIP_MATERIAL_IDS.has(materialId)) return fail('Unknown material.');
