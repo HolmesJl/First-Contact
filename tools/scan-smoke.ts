@@ -9,11 +9,19 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import {
+  LV_427_DESIGNATION,
+  PLANET_DESIGNATIONS_COMMON,
   SCAN_POSITIVES_FOR_LEVEL,
+  SURFACE_ANOMALY_LABEL,
   applyPositiveScan,
+  pickPlanetDesignation,
+  rollScanLoot,
+  scanContactHeadline,
   scanSucceeded,
   scanSuccessChance,
+  shipHasLv427Planet,
 } from '../shared/scanning';
+import { beamableLootForPad, formatLootSummary, TRANSPORTER_STATIONS } from '../shared/transporter';
 import { SCAN_STATIONS } from '../shared/scanning';
 import type { ClientMsg, ServerMsg } from '../shared/protocol';
 
@@ -38,6 +46,46 @@ const up = applyPositiveScan({ level: 1, positiveScans: SCAN_POSITIVES_FOR_LEVEL
 assert(up.leveledUp && up.skill.level === 2 && up.skill.positiveScans === 0, '100th positive levels up');
 const capped = applyPositiveScan({ level: 5, positiveScans: 50 });
 assert(capped.skill.level === 5 && capped.skill.positiveScans === 50, 'max level does not increment');
+
+const labPad = TRANSPORTER_STATIONS.find((s) => s.interactId === 'lab-transporter')!;
+const anomalyOnly = rollScanLoot('atmosphere', [0.1, 0.2, 0.3, 0.4], 0);
+assert(anomalyOnly.awayMissionCapable && anomalyOnly.loot.length === 0, 'surface anomaly uses a result slot');
+const anomalyPlusMat = rollScanLoot('atmosphere', [0.9, 0.2, 0.3, 0.4], 0);
+assert(anomalyPlusMat.awayMissionCapable && anomalyPlusMat.loot.length === 1, 'anomaly plus one material');
+const noAnomaly = rollScanLoot('atmosphere', [0.9, 0.2, 0.3, 0.4], 0.5);
+assert(!noAnomaly.awayMissionCapable && noAnomaly.loot.length >= 1, 'material-only atmosphere roll');
+const anomalyEntry = {
+  id: 'x',
+  outcome: 'atmosphere' as const,
+  distanceLabel: '12 km',
+  foundAt: 0,
+  foundBy: 'Test',
+  loot: [],
+  awayMissionCapable: true,
+};
+assert(formatLootSummary(anomalyEntry) === SURFACE_ANOMALY_LABEL, 'anomaly summary label');
+assert(beamableLootForPad(labPad, anomalyEntry).length === 0, 'anomaly-only not lab beamable');
+
+assert(pickPlanetDesignation(0, 0, []) === LV_427_DESIGNATION, 'lv-427 rare roll');
+assert(PLANET_DESIGNATIONS_COMMON.includes(pickPlanetDesignation(0, 0.99, [])), 'catalog designation');
+const lvExisting = [
+  {
+    id: 'lv',
+    outcome: 'atmosphere' as const,
+    distanceLabel: '1 km',
+    foundAt: 0,
+    foundBy: 'X',
+    loot: [],
+    planetDesignation: LV_427_DESIGNATION,
+  },
+];
+assert(shipHasLv427Planet(lvExisting), 'detect lv-427 on ship');
+assert(pickPlanetDesignation(0, 0, lvExisting) !== LV_427_DESIGNATION, 'lv-427 once per ship');
+assert(
+  scanContactHeadline({ id: 'p', outcome: 'atmosphere', distanceLabel: '142 km', foundAt: 0, foundBy: 'Y', loot: [], planetDesignation: 'Alpha-Vega' }) ===
+    'Planet · Alpha-Vega',
+  'planet headline',
+);
 
 // ---------------------------------------------------------------- server
 

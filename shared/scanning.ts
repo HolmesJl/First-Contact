@@ -37,7 +37,49 @@ export interface ScanResultEntry {
   foundAt: number;
   foundBy: string;
   loot: ScanLootLine[];
+  /** Planet atmosphere: Surface Anomaly (away mission stub). Distress / first contact use outcome instead. */
+  awayMissionCapable?: boolean;
+  /** Catalog name for Planet (atmosphere) finds; see planet-designations.md. */
+  planetDesignation?: string;
 }
+
+/** Shown on scan + transporter contact summary when {@link ScanResultEntry.awayMissionCapable} on an atmosphere find. */
+export const SURFACE_ANOMALY_LABEL = 'Surface Anomaly - Atmosphere detected, Away Mission possible';
+
+export const LV_427_DESIGNATION = 'LV-427';
+
+/** Common / uncommon planet names from planet-designations.md (LV-427 rolled separately). */
+export const PLANET_DESIGNATIONS_COMMON: readonly string[] = [
+  'Alpha-Vega',
+  'Beta-Centauri IV',
+  'Gamma-Orion',
+  'Delta-Procyon',
+  'Epsilon-Draconis',
+  'Kappa-Lyrae',
+  'Sigma-Cygni',
+  'Tau-Eridani',
+  'XO-112',
+  'XO-224',
+  'XO-318',
+  'XO-441',
+  'XO-507',
+  'XR-88',
+  'XR-203',
+  'HD-4821',
+  'HD-9104',
+  'Kepler-119c',
+  'Gliese-581d',
+  'Ross-128b',
+  'Wolf-359c',
+  'Terra-Nova',
+  'New Caledonia',
+  'Port Meridian',
+  'Ashfall',
+  'Coldharbor',
+];
+
+/** Share of Planet finds that assign LV-427; Jennifer TBD (target ~2–5%). */
+export const LV_427_PLANET_CHANCE = 0.035;
 
 export interface ScanningSkill {
   level: number;
@@ -114,6 +156,11 @@ export function normalizeScanResults(raw: unknown): ScanResultEntry[] {
     if (typeof r.id !== 'string' || !SCAN_OUTCOME_KINDS.includes(outcome as ScanOutcomeKind)) continue;
     if (typeof r.distanceLabel !== 'string' || typeof r.foundAt !== 'number' || typeof r.foundBy !== 'string') continue;
     const loot = normalizeLoot(r.loot);
+    const awayMissionCapable = r.awayMissionCapable === true;
+    const planetDesignation =
+      outcome === 'atmosphere' && typeof r.planetDesignation === 'string' && r.planetDesignation.trim()
+        ? r.planetDesignation.trim()
+        : undefined;
     if (outcome === 'distress' || outcome === 'firstContact') {
       out.push({
         id: r.id,
@@ -132,9 +179,32 @@ export function normalizeScanResults(raw: unknown): ScanResultEntry[] {
       foundAt: r.foundAt,
       foundBy: r.foundBy,
       loot,
+      ...(awayMissionCapable ? { awayMissionCapable: true } : {}),
+      ...(planetDesignation ? { planetDesignation } : {}),
     });
   }
   return out.slice(-30);
+}
+
+export function shipHasLv427Planet(scanResults: ScanResultEntry[] | undefined): boolean {
+  return (scanResults ?? []).some((e) => e.outcome === 'atmosphere' && e.planetDesignation === LV_427_DESIGNATION);
+}
+
+/** Pick a planet designation when an atmosphere contact is created. Rolls in [0, 1). */
+export function pickPlanetDesignation(
+  catalogRoll: number,
+  lv427Roll: number,
+  existingScanResults: ScanResultEntry[] | undefined,
+): string {
+  if (lv427Roll < LV_427_PLANET_CHANCE && !shipHasLv427Planet(existingScanResults)) {
+    return LV_427_DESIGNATION;
+  }
+  const i = Math.floor(catalogRoll * PLANET_DESIGNATIONS_COMMON.length) % PLANET_DESIGNATIONS_COMMON.length;
+  return PLANET_DESIGNATIONS_COMMON[i];
+}
+
+export function isLv427Designation(designation: string): boolean {
+  return designation === LV_427_DESIGNATION;
 }
 
 /** Success chance for a scan at the given level (1..5). */
@@ -177,7 +247,7 @@ const DEBRIS_WEIGHTS: { id: string; w: number }[] = [
   { id: 'battery', w: 1 },
 ];
 
-const ATMOSPHERE_WEIGHTS: { id: string; w: number }[] = [
+const ATMOSPHERE_MATERIAL_WEIGHTS: { id: string; w: number }[] = [
   { id: 'lithium', w: 2 },
   { id: 'plastics', w: 2 },
   { id: 'copper', w: 2 },
@@ -186,6 +256,9 @@ const ATMOSPHERE_WEIGHTS: { id: string; w: number }[] = [
   { id: 'minerals', w: 2 },
   { id: 'seeds', w: 1 },
 ];
+
+/** Share of atmosphere loot rolls that surface an anomaly (Jennifer TBD; target ~5–10%). */
+const SURFACE_ANOMALY_CHANCE = 0.08;
 
 const RINGS_WEIGHTS: { id: string; w: number }[] = [
   { id: 'hydrogen', w: 2 },
@@ -245,17 +318,42 @@ export function pickScanDistanceLabel(roll: number): string {
   return `${km} km`;
 }
 
-export function rollScanLoot(outcome: ScanOutcomeKind, rolls: [number, number, number, number]): ScanLootLine[] {
+export interface ScanLootRoll {
+  loot: ScanLootLine[];
+  awayMissionCapable?: boolean;
+}
+
+function rollAtmosphereLoot(rolls: [number, number, number, number, number]): ScanLootRoll {
+  const hasAnomaly = rolls[4] < SURFACE_ANOMALY_CHANCE;
+  const typeCount = rolls[0] < 0.35 ? 1 : 2;
+  const materialSlots = hasAnomaly ? Math.max(0, typeCount - 1) : typeCount;
+  if (materialSlots <= 0) {
+    return { loot: [], ...(hasAnomaly ? { awayMissionCapable: true } : {}) };
+  }
+  const loot = rollLootLines(ATMOSPHERE_MATERIAL_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]).slice(0, materialSlots);
+  return { loot, ...(hasAnomaly ? { awayMissionCapable: true } : {}) };
+}
+
+/** `rolls` are in [0, 1). Atmosphere uses a fifth roll for Surface Anomaly (ignored for other outcomes). */
+export function rollScanLoot(
+  outcome: ScanOutcomeKind,
+  rolls: [number, number, number, number],
+  anomalyRoll?: number,
+): ScanLootRoll {
   switch (outcome) {
     case 'debris':
-      return rollLootLines(DEBRIS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+      return { loot: rollLootLines(DEBRIS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]) };
     case 'atmosphere':
-      return rollLootLines(ATMOSPHERE_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+      return rollAtmosphereLoot([rolls[0], rolls[1], rolls[2], rolls[3], anomalyRoll ?? 1]);
     case 'rings':
-      return rollLootLines(RINGS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+      return { loot: rollLootLines(RINGS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]) };
     default:
-      return [];
+      return { loot: [] };
   }
+}
+
+export function scanContactAwayMissionStub(entry: ScanResultEntry): boolean {
+  return entry.outcome === 'distress' || entry.outcome === 'firstContact' || (entry.outcome === 'atmosphere' && entry.awayMissionCapable === true);
 }
 
 export function scanFindTitle(entry: ScanResultEntry): string {
@@ -265,12 +363,17 @@ export function scanFindTitle(entry: ScanResultEntry): string {
     case 'rings':
       return 'Planet rings';
     case 'atmosphere':
-      return 'Planet with atmosphere';
+      return entry.planetDesignation ? `Planet · ${entry.planetDesignation}` : 'Planet';
     case 'distress':
       return 'Ship in distress';
     case 'firstContact':
       return 'Possible First Contact';
   }
+}
+
+/** Primary scan / transporter contact line (type + planet name when known). */
+export function scanContactHeadline(entry: ScanResultEntry): string {
+  return scanFindTitle(entry);
 }
 
 /** Ship material ids used in debris loot (for tests). */

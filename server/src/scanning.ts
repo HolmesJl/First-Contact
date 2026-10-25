@@ -7,6 +7,8 @@ import {
   applyPositiveScan,
   normalizeScanResults,
   normalizeScanningSkill,
+  isLv427Designation,
+  pickPlanetDesignation,
   pickScanDistanceLabel,
   pickScanOutcome,
   rollScanLoot,
@@ -30,6 +32,24 @@ function scanRoll(): number {
     if (Number.isFinite(n)) return Math.min(0.999999, Math.max(0, n));
   }
   return Math.random();
+}
+
+function scanAnomalyRoll(): number {
+  const forced = process.env.SCAN_FORCE_ANOMALY_ROLL;
+  if (forced !== undefined && forced !== '') {
+    const n = Number(forced);
+    if (Number.isFinite(n)) return Math.min(0.999999, Math.max(0, n));
+  }
+  return scanRoll();
+}
+
+function scanLv427Roll(): number {
+  const forced = process.env.SCAN_FORCE_LV427_ROLL;
+  if (forced !== undefined && forced !== '') {
+    const n = Number(forced);
+    if (Number.isFinite(n)) return Math.min(0.999999, Math.max(0, n));
+  }
+  return scanRoll();
 }
 
 export function memberScanningSkill(m: MemberRecord): ScanningSkill {
@@ -113,10 +133,19 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
     if (forcedOutcome && (SCAN_OUTCOME_KINDS as readonly string[]).includes(forcedOutcome)) {
       outcome = forcedOutcome as ScanOutcomeKind;
     }
-    const loot =
-      outcome === 'distress' || outcome === 'firstContact'
-        ? []
-        : rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()]);
+    let loot: ScanResultEntry['loot'] = [];
+    let awayMissionCapable: boolean | undefined;
+    let planetDesignation: string | undefined;
+    normalizeShipScanResults(ship);
+    if (outcome !== 'distress' && outcome !== 'firstContact') {
+      const rolled = rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()], scanAnomalyRoll());
+      loot = rolled.loot;
+      awayMissionCapable = rolled.awayMissionCapable;
+    }
+    if (outcome === 'atmosphere') {
+      planetDesignation = pickPlanetDesignation(scanRoll(), scanLv427Roll(), ship.scanResults);
+      if (isLv427Designation(planetDesignation)) awayMissionCapable = true;
+    }
     find = {
       id: crypto.randomUUID(),
       outcome,
@@ -124,8 +153,9 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
       foundAt: now,
       foundBy: `${member.character!.firstName} ${member.character!.lastName}`,
       loot,
+      ...(awayMissionCapable ? { awayMissionCapable: true } : {}),
+      ...(planetDesignation ? { planetDesignation } : {}),
     };
-    normalizeShipScanResults(ship);
     ship.scanResults = [...(ship.scanResults ?? []), find].slice(-30);
   }
   return { memberId: member.id, hit, find, skill, leveledUp };
