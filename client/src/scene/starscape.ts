@@ -12,14 +12,16 @@ export const SHIP_FORWARD = new THREE.Vector3(0, 0, 1);
 export const STARSCAPE_TUNING = {
   /** Primary catalog grid (one star candidate per cell). */
   cell: 4.6,
-  keep: 0.9,
+  keep: 0.89,
   /** Distant smaller layer. */
   cellFar: 9.2,
-  keepFar: 0.93,
+  keepFar: 0.92,
   /** Hash above this → hero star (halo + 4-point spikes). */
   heroThreshold: 0.94,
   /** Brightness cap for hero cores. */
-  brightGain: 1.05,
+  brightGain: 1.16,
+  /** Multiplier on lit pixels only (gaps stay black). */
+  starGain: 1.12,
 };
 
 const VIEWPORT_VERTEX = `
@@ -48,6 +50,7 @@ const VIEWPORT_FRAGMENT = `
   uniform float uStarKeepFar;
   uniform float uHeroThreshold;
   uniform float uBrightGain;
+  uniform float uStarGain;
   varying vec3 vWorldPos;
   varying vec2 vUv;
 
@@ -77,26 +80,26 @@ const VIEWPORT_FRAGMENT = `
       peak = uBrightGain;
     } else if (mag > 0.76) {
       radius = 0.011 + (mag - 0.76) * 0.02;
-      peak = 0.28 + (mag - 0.76) * 1.1;
+      peak = 0.31 + (mag - 0.76) * 1.2;
     } else {
       radius = 0.004 + mag * 0.005;
-      peak = 0.06 + mag * 0.14;
+      peak = 0.07 + mag * 0.155;
     }
 
     float core = smoothstep(radius, radius * 0.1, dist);
     float lum = core * peak;
 
     if (mag >= uHeroThreshold) {
-      float halo = exp(-dist * dist / (radius * radius * 4.5)) * 0.32;
+      float halo = exp(-dist * dist / (radius * radius * 4.5)) * 0.36;
       vec2 sp = d / max(radius, 0.001);
-      float spike = (exp(-abs(sp.x) * 10.0) + exp(-abs(sp.y) * 10.0)) * exp(-length(sp) * 0.5) * 0.5;
+      float spike = (exp(-abs(sp.x) * 10.0) + exp(-abs(sp.y) * 10.0)) * exp(-length(sp) * 0.5) * 0.56;
       lum += halo + spike;
     }
 
     if (lum < 0.002) return vec3(0.0);
 
     float tw = 0.84 + 0.16 * sin(uTime * (0.45 + mag * 1.4) + h * 11.0);
-    return vec3(lum * tw * layerGain);
+    return vec3(lum * tw * layerGain * uStarGain);
   }
 
   vec3 stampStars(vec3 p, float cellMul, float keepDelta) {
@@ -188,6 +191,7 @@ export class StarscapeRenderer {
   private readonly uStarKeepFar: UniformNum = { value: STARSCAPE_TUNING.keepFar };
   private readonly uHeroThreshold: UniformNum = { value: STARSCAPE_TUNING.heroThreshold };
   private readonly uBrightGain: UniformNum = { value: STARSCAPE_TUNING.brightGain };
+  private readonly uStarGain: UniformNum = { value: STARSCAPE_TUNING.starGain };
   private bridgeForeMat: THREE.ShaderMaterial | null = null;
   private motion: ShipMotionState = 'still';
   private time = 0;
@@ -227,6 +231,7 @@ export class StarscapeRenderer {
       uStarKeepFar: this.uStarKeepFar,
       uHeroThreshold: this.uHeroThreshold,
       uBrightGain: this.uBrightGain,
+      uStarGain: this.uStarGain,
     };
   }
 
