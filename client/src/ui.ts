@@ -127,7 +127,7 @@ export class TitleScreen {
     this.continueSection.hidden = !show;
     this.el.querySelector<HTMLElement>('.continue-divider')!.hidden = !show;
     this.el.classList.toggle('has-saved', show);
-    this.continueNote.textContent = note ?? 'Your saved characters. Boarding wakes them in their quarters.';
+    this.continueNote.textContent = note ?? 'Your saved characters. Boarding drops you in the Commons.';
     this.saved.render(characters ?? [], characters === null ? 'Looking for your crew…' : '');
   }
 
