@@ -1,134 +1,140 @@
 import * as THREE from 'three';
 import type { ShipMotionState } from '../../../shared/navigation';
 
-const STAR_COUNT = 2800;
-const RADIUS = 420;
+/** Seed ship heading in world space (+Z = bridge forward). */
+export const SHIP_FORWARD = new THREE.Vector3(0, 0, 1);
+
+const VIEWPORT_VERTEX = `
+  varying vec3 vWorldPos;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+
+const VIEWPORT_FRAGMENT = `
+  uniform vec3 uCameraPos;
+  uniform vec3 uShipForward;
+  uniform float uTime;
+  uniform float uScroll;
+  uniform float uStreak;
+  uniform float uOpacity;
+  varying vec3 vWorldPos;
+
+  float hash31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  float starsAt(vec3 p) {
+    vec3 cell = floor(p * 14.0);
+    vec3 f = fract(p * 14.0);
+    float h = hash31(cell);
+    if (h < 0.92) return 0.0;
+    float d = length(f - 0.5);
+    float core = smoothstep(0.22, 0.0, d);
+    float tint = 0.75 + 0.25 * hash31(cell + 1.7);
+    return core * tint;
+  }
+
+  vec3 starColor(vec3 p) {
+    float h = hash31(floor(p * 14.0) + 0.5);
+    float hue = 0.55 + h * 0.15;
+    return vec3(0.65 + hue * 0.35, 0.75 + hue * 0.2, 1.0);
+  }
+
+  void main() {
+    vec3 ray = normalize(vWorldPos - uCameraPos);
+    vec3 drift = uShipForward * uTime * uScroll;
+    float align = abs(dot(ray, uShipForward));
+    float streakLen = uStreak * (0.35 + 0.65 * align);
+
+    float acc = 0.0;
+    vec3 colAcc = vec3(0.0);
+    for (int i = 0; i < 6; i++) {
+      float t = float(i) / 5.0;
+      vec3 offset = uShipForward * (streakLen * t * 6.0);
+      vec3 p = ray * 72.0 - drift - offset;
+      float layer = starsAt(p) + starsAt(p * 2.1 + 3.0) * 0.55 + starsAt(p * 4.3 - 1.0) * 0.25;
+      if (layer > 0.01) {
+        colAcc += starColor(p) * layer;
+        acc += layer;
+      }
+    }
+    acc /= 6.0;
+    colAcc /= 6.0;
+
+    vec3 bg = vec3(0.01, 0.02, 0.05);
+    vec3 col = bg + colAcc * (1.2 + uStreak * 1.5);
+    float alpha = uOpacity * clamp(acc * 2.8 + 0.02, 0.0, 1.0);
+    if (alpha < 0.01) discard;
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+type UniformNum = { value: number };
+type UniformVec3 = { value: THREE.Vector3 };
 
 /**
- * One offscreen starfield render shared by corridor glass, bridge screens, and the greenhouse dome.
- * Motion state stretches stars along the forward axis.
+ * Procedural exterior field for interior glass: one continuous 3D star volume advected along ship forward.
+ * Each viewport pixel uses the camera ray through that point, so bridge panels show adjacent sky and side
+ * windows get lateral parallax.
  */
 export class StarscapeRenderer {
-  readonly texture: THREE.Texture;
-  private renderer: THREE.WebGLRenderer;
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(72, 16 / 9, 1, RADIUS * 2);
-  private points: THREE.Points;
-  private material: THREE.ShaderMaterial;
-  private target = new THREE.WebGLRenderTarget(1024, 576, {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    colorSpace: THREE.SRGBColorSpace,
-  });
+  private readonly uTime: UniformNum = { value: 0 };
+  private readonly uScroll: UniformNum = { value: 0.12 };
+  private readonly uStreak: UniformNum = { value: 0 };
+  private readonly uCameraPos: UniformVec3 = { value: new THREE.Vector3() };
+  private readonly uShipForward: UniformVec3 = { value: SHIP_FORWARD.clone() };
   private motion: ShipMotionState = 'still';
   private time = 0;
 
-  constructor(sharedRenderer: THREE.WebGLRenderer) {
-    this.renderer = sharedRenderer;
-    this.scene.background = new THREE.Color(0x02040a);
-    this.camera.position.set(0, 0, 0);
-    this.camera.lookAt(0, 0, -1);
-
-    const pos = new Float32Array(STAR_COUNT * 3);
-    const col = new Float32Array(STAR_COUNT * 3);
-    const phase = new Float32Array(STAR_COUNT);
-    const c = new THREE.Color();
-    for (let i = 0; i < STAR_COUNT; i++) {
-      const v = new THREE.Vector3().randomDirection().multiplyScalar(RADIUS * (0.7 + Math.random() * 0.3));
-      pos.set([v.x, v.y, v.z], i * 3);
-      c.setHSL(0.52 + Math.random() * 0.18, 0.45, 0.55 + Math.random() * 0.4);
-      col.set([c.r, c.g, c.b], i * 3);
-      phase[i] = Math.random() * Math.PI * 2;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
-
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-        uMotion: { value: 0 },
-        uSize: { value: 2.4 },
-      },
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      vertexShader: `
-        attribute float aPhase;
-        uniform float uTime;
-        uniform float uMotion;
-        uniform float uSize;
-        varying vec3 vColor;
-        void main() {
-          vColor = color;
-          vec3 p = position;
-          float drift = uMotion * (0.35 + sin(aPhase + uTime * 2.0) * 0.15);
-          p.z -= uTime * drift * 40.0;
-          p.z = mod(p.z + ${RADIUS.toFixed(1)}, ${(RADIUS * 2).toFixed(1)}) - ${RADIUS.toFixed(1)};
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          float stretch = 1.0 + uMotion * 3.5;
-          gl_Position = projectionMatrix * vec4(mv.x, mv.y, mv.z * stretch, mv.w);
-          gl_PointSize = uSize * (280.0 / -mv.z);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vColor;
-        void main() {
-          vec2 uv = gl_PointCoord - 0.5;
-          float d = length(uv);
-          if (d > 0.5) discard;
-          float a = smoothstep(0.5, 0.08, d);
-          gl_FragColor = vec4(vColor, a);
-        }
-      `,
-    });
-    this.points = new THREE.Points(geo, this.material);
-    this.scene.add(this.points);
-    this.texture = this.target.texture;
-    this.renderFrame();
+  constructor(_sharedRenderer: THREE.WebGLRenderer) {
+    /* Offscreen target removed — viewports shade in the main pass. */
   }
 
   setMotion(motion: ShipMotionState) {
     this.motion = motion;
+    if (motion === 'f-warp') {
+      this.uScroll.value = 28;
+      this.uStreak.value = 1.15;
+    } else if (motion === 'warp') {
+      this.uScroll.value = 9;
+      this.uStreak.value = 0.45;
+    } else {
+      this.uScroll.value = 0.35;
+      this.uStreak.value = 0.04;
+    }
   }
 
-  motionValue(): number {
-    if (this.motion === 'f-warp') return 1;
-    if (this.motion === 'warp') return 0.42;
-    return 0;
-  }
-
-  update(dt: number) {
-    this.time += dt;
-    this.material.uniforms.uTime.value = this.time;
-    this.material.uniforms.uMotion.value = this.motionValue();
-    this.renderFrame();
-  }
-
-  private renderFrame() {
-    const prev = this.renderer.getRenderTarget();
-    this.renderer.setRenderTarget(this.target);
-    this.renderer.render(this.scene, this.camera);
-    this.renderer.setRenderTarget(prev);
-  }
-
-  /** Glass / screen material sampling the live exterior texture. */
-  viewportMaterial(opacity = 0.92): THREE.MeshBasicMaterial {
-    return new THREE.MeshBasicMaterial({
-      map: this.texture,
+  viewportMaterial(opacity = 0.92): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uCameraPos: this.uCameraPos,
+        uShipForward: this.uShipForward,
+        uTime: this.uTime,
+        uScroll: this.uScroll,
+        uStreak: this.uStreak,
+        uOpacity: { value: opacity },
+      },
+      vertexShader: VIEWPORT_VERTEX,
+      fragmentShader: VIEWPORT_FRAGMENT,
       transparent: true,
-      opacity,
-      toneMapped: false,
       depthWrite: false,
       side: THREE.DoubleSide,
+      toneMapped: false,
     });
   }
 
+  update(dt: number, camera: THREE.PerspectiveCamera) {
+    this.time += dt;
+    this.uTime.value = this.time;
+    camera.getWorldPosition(this.uCameraPos.value);
+  }
+
   dispose() {
-    this.target.dispose();
-    this.points.geometry.dispose();
-    this.material.dispose();
+    /* Materials disposed with meshes. */
   }
 }

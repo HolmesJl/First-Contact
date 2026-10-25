@@ -580,6 +580,7 @@ export class ShipInterior {
   }
 
   private bridgeScreens(v: SpaceView, b: Batch) {
+    // One shared exterior field; each panel samples a different camera ray (panoramic wrap).
     const screenMat = this.starscape.viewportMaterial(0.95);
     const edges: [Pt, Pt][] = [
       [BRIDGE_POLY[3], BRIDGE_POLY[4]],
@@ -664,42 +665,30 @@ export class ShipInterior {
     this.addCorridorViewports(v, axis, cx, start, t1);
   }
 
-  /** Side viewport strips along corridor tubes (exterior starscape). */
+  /** Full-height side glass on corridor octagon flats (flush with inner wall, both sides). */
   private addCorridorViewports(v: SpaceView, axis: 'x' | 'z', cx: number, start: number, t1: number) {
     const mat = this.starscape.viewportMaterial(0.9);
-    const len = t1 - start;
+    const len = Math.max(0.5, t1 - start - 0.4);
     const mid = (start + t1) / 2;
-    const panelH = 1.35;
-    const panelW = Math.min(1.05, len / 4);
-    const y = 1.55;
-    const inset = 1.18;
-    const count = Math.max(1, Math.floor(len / 5));
-    for (let i = 0; i < count; i++) {
-      const t = start + ((i + 0.5) / count) * len;
-      for (const side of [-1, 1]) {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(panelW, panelH), mat);
-        if (axis === 'z') {
-          m.position.set(cx + side * inset, y, t);
-          m.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
-        } else {
-          m.position.set(t, y, cx + side * inset);
-          m.rotation.y = side < 0 ? 0 : Math.PI;
-        }
-        v.group.add(m);
-        this.viewportMeshes.push(m);
+    const y0 = 0.88;
+    const y1 = 2.82;
+    const h = y1 - y0;
+    const yMid = (y0 + y1) / 2;
+    /** Inner face of the octagon flat (OCT u = ±2.0), slightly inset to sit inside the shell. */
+    const wallU = 1.98;
+    const shellInset = 0.02;
+    for (const side of [-1, 1]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h), mat);
+      if (axis === 'z') {
+        m.position.set(cx + side * (wallU - shellInset), yMid, mid);
+        m.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      } else {
+        m.position.set(mid, yMid, cx + side * (wallU - shellInset));
+        m.rotation.y = side < 0 ? 0 : Math.PI;
       }
+      v.group.add(m);
+      this.viewportMeshes.push(m);
     }
-    // One wider panel near the middle for readability in screenshots.
-    const wide = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.2, len * 0.35), panelH + 0.2), mat);
-    if (axis === 'z') {
-      wide.position.set(cx + inset, y + 0.05, mid);
-      wide.rotation.y = -Math.PI / 2;
-    } else {
-      wide.position.set(mid, y + 0.05, cx + inset);
-      wide.rotation.y = 0;
-    }
-    v.group.add(wide);
-    this.viewportMeshes.push(wide);
   }
 
   // ---------------------------------------------------------------- doors, ports, signs
@@ -957,11 +946,7 @@ export class ShipInterior {
    */
   update(dt: number, focus: THREE.Vector3, camera: THREE.PerspectiveCamera) {
     this.time += dt;
-    this.starscape.update(dt);
-    for (const m of this.viewportMeshes) {
-      const mat = m.material as THREE.MeshBasicMaterial;
-      if (mat.map !== this.starscape.texture) mat.map = this.starscape.texture;
-    }
+    this.starscape.update(dt, camera);
     this.questTerminals.update(this.time);
     this.memoryStations.update(this.time, camera);
     this.itemStations.update(dt);

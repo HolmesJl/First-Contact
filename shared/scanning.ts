@@ -321,7 +321,7 @@ export function pickScanOutcome(roll: number): ScanOutcomeKind {
 
 /** Distance label for a new contact; from &lt;20 km up to 5.0 LY (scan cap). */
 export function pickScanDistanceLabel(roll: number): string {
-  const forced = process.env.SCAN_FORCE_DISTANCE;
+  const forced = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.SCAN_FORCE_DISTANCE;
   if (forced) {
     const km = parseDistanceKm(forced);
     if (km !== null) return formatDistanceKm(km);
