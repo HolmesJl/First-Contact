@@ -430,7 +430,10 @@ async function startLab() {
     playerPos: () => lab?.localPos() ?? null,
     onOpen: () => lab?.releaseInput(),
   });
-  if (shipMeta) inventory.setStock(shipMeta.stock);
+  if (shipMeta) {
+    inventory.setStock(shipMeta.stock);
+    inventory.setShipStocks(shipMeta.refineryStock, shipMeta.cargoHoldStock);
+  }
   syncHudSelf();
 
   const me = players.get(selfId)!;
@@ -630,6 +633,7 @@ function handle(m: ServerMsg) {
       shipMeta = m.ship;
       lab?.setCabinDoor(m.ship.cabinDoor);
       inventory?.setStock(m.ship.stock);
+      inventory?.setShipStocks(m.ship.refineryStock, m.ship.cargoHoldStock);
       scanStation?.setResults(m.ship.scanResults);
       wakeIntro?.enableContinue(() => beginCreator());
       break;

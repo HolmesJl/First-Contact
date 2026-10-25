@@ -12,6 +12,9 @@ import {
   deleteBlock,
   fileText,
   findRoom,
+  materialName,
+  RAW_MATERIALS,
+  SHIP_MATERIALS,
   normalizeInventory,
   normalizePadFiles,
   normalizeSlots,
@@ -31,6 +34,10 @@ import {
 import { inRange } from '../../shared/opening';
 import type { InventoryAction } from '../../shared/protocol';
 import type { MemberRecord, ShipRecord } from './store';
+import { normalizeShipStocks } from './transporter';
+
+const RAW_MATERIAL_IDS = new Set(RAW_MATERIALS.map((m) => m.id));
+const SHIP_MATERIAL_IDS = new Set(SHIP_MATERIALS.map((m) => m.id));
 
 export type InvResult =
   | {
@@ -39,6 +46,8 @@ export type InvResult =
       message?: string;
       /** Ship stock changed: broadcast `shipState`. */
       stock?: boolean;
+      /** Refinery / cargo-hold material stock changed: broadcast `shipState`. */
+      shipStocks?: boolean;
       /** Closet contents changed: resend the owner's closet. */
       closet?: boolean;
       /** A stack that just landed in the carry slots (the client opens the inventory on it). */
@@ -132,6 +141,8 @@ export function applyInventoryAction(ship: ShipRecord, member: MemberRecord, a: 
       return applyTake(ship, member, a.station, a.item);
     case 'putBack':
       return applyPutBack(ship, member, a.loc, a.qty);
+    case 'destroyMaterial':
+      return applyDestroyMaterial(ship, member, a.station, a.materialId);
   }
 }
 
@@ -316,6 +327,31 @@ export function applyPutBack(ship: ShipRecord, member: MemberRecord, loc: SlotRe
   stock[stack.item] = (stock[stack.item] ?? 0) + qty;
   take(slots, loc.i, qty);
   return { ok: true, message: `Put back ${qty > 1 ? `${qty} x ` : ''}${stackName(stack)} (${stock[stack.item]} in stock).`, stock: true, closet: loc.c === 'closet' };
+}
+
+/** Remove one unit of a material from refinery or cargo-hold stock (frees shared capacity). */
+export function applyDestroyMaterial(ship: ShipRecord, member: MemberRecord, station: string, materialId: string): InvResult {
+  const panel = stockPanelById(station);
+  if (!panel) return fail('Nothing to destroy there.');
+  if (!inRange(member.x, member.z, panel.stand.x, panel.stand.z)) return fail('Move closer.');
+  normalizeShipStocks(ship);
+  if (panel.kind === 'refinery') {
+    if (!RAW_MATERIAL_IDS.has(materialId)) return fail('Unknown material.');
+    const stock = ship.refineryStock!;
+    const have = stock[materialId] ?? 0;
+    if (have <= 0) return fail('Nothing to destroy.');
+    stock[materialId] = have - 1;
+    return { ok: true, message: `Destroyed 1 ${materialName(materialId)}.`, shipStocks: true };
+  }
+  if (panel.kind === 'materials' || panel.kind === 'printer') {
+    if (!SHIP_MATERIAL_IDS.has(materialId)) return fail('Unknown material.');
+    const stock = ship.cargoHoldStock!;
+    const have = stock[materialId] ?? 0;
+    if (have <= 0) return fail('Nothing to destroy.');
+    stock[materialId] = have - 1;
+    return { ok: true, message: `Destroyed 1 ${materialName(materialId)}.`, shipStocks: true };
+  }
+  return fail('This panel does not store materials.');
 }
 
 /** Pick up a world File (via `interact`): a copy goes into a carry slot; one of each name per person. */

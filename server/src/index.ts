@@ -44,6 +44,9 @@ import { isItemInteractId, isWorldFileId, stockPanelById } from '../../shared/it
 import { applyInventoryAction, applyOpenPanel, applyPickupFile, itemEvents, type InvResult } from './items';
 import { applyScavengerIssue, installScavengerQuest } from './scavenger';
 import { applyScanStart, cancelScan, finishDueScans, shipScanResults } from './scanning';
+import { applyTransportStart, cancelTransport, finishDueTransports } from './transporter';
+import type { TransporterPadId } from '../../shared/transporter';
+import { isTransporterStationId } from '../../shared/transporter';
 
 installScavengerQuest();
 
@@ -105,7 +108,7 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     inventory: m.inventory!,
     padFiles: m.padFiles ?? [],
     scavenger: m.scavenger ?? null,
-    skills: { scanning: m.skills!.scanning! },
+    skills: { scanning: m.skills!.scanning!, transporter: m.skills!.transporter! },
   };
 }
 
@@ -211,7 +214,7 @@ wss.on('connection', (ws) => {
     store.save();
     broadcast(ship!.code, { t: 'playerUpdated', player: toState(ship!, me) });
     if (res.closet) send(ws, { t: 'closet', slots: me.closet! });
-    if (res.stock) broadcast(ship!.code, { t: 'shipState', ship: shipMeta(ship!) });
+    if (res.stock || res.shipStocks) broadcast(ship!.code, { t: 'shipState', ship: shipMeta(ship!) });
     send(ws, { t: 'invResult', ok: true, message: res.message, gained: res.gained, file: res.file });
     for (const n of notices) send(ws, { t: 'notice', message: n });
   };
@@ -429,6 +432,21 @@ wss.on('connection', (ws) => {
         send(ws, { t: 'scanProgress', endsAt: res.endsAt });
         break;
       }
+      case 'transportStart': {
+        if (!isTransporterStationId(msg.padId)) return send(ws, { t: 'error', message: 'Unknown transporter.' });
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyTransportStart(ship, me, msg.padId as TransporterPadId, msg.scanId, msg.materialId, msg.qty, msg.x, msg.z);
+        if (!res.ok) {
+          if (res.toast) send(ws, { t: 'notice', message: res.message });
+          else return send(ws, { t: 'error', message: res.message });
+          break;
+        }
+        send(ws, { t: 'transportProgress', endsAt: res.endsAt });
+        break;
+      }
       case 'scavengerIssue': {
         // Same as `interact`: take the client's position (clamped) before the Bridge check. The last `move` can sit a
         // step behind after a budget-limited sprint, since a standing client stops repeating its position.
@@ -491,6 +509,7 @@ wss.on('connection', (ws) => {
     lastMoveMs.delete(mk);
     budgets.delete(mk);
     cancelScan(ship.code, pid);
+    cancelTransport(ship.code, pid);
     const me = ship.members[pid];
     if (me && dropFormingMember(ship, pid)) {
       store.save();
@@ -531,6 +550,28 @@ setInterval(() => {
           broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
         }
         if (row.hit) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
+      }
+    }
+    const transported = finishDueTransports(ship, now);
+    if (transported.length) {
+      store.save();
+      for (const row of transported) {
+        const member = ship.members[row.memberId];
+        const peer = online.get(code)?.get(row.memberId);
+        if (peer && member) {
+          send(peer, {
+            t: 'transportComplete',
+            ok: row.ok,
+            message: row.message,
+            skill: row.skill,
+            leveledUp: row.leveledUp,
+            scanResults: row.scanResults,
+            refineryStock: row.refineryStock,
+            cargoHoldStock: row.cargoHoldStock,
+          });
+          broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
+        }
+        if (row.ok) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
       }
     }
   }

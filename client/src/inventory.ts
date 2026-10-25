@@ -22,6 +22,7 @@ import {
 } from '../../shared/items';
 import { inRange } from '../../shared/opening';
 import type { InventoryAction } from '../../shared/protocol';
+import { CARGO_HOLD_CAPACITY, REFINERY_CAPACITY, stockTotal } from '../../shared/transporter';
 
 const ui = document.getElementById('ui')!;
 
@@ -82,6 +83,8 @@ export class InventoryOverlay {
   private inv: Inventory = startingInventory();
   private closet: Slots = emptySlots(CLOSET_SLOTS);
   private stock: Record<string, number> = {};
+  private refineryStock: Record<string, number> = {};
+  private cargoHoldStock: Record<string, number> = {};
   private closetBerth: number | null = null;
   private panel: StockPanel | null = null;
   private cursor: { loc: SlotRef; qty: number } | null = null;
@@ -199,6 +202,12 @@ export class InventoryOverlay {
     if (this.shown) this.render();
   }
 
+  setShipStocks(refineryStock: Record<string, number>, cargoHoldStock: Record<string, number>) {
+    this.refineryStock = refineryStock;
+    this.cargoHoldStock = cargoHoldStock;
+    if (this.shown) this.render();
+  }
+
   // ---------------------------------------------------------------- rendering
 
   private stackAt(ref: SlotRef): ItemStack | null {
@@ -309,13 +318,39 @@ export class InventoryOverlay {
       );
       return;
     }
-    const mats = p.kind === 'printer' ? SHIP_MATERIALS : RAW_MATERIALS;
+    const isRefinery = p.kind === 'refinery';
+    const mats = isRefinery ? RAW_MATERIALS : SHIP_MATERIALS;
+    const matStock = isRefinery ? this.refineryStock : this.cargoHoldStock;
+    const cap = isRefinery ? REFINERY_CAPACITY : CARGO_HOLD_CAPACITY;
+    const used = stockTotal(matStock);
+    const capHead = h(
+      'div',
+      'inv-capacity muted',
+      `Storage: <strong>${used}</strong> / ${cap} units`,
+    );
     const list = h('ul', 'inv-materials');
     for (const m of mats) {
+      const qty = matStock[m.id] ?? 0;
       const recipe = m.recipe ? `<span class="recipe muted">${esc(recipeText(m))}</span>` : '';
-      list.append(h('li', '', `<span class="who">${esc(m.name)}</span>${recipe}<span class="n">${this.stock[m.id] ?? 0}</span>`));
+      const li = h('li', 'inv-material-row');
+      li.innerHTML = `<span class="who">${esc(m.name)}</span>${recipe}<span class="n">${qty}</span>`;
+      const destroy = h('button', 'btn small danger inv-destroy-material', 'Destroy Item');
+      destroy.type = 'button';
+      destroy.disabled = qty <= 0;
+      destroy.title = qty <= 0 ? 'Nothing to destroy' : `Destroy 1 ${m.name} (frees capacity)`;
+      destroy.addEventListener('click', () =>
+        this.handlers.send({ k: 'destroyMaterial', station: p.interactId, materialId: m.id }),
+      );
+      li.append(destroy);
+      list.append(li);
     }
-    this.side.append(list, h('div', 'inv-note muted', p.kind === 'printer' ? 'Ship Materials on hand and what the printer needs to make more. View only for now.' : 'Raw Materials on hand. View only for now.'));
+    const note =
+      p.kind === 'printer'
+        ? 'Ship Materials in the cargo hold. Destroy Item frees space for beaming debris aboard.'
+        : p.kind === 'materials'
+          ? 'Ship Materials in the cargo hold. Destroy Item frees space for beaming debris aboard.'
+          : 'Raw Materials in the refinery. Destroy Item frees space for beaming from atmosphere finds.';
+    this.side.append(capHead, list, h('div', 'inv-note muted', note));
   }
 
   private renderActions() {

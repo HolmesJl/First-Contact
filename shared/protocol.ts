@@ -133,6 +133,10 @@ export interface ShipMeta {
   cabinDoor: CabinDoorState;
   /** Ship-wide item and material counts by id (Eatery food, Cargo Hold armor, printer and refinery materials). */
   stock: Record<string, number>;
+  /** Raw materials in the refinery (beamed from atmosphere finds). */
+  refineryStock: Record<string, number>;
+  /** Ship materials in the cargo hold (beamed from debris finds). */
+  cargoHoldStock: Record<string, number>;
   scanResults: ScanResultEntry[];
 }
 
@@ -191,7 +195,7 @@ export interface PlayerState {
   padFiles: PadFile[];
   /** Quest 2 progress, or null until the pad issues it on the Bridge. */
   scavenger: ScavengerState | null;
-  skills: { scanning: ScanningSkill };
+  skills: { scanning: ScanningSkill; transporter: import('./transporter').TransporterSkill };
 }
 
 /** [id, x, z, rot, moving] */
@@ -225,7 +229,9 @@ export type ClientMsg =
   /** Opening the data pad on the Bridge after the opening quest: receive the scavenger hunt (server checks place and step). */
   | { t: 'scavengerIssue'; x: number; z: number }
   /** Start a Bridge sensor scan (server owns the timer and the roll). */
-  | { t: 'scanStart'; x: number; z: number };
+  | { t: 'scanStart'; x: number; z: number }
+  /** Beam material from a scan contact at a transporter pad. */
+  | { t: 'transportStart'; padId: string; scanId: string; materialId: string; qty: number; x: number; z: number };
 
 /**
  * Inventory actions. All are validated on the server (ownership, range, item rules); `x, z` is where the player
@@ -244,7 +250,9 @@ export type InventoryAction =
   /** Take one `item` from a stock station (Eatery panel, Cargo Hold shelves). */
   | { k: 'take'; station: string; item: ItemId }
   /** Return `qty` of a stack to the stock of the station it came from. */
-  | { k: 'putBack'; loc: SlotRef; qty?: number };
+  | { k: 'putBack'; loc: SlotRef; qty?: number }
+  /** Destroy one unit of a material listed on a refinery / cargo-hold stock panel. */
+  | { k: 'destroyMaterial'; station: string; materialId: string };
 
 export type ServerMsg =
   | { t: 'profile'; characters: ProfileCharacter[] }
@@ -287,6 +295,17 @@ export type ServerMsg =
       skill: ScanningSkill;
       leveledUp: boolean;
       scanResults: ScanResultEntry[];
+    }
+  | { t: 'transportProgress'; endsAt: number }
+  | {
+      t: 'transportComplete';
+      ok: boolean;
+      message?: string;
+      skill: import('./transporter').TransporterSkill;
+      leveledUp: boolean;
+      scanResults: ScanResultEntry[];
+      refineryStock: Record<string, number>;
+      cargoHoldStock: Record<string, number>;
     };
 
 export const NAME_PATTERN = /^[\p{L}][\p{L}' -]{0,15}$/u;
@@ -362,6 +381,19 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     case 'scanStart':
       if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
       return { t: m.t, x: m.x as number, z: m.z as number };
+    case 'transportStart':
+      if (typeof m.padId !== 'string' || typeof m.scanId !== 'string' || typeof m.materialId !== 'string') return null;
+      if (typeof m.qty !== 'number' || !Number.isFinite(m.qty)) return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return {
+        t: 'transportStart',
+        padId: m.padId,
+        scanId: m.scanId,
+        materialId: m.materialId,
+        qty: m.qty,
+        x: m.x as number,
+        z: m.z as number,
+      };
     case 'create':
       return m.character ? { t: 'create', character: m.character as Character } : null;
     case 'move':
@@ -420,6 +452,9 @@ export function parseInventoryAction(raw: unknown): InventoryAction | null {
       return { k: 'take', station: a.station as string, item: a.item };
     case 'putBack':
       return validSlotRef(a.loc) ? { k: 'putBack', loc: slotRef(a.loc), qty: qtyOf(a.qty) } : null;
+    case 'destroyMaterial':
+      if (validateInteractId(a.station) || typeof a.materialId !== 'string' || !a.materialId) return null;
+      return { k: 'destroyMaterial', station: a.station as string, materialId: a.materialId };
     default:
       return null;
   }

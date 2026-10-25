@@ -4,10 +4,11 @@ import {
   SCAN_DURATION_MS,
   SCAN_STATIONS,
   applyPositiveScan,
-  nextScanFindType,
   normalizeScanResults,
   normalizeScanningSkill,
   pickScanDistanceLabel,
+  pickScanOutcome,
+  rollScanLoot,
   scanStationById,
   scanSucceeded,
   type ScanResultEntry,
@@ -34,7 +35,7 @@ export function memberScanningSkill(m: MemberRecord): ScanningSkill {
 }
 
 function normalizeMemberSkills(m: MemberRecord) {
-  m.skills ??= { scanning: normalizeScanningSkill(null) };
+  m.skills ??= { scanning: normalizeScanningSkill(null), transporter: undefined };
   m.skills.scanning = normalizeScanningSkill(m.skills.scanning);
 }
 
@@ -103,13 +104,18 @@ function completeScanForMember(ship: ShipRecord, member: MemberRecord, now: numb
     skill = prog.skill;
     leveledUp = prog.leveledUp;
     member.skills!.scanning = skill;
-    const prev = ship.scanResults?.length ? ship.scanResults[ship.scanResults.length - 1] : null;
+    const outcome = pickScanOutcome(scanRoll());
+    const loot =
+      outcome === 'distress' || outcome === 'firstContact'
+        ? []
+        : rollScanLoot(outcome, [scanRoll(), scanRoll(), scanRoll(), scanRoll()]);
     find = {
       id: crypto.randomUUID(),
-      type: nextScanFindType(prev?.type ?? null),
+      outcome,
       distanceLabel: pickScanDistanceLabel(scanRoll()),
       foundAt: now,
       foundBy: `${member.character!.firstName} ${member.character!.lastName}`,
+      loot,
     };
     normalizeShipScanResults(ship);
     ship.scanResults = [...(ship.scanResults ?? []), find].slice(-30);

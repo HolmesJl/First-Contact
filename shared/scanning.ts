@@ -1,5 +1,6 @@
 import { PROPS, SPACE_NAMES, deskPadMount } from './shipInterior';
 import type { Facing } from './shipLayout';
+import { SHIP_MATERIALS } from './items';
 
 export const SCAN_DURATION_MS = 5000;
 export const SCAN_POSITIVES_FOR_LEVEL = 100;
@@ -8,22 +9,39 @@ export const MAX_SCAN_LEVEL = 5;
 export const BRIDGE_SCAN_INTERACT_ID = 'bridge-scan';
 export const BRIDGE_SCAN_PROP_ID = 'scan-1';
 
-export const SCAN_FIND_TYPES = ['debris field', 'mineral signature', 'unknown contact'] as const;
-export type ScanFindType = (typeof SCAN_FIND_TYPES)[number];
+/** Second-roll outcome after a successful sensor find. Relative weights are TBD for balance. */
+export const SCAN_OUTCOME_KINDS = ['debris', 'rings', 'atmosphere', 'distress', 'firstContact'] as const;
+export type ScanOutcomeKind = (typeof SCAN_OUTCOME_KINDS)[number];
 
-export const SCAN_DISTANCE_LABELS = ['nearby', '0.4 AU out', '1.2 AU out', 'deep range'] as const;
+/** Temporary outcome weights (most common → rarest). Jennifer to tune. */
+export const SCAN_OUTCOME_WEIGHTS: Record<ScanOutcomeKind, number> = {
+  debris: 50,
+  rings: 20,
+  atmosphere: 18,
+  distress: 8,
+  firstContact: 4,
+};
 
-export interface ScanningSkill {
-  level: number;
-  positiveScans: number;
+export interface ScanLootLine {
+  materialId: string;
+  /** Rolled at find time. */
+  qty: number;
+  /** Decremented when beamed aboard. */
+  remaining: number;
 }
 
 export interface ScanResultEntry {
   id: string;
-  type: ScanFindType;
+  outcome: ScanOutcomeKind;
   distanceLabel: string;
   foundAt: number;
   foundBy: string;
+  loot: ScanLootLine[];
+}
+
+export interface ScanningSkill {
+  level: number;
+  positiveScans: number;
 }
 
 export interface ScanStation {
@@ -70,21 +88,50 @@ export function normalizeScanningSkill(raw: unknown): ScanningSkill {
   return { level, positiveScans };
 }
 
+function normalizeLoot(raw: unknown): ScanLootLine[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ScanLootLine[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    if (typeof r.materialId !== 'string' || typeof r.qty !== 'number' || typeof r.remaining !== 'number') continue;
+    const qty = Math.max(0, Math.floor(r.qty));
+    let remaining = Math.max(0, Math.floor(r.remaining));
+    if (remaining > qty) remaining = qty;
+    if (qty <= 0) continue;
+    out.push({ materialId: r.materialId, qty, remaining });
+  }
+  return out;
+}
+
 export function normalizeScanResults(raw: unknown): ScanResultEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: ScanResultEntry[] = [];
   for (const row of raw) {
     if (!row || typeof row !== 'object') continue;
     const r = row as Record<string, unknown>;
-    const type = r.type;
-    if (typeof r.id !== 'string' || !SCAN_FIND_TYPES.includes(type as ScanFindType)) continue;
+    const outcome = r.outcome;
+    if (typeof r.id !== 'string' || !SCAN_OUTCOME_KINDS.includes(outcome as ScanOutcomeKind)) continue;
     if (typeof r.distanceLabel !== 'string' || typeof r.foundAt !== 'number' || typeof r.foundBy !== 'string') continue;
+    const loot = normalizeLoot(r.loot);
+    if (outcome === 'distress' || outcome === 'firstContact') {
+      out.push({
+        id: r.id,
+        outcome: outcome as ScanOutcomeKind,
+        distanceLabel: r.distanceLabel,
+        foundAt: r.foundAt,
+        foundBy: r.foundBy,
+        loot: [],
+      });
+      continue;
+    }
     out.push({
       id: r.id,
-      type: type as ScanFindType,
+      outcome: outcome as ScanOutcomeKind,
       distanceLabel: r.distanceLabel,
       foundAt: r.foundAt,
       foundBy: r.foundBy,
+      loot,
     });
   }
   return out.slice(-30);
@@ -121,13 +168,110 @@ export function applyPositiveScan(skill: ScanningSkill): ScanProgressResult {
   return { skill: { level, positiveScans }, leveledUp };
 }
 
-export function nextScanFindType(previous: ScanFindType | null): ScanFindType {
-  if (!previous) return SCAN_FIND_TYPES[0];
-  const i = SCAN_FIND_TYPES.indexOf(previous);
-  return SCAN_FIND_TYPES[(i + 1) % SCAN_FIND_TYPES.length];
+const DEBRIS_WEIGHTS: { id: string; w: number }[] = [
+  { id: 'paneling', w: 3 },
+  { id: 'struts', w: 3 },
+  { id: 'conduit', w: 3 },
+  { id: 'alloys', w: 1 },
+  { id: 'cables', w: 1 },
+  { id: 'battery', w: 1 },
+];
+
+const ATMOSPHERE_WEIGHTS: { id: string; w: number }[] = [
+  { id: 'lithium', w: 2 },
+  { id: 'plastics', w: 2 },
+  { id: 'copper', w: 2 },
+  { id: 'iron', w: 2 },
+  { id: 'tin', w: 2 },
+  { id: 'minerals', w: 2 },
+  { id: 'seeds', w: 1 },
+];
+
+const RINGS_WEIGHTS: { id: string; w: number }[] = [
+  { id: 'hydrogen', w: 2 },
+  { id: 'oxygen', w: 2 },
+  { id: 'carbon', w: 2 },
+  { id: 'nitrogen', w: 2 },
+  { id: 'sulfur', w: 1 },
+  { id: 'phosphorus', w: 1 },
+];
+
+function pickWeighted(table: { id: string; w: number }[], roll: number): string {
+  const total = table.reduce((a, r) => a + r.w, 0);
+  let x = roll * total;
+  for (const row of table) {
+    x -= row.w;
+    if (x < 0) return row.id;
+  }
+  return table[table.length - 1].id;
 }
 
-export function pickScanDistanceLabel(roll: number): string {
-  const i = Math.min(SCAN_DISTANCE_LABELS.length - 1, Math.floor(roll * SCAN_DISTANCE_LABELS.length));
-  return SCAN_DISTANCE_LABELS[i];
+function rollQty(roll: number): number {
+  return 1 + Math.floor(roll * 5);
 }
+
+function rollLootLines(table: { id: string; w: number }[], rollA: number, rollB: number, rollC: number, rollD: number): ScanLootLine[] {
+  const typeCount = rollA < 0.35 ? 1 : 2;
+  const ids = new Set<string>();
+  const lines: ScanLootLine[] = [];
+  let r = rollB;
+  while (ids.size < typeCount) {
+    ids.add(pickWeighted(table, r));
+    r = (r * 0.73 + 0.19) % 1;
+  }
+  let qr = rollC;
+  for (const id of ids) {
+    const qty = rollQty(qr);
+    lines.push({ materialId: id, qty, remaining: qty });
+    qr = (qr * 0.61 + 0.27) % 1;
+  }
+  return lines;
+}
+
+/** Pick one of the five outcome kinds. `roll` in [0, 1). */
+export function pickScanOutcome(roll: number): ScanOutcomeKind {
+  const total = SCAN_OUTCOME_KINDS.reduce((a, k) => a + SCAN_OUTCOME_WEIGHTS[k], 0);
+  let x = roll * total;
+  for (const kind of SCAN_OUTCOME_KINDS) {
+    x -= SCAN_OUTCOME_WEIGHTS[kind];
+    if (x < 0) return kind;
+  }
+  return 'debris';
+}
+
+/** Distance label for a new contact; range/format TBD — placeholder km string for now. */
+export function pickScanDistanceLabel(roll: number): string {
+  const km = 12 + Math.floor(roll * (480 - 12 + 1));
+  return `${km} km`;
+}
+
+export function rollScanLoot(outcome: ScanOutcomeKind, rolls: [number, number, number, number]): ScanLootLine[] {
+  switch (outcome) {
+    case 'debris':
+      return rollLootLines(DEBRIS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+    case 'atmosphere':
+      return rollLootLines(ATMOSPHERE_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+    case 'rings':
+      return rollLootLines(RINGS_WEIGHTS, rolls[0], rolls[1], rolls[2], rolls[3]);
+    default:
+      return [];
+  }
+}
+
+export function scanFindTitle(entry: ScanResultEntry): string {
+  switch (entry.outcome) {
+    case 'debris':
+      return 'Space debris';
+    case 'rings':
+      return 'Planet rings';
+    case 'atmosphere':
+      return 'Planet with atmosphere';
+    case 'distress':
+      return 'Ship in distress';
+    case 'firstContact':
+      return 'Possible First Contact';
+  }
+}
+
+/** Ship material ids used in debris loot (for tests). */
+export const DEBRIS_MATERIAL_IDS = SHIP_MATERIALS.map((m) => m.id);

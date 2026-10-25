@@ -1895,6 +1895,18 @@ kbd {
   flex: 1;
 }
 
+.inv-capacity {
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+
+.inv-materials .inv-destroy-material {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
 .inv-materials {
   list-style: none;
   margin: 0;
