@@ -50,6 +50,7 @@ export class RefineryStationOverlay {
       if (row?.dataset.unrefined) {
         this.selected = row.dataset.unrefined;
         this.paintBody();
+        this.paintActions();
       }
       if ((e.target as HTMLElement).closest('.refine-one')) this.tryStart('one');
       if ((e.target as HTMLElement).closest('.refine-all')) this.tryStart('all');
@@ -79,6 +80,7 @@ export class RefineryStationOverlay {
   setStocks(stocks: RefineryStocksView) {
     this.stocks = stocks;
     this.paintBody();
+    this.paintActions();
   }
 
   beginRefine(endsAt: number) {
@@ -159,16 +161,17 @@ export class RefineryStationOverlay {
   }
 
   private render() {
-    this.el.innerHTML = `<div class="scan-station panel">
-      <div class="scan-station-head">
-        <div><div class="kicker">Refining control panel</div><div class="scan-skill" data-skill></div></div>
-        <button type="button" class="btn small ghost" data-close>Close <kbd>Esc</kbd></button>
+    this.el.innerHTML = `<div class="scan-card panel refinery-panel" role="dialog" aria-label="Refining control panel">
+      <div class="scan-head">
+        <div class="scan-title">Refining control panel</div>
+        <button type="button" class="scan-close" data-close aria-label="Close">×</button>
       </div>
-      <div data-cap class="muted"></div>
+      <div class="scan-skill" data-skill></div>
+      <div data-cap class="refinery-cap muted"></div>
       <div class="refinery-columns" data-body></div>
       <div data-progress class="scan-progress" hidden></div>
-      <div data-status class="scan-status"></div>
-      <div data-actions class="refinery-actions"></div>
+      <div data-status class="scan-status refinery-status"></div>
+      <div data-actions class="refinery-actions scan-actions"></div>
     </div>`;
     this.paintAll();
   }

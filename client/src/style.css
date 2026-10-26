@@ -1636,11 +1636,38 @@ kbd {
   background: rgba(42, 154, 114, 0.2);
 }
 
+.refinery-station-overlay .refinery-panel {
+  width: min(94vw, 520px);
+  max-height: 88vh;
+  padding: 18px 20px 20px;
+  gap: 14px;
+}
+
+.refinery-station-overlay .refinery-cap {
+  font-size: 13px;
+  margin: 0;
+}
+
 .refinery-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 14px 16px;
+  margin: 0;
+}
+
+.refinery-columns section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.refinery-columns .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 2px;
 }
 
 .refinery-row {
@@ -1670,8 +1697,15 @@ kbd {
 .refinery-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(140, 210, 255, 0.12);
+}
+
+.refinery-status {
+  min-height: 1.25em;
+  font-size: 13px;
 }
 
 .printer-list {

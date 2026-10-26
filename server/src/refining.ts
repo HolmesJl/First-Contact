@@ -13,12 +13,7 @@ import {
   type EngineerSkill,
   type RefineMode,
 } from '../../shared/refining';
-import {
-  REFINERY_FULL_MESSAGE,
-  refineryHasRoom,
-  splitLegacyRefineryStock,
-  type RefineryStocks,
-} from '../../shared/transporter';
+import { splitLegacyRefineryStock, type RefineryStocks } from '../../shared/transporter';
 import type { MemberRecord, ShipRecord } from './store';
 
 interface ActiveRefine {
@@ -167,9 +162,6 @@ function refineOneUnit(ship: ShipRecord, materialId: string): { ok: boolean; mes
   if (have <= 0) return { ok: false, message: 'Nothing left to refine.' };
 
   if (materialId === 'minerals') {
-    if (!refineryHasRoom(unref, ref, 0)) {
-      // trace adds to refined — need room for +1 trace (net same total after consuming mineral)
-    }
     unref[materialId] = have - 1;
     const parts = applyMineralsRefine(ship);
     return { ok: true, message: `Refined Minerals → ${parts.join(', ')}.` };
@@ -181,7 +173,6 @@ function refineOneUnit(ship: ShipRecord, materialId: string): { ok: boolean; mes
 
   const outId = UNREFINED_TO_REFINED[materialId];
   if (!outId) return { ok: false, message: 'Unknown material.' };
-  if (!refineryHasRoom(unref, ref, 0)) return { ok: false, message: REFINERY_FULL_MESSAGE };
 
   unref[materialId] = have - 1;
   ref[outId] = (ref[outId] ?? 0) + 1;
