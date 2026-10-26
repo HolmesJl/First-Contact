@@ -22,6 +22,8 @@ import { HelmConsoleOverlay } from './helmConsole';
 import { HELM_INTERACT_ID } from '../../shared/navigation';
 import { isTransporterStationId, LAB_QUEST_TERMINAL_INTERACT_ID, transporterStationById } from '../../shared/transporter';
 import { TransporterStationOverlay } from './transporterStation';
+import { RefineryStationOverlay } from './refineryStation';
+import { PrinterStationOverlay } from './printerStation';
 import { JOB_STATION_INTERACT } from '../../shared/opening';
 import type { ClientMsg, InventoryAction, Job, PlayerState, ProfileCharacter, ServerMsg, ShipMeta } from '../../shared/protocol';
 
@@ -82,6 +84,8 @@ let inventory: InventoryOverlay | null = null;
 let scanStation: ScanStationOverlay | null = null;
 let helmConsole: HelmConsoleOverlay | null = null;
 let transporterStation: TransporterStationOverlay | null = null;
+let refineryStation: RefineryStationOverlay | null = null;
+let printerStation: PrinterStationOverlay | null = null;
 let selfId = '';
 let shipCode = '';
 let shipMeta: ShipMeta | null = null;
@@ -359,9 +363,16 @@ async function startLab() {
         if (!me?.character) return;
         const panel = stockPanelById(id);
         if (panel) {
-          // The panel opens locally; the click is reported so the quest hears about it (the materials pad task).
-          inventory?.open({ panel });
           net?.send({ t: 'interact', id, x, z });
+          if (panel.kind === 'refinery') {
+            openRefineryStation();
+            return;
+          }
+          if (panel.kind === 'printer') {
+            openPrinterStation();
+            return;
+          }
+          inventory?.open({ panel });
           return;
         }
         const closetBerth = berthFromClosetId(id);
@@ -484,7 +495,7 @@ async function startLab() {
   });
   if (shipMeta) {
     inventory.setStock(shipMeta.stock);
-    inventory.setShipStocks(shipMeta.refineryStock, shipMeta.cargoHoldStock);
+    inventory.setShipStocks(shipMeta.refineryUnrefined, shipMeta.refineryRefined, shipMeta.cargoHoldStock);
   }
   syncHudSelf();
 
@@ -578,6 +589,60 @@ async function logout() {
   });
   n.close();
   location.replace(location.pathname);
+}
+
+function syncRefineryPrinterStocks() {
+  if (!shipMeta) return;
+  const stocks = {
+    unrefined: shipMeta.refineryUnrefined,
+    refined: shipMeta.refineryRefined,
+  };
+  refineryStation?.setStocks(stocks);
+  printerStation?.setStocks({ refined: shipMeta.refineryRefined, cargo: shipMeta.cargoHoldStock });
+  inventory?.setShipStocks(shipMeta.refineryUnrefined, shipMeta.refineryRefined, shipMeta.cargoHoldStock);
+}
+
+function openRefineryStation() {
+  const me = players.get(selfId);
+  if (!me?.character || !shipMeta || !lab) return;
+  refineryStation?.close();
+  lab.releaseInput();
+  refineryStation = new RefineryStationOverlay(
+    me.skills.engineer,
+    { unrefined: shipMeta.refineryUnrefined, refined: shipMeta.refineryRefined },
+    {
+      onRefine: (materialId, mode) => {
+        refineryStation?.setPending(true);
+        const { x, z } = lab!.localPos();
+        net?.send({ t: 'refineStart', materialId, mode, x, z });
+      },
+      onCancel: () => {
+        const { x, z } = lab!.localPos();
+        net?.send({ t: 'refineCancel', x, z });
+      },
+      onClose: () => {
+        refineryStation = null;
+      },
+    },
+  );
+}
+
+function openPrinterStation() {
+  if (!shipMeta || !lab) return;
+  printerStation?.close();
+  lab.releaseInput();
+  printerStation = new PrinterStationOverlay(
+    { refined: shipMeta.refineryRefined, cargo: shipMeta.cargoHoldStock },
+    {
+      onPrint: (materialId) => {
+        const { x, z } = lab!.localPos();
+        net?.send({ t: 'printStart', materialId, x, z });
+      },
+      onClose: () => {
+        printerStation = null;
+      },
+    },
+  );
 }
 
 function openTransporterStation(padId: string) {
@@ -721,6 +786,7 @@ function handle(m: ServerMsg) {
       if (p.id === selfId) {
         scanStation?.updateSkill(p.skills.scanning);
         transporterStation?.updateSkill(p.skills.transporter);
+        refineryStation?.updateSkill(p.skills.engineer);
         if (p.hasPad && !hadPad) {
           hadPad = true;
           toast('Data pad added to communicator slot.');
@@ -757,7 +823,7 @@ function handle(m: ServerMsg) {
       syncShipMotion();
       lab?.setCabinDoor(m.ship.cabinDoor);
       inventory?.setStock(m.ship.stock);
-      inventory?.setShipStocks(m.ship.refineryStock, m.ship.cargoHoldStock);
+      syncRefineryPrinterStocks();
       scanStation?.setResults(m.ship.scanResults);
       transporterStation?.setResults(m.ship.scanResults);
       helmConsole?.setResults(m.ship.scanResults);
@@ -793,14 +859,48 @@ function handle(m: ServerMsg) {
         shipMeta = {
           ...shipMeta,
           scanResults: m.scanResults,
-          refineryStock: m.refineryStock,
+          refineryUnrefined: m.refineryUnrefined,
+          refineryRefined: m.refineryRefined,
           cargoHoldStock: m.cargoHoldStock,
         };
       }
       transporterStation?.showComplete(m.ok, m.message, m.skill, m.scanResults);
-      inventory?.setShipStocks(m.refineryStock, m.cargoHoldStock);
+      syncRefineryPrinterStocks();
       if (m.leveledUp) toast('Transporter skill increased!');
       if (m.message && m.ok) toast(m.message);
+      break;
+    case 'refineProgress':
+      refineryStation?.beginRefine(m.endsAt);
+      break;
+    case 'refineComplete':
+      if (shipMeta) {
+        shipMeta = {
+          ...shipMeta,
+          refineryUnrefined: m.refineryUnrefined,
+          refineryRefined: m.refineryRefined,
+          armoryStock: m.armoryStock,
+          medicalStock: m.medicalStock,
+        };
+      }
+      refineryStation?.showComplete(m.hit, m.message, m.skill, {
+        unrefined: m.refineryUnrefined,
+        refined: m.refineryRefined,
+      }, m.continued, m.endsAt);
+      syncRefineryPrinterStocks();
+      if (m.leveledUp) toast('Engineer skill increased!');
+      if (m.message && m.hit) toast(m.message);
+      break;
+    case 'printComplete':
+      if (shipMeta) {
+        shipMeta = {
+          ...shipMeta,
+          refineryRefined: m.refineryRefined,
+          cargoHoldStock: m.cargoHoldStock,
+        };
+      }
+      syncRefineryPrinterStocks();
+      printerStation?.showMessage(m.message ?? 'Printed.');
+      if (m.message) toast(m.message);
       break;
     case 'closet':
       inventory?.setCloset(m.slots);

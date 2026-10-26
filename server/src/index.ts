@@ -44,6 +44,8 @@ import { isItemInteractId, isWorldFileId, stockPanelById } from '../../shared/it
 import { applyInventoryAction, applyOpenPanel, applyPickupFile, itemEvents, type InvResult } from './items';
 import { applyScavengerIssue, installScavengerQuest } from './scavenger';
 import { applyScanStart, cancelScan, finishDueScans, shipScanResults } from './scanning';
+import { applyRefineStart, cancelRefine, finishDueRefines } from './refining';
+import { applyPrint } from './printing';
 import { applyTransportStart, cancelTransport, finishDueTransports } from './transporter';
 import type { TransporterPadId } from '../../shared/transporter';
 import { isTransporterStationId } from '../../shared/transporter';
@@ -112,7 +114,7 @@ function toState(ship: ShipRecord, m: MemberRecord): PlayerState {
     padScanLogs: m.padScanLogs ?? [],
     padArchive: m.padArchive ?? [],
     scavenger: m.scavenger ?? null,
-    skills: { scanning: m.skills!.scanning!, transporter: m.skills!.transporter! },
+    skills: { scanning: m.skills!.scanning!, transporter: m.skills!.transporter!, engineer: m.skills!.engineer! },
   };
 }
 
@@ -481,6 +483,38 @@ wss.on('connection', (ws) => {
         send(ws, { t: 'transportProgress', endsAt: res.endsAt });
         break;
       }
+      case 'refineStart': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyRefineStart(ship, me, msg.materialId, msg.mode, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        send(ws, { t: 'refineProgress', endsAt: res.endsAt });
+        break;
+      }
+      case 'refineCancel': {
+        cancelRefine(ship.code, me.id);
+        break;
+      }
+      case 'printStart': {
+        const obs = cabinDoorObstaclesForShip(ship);
+        const p = clampToShip(msg.x, msg.z, 0, obs);
+        me.x = p.x;
+        me.z = p.z;
+        const res = applyPrint(ship, me, msg.materialId, msg.x, msg.z);
+        if (!res.ok) return send(ws, { t: 'error', message: res.message });
+        store.save();
+        broadcast(ship.code, { t: 'shipState', ship: shipMeta(ship) });
+        send(ws, {
+          t: 'printComplete',
+          ok: true,
+          message: res.message,
+          refineryRefined: ship.refineryRefined!,
+          cargoHoldStock: ship.cargoHoldStock!,
+        });
+        break;
+      }
       case 'padArchive': {
         const res = applyPadArchive(me, msg.kind, msg.id);
         if (!res.ok) return send(ws, { t: 'error', message: res.message });
@@ -551,6 +585,7 @@ wss.on('connection', (ws) => {
     budgets.delete(mk);
     cancelScan(ship.code, pid);
     cancelTransport(ship.code, pid);
+    cancelRefine(ship.code, pid);
     const me = ship.members[pid];
     if (me && dropFormingMember(ship, pid)) {
       store.save();
@@ -617,12 +652,38 @@ setInterval(() => {
             skill: row.skill,
             leveledUp: row.leveledUp,
             scanResults: row.scanResults,
-            refineryStock: row.refineryStock,
+            refineryUnrefined: row.refineryUnrefined,
+            refineryRefined: row.refineryRefined,
             cargoHoldStock: row.cargoHoldStock,
           });
           broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
         }
         if (row.ok) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
+      }
+    }
+    const refined = finishDueRefines(ship, now);
+    if (refined.length) {
+      store.save();
+      for (const row of refined) {
+        const member = ship.members[row.memberId];
+        const peer = online.get(code)?.get(row.memberId);
+        if (peer && member) {
+          send(peer, {
+            t: 'refineComplete',
+            hit: row.hit,
+            skill: row.skill,
+            leveledUp: row.leveledUp,
+            message: row.message,
+            refineryUnrefined: row.refineryUnrefined,
+            refineryRefined: row.refineryRefined,
+            armoryStock: row.armoryStock,
+            medicalStock: row.medicalStock,
+            continued: row.continued,
+            endsAt: row.endsAt,
+          });
+          broadcast(code, { t: 'playerUpdated', player: toState(ship, member) }, row.memberId);
+        }
+        if (row.hit) broadcast(code, { t: 'shipState', ship: shipMeta(ship) });
       }
     }
   }

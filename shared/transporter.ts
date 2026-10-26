@@ -1,4 +1,11 @@
-import { RAW_MATERIALS, SHIP_MATERIALS, materialName } from './items';
+import {
+  LEGACY_UNREFINED_ID,
+  migrateUnrefinedMaterialId,
+  REFINED_MATERIALS,
+  SHIP_MATERIALS,
+  UNREFINED_MATERIALS,
+  materialName,
+} from './items';
 import { PROPS, SPACE_NAMES, floorTransporterTerminalMount, labTransporterPillarMount, questTerminalPosition } from './shipInterior';
 import type { Facing } from './shipLayout';
 import type { Job } from './protocol';
@@ -100,19 +107,33 @@ export function normalizeTransporterSkill(raw: unknown): TransporterSkill {
   return { level, positiveBeams };
 }
 
-const RAW_IDS = new Set(RAW_MATERIALS.map((m) => m.id));
+const UNREFINED_IDS = new Set(UNREFINED_MATERIALS.map((m) => m.id));
+const REFINED_IDS = new Set(REFINED_MATERIALS.map((m) => m.id));
 const SHIP_IDS = new Set(SHIP_MATERIALS.map((m) => m.id));
 
+/** Seed unrefined types (excludes seeds — scan loot only). */
+const REFINERY_SEED_UNREFINED = UNREFINED_MATERIALS.filter((m) => m.id !== 'seeds');
+
 /**
- * Starting qty per raw on a new ship. Seven types × 14 = 98 total, under {@link REFINERY_CAPACITY} (100).
- * (items.md still lists 20 each on the view-only panel copy; live stock uses this seed.)
+ * Starting qty per unrefined type on a new ship. Six types × 14 = 84 total, under {@link REFINERY_CAPACITY} (100).
  */
 export const REFINERY_START_PER_RAW = 14;
 
-export function defaultRefineryStock(): Record<string, number> {
+export function defaultRefineryUnrefinedStock(): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const m of RAW_MATERIALS) out[m.id] = REFINERY_START_PER_RAW;
+  for (const m of REFINERY_SEED_UNREFINED) out[m.id] = REFINERY_START_PER_RAW;
   return out;
+}
+
+export function defaultRefineryRefinedStock(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of REFINED_MATERIALS) out[m.id] = 0;
+  return out;
+}
+
+/** @deprecated Use {@link defaultRefineryUnrefinedStock}. */
+export function defaultRefineryStock(): Record<string, number> {
+  return defaultRefineryUnrefinedStock();
 }
 
 export function defaultCargoHoldStock(): Record<string, number> {
@@ -121,14 +142,69 @@ export function defaultCargoHoldStock(): Record<string, number> {
   return out;
 }
 
-export function normalizeRefineryStock(raw: unknown): Record<string, number> {
-  const out = defaultRefineryStock();
+export interface RefineryStocks {
+  unrefined: Record<string, number>;
+  refined: Record<string, number>;
+}
+
+export function normalizeRefineryUnrefinedStock(raw: unknown): Record<string, number> {
+  const out = defaultRefineryUnrefinedStock();
   if (raw && typeof raw === 'object') {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (RAW_IDS.has(k) && typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(0, Math.floor(v));
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const qty = Math.max(0, Math.floor(v));
+      const id = migrateUnrefinedMaterialId(k);
+      if (UNREFINED_IDS.has(id)) out[id] = qty;
+      else if (!REFINED_IDS.has(k) && !REFINED_IDS.has(id) && k in LEGACY_UNREFINED_ID) {
+        out[id] = qty;
+      }
     }
   }
   return out;
+}
+
+export function normalizeRefineryRefinedStock(raw: unknown): Record<string, number> {
+  const out = defaultRefineryRefinedStock();
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (REFINED_IDS.has(k) && typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(0, Math.floor(v));
+    }
+  }
+  return out;
+}
+
+/** Migrate legacy single `refineryStock` blob into unrefined + refined split. */
+export function splitLegacyRefineryStock(legacy: unknown, refinedRaw: unknown): RefineryStocks {
+  const unrefined = defaultRefineryUnrefinedStock();
+  const refined = normalizeRefineryRefinedStock(refinedRaw);
+  if (legacy && typeof legacy === 'object') {
+    for (const [k, v] of Object.entries(legacy as Record<string, unknown>)) {
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const qty = Math.max(0, Math.floor(v));
+      const migrated = migrateUnrefinedMaterialId(k);
+      if (UNREFINED_IDS.has(migrated)) unrefined[migrated] = qty;
+      else if (REFINED_IDS.has(k)) refined[k] = (refined[k] ?? 0) + qty;
+      else if (UNREFINED_IDS.has(k)) unrefined[k] = qty;
+    }
+  }
+  return { unrefined, refined };
+}
+
+/** @deprecated Use {@link normalizeRefineryUnrefinedStock}. */
+export function normalizeRefineryStock(raw: unknown): Record<string, number> {
+  return normalizeRefineryUnrefinedStock(raw);
+}
+
+export function refineryTotalUnits(unrefined: Record<string, number>, refined: Record<string, number>): number {
+  return stockTotal(unrefined) + stockTotal(refined);
+}
+
+export function refineryHasRoom(
+  unrefined: Record<string, number>,
+  refined: Record<string, number>,
+  addQty: number,
+): boolean {
+  return refineryTotalUnits(unrefined, refined) + addQty <= REFINERY_CAPACITY;
 }
 
 export function normalizeCargoHoldStock(raw: unknown): Record<string, number> {
@@ -145,9 +221,6 @@ export function stockTotal(stock: Record<string, number>): number {
   return Object.values(stock).reduce((sum, n) => sum + n, 0);
 }
 
-export function refineryHasRoom(stock: Record<string, number>, addQty: number): boolean {
-  return stockTotal(stock) + addQty <= REFINERY_CAPACITY;
-}
 
 export function cargoHoldHasRoom(stock: Record<string, number>, addQty: number): boolean {
   return stockTotal(stock) + addQty <= CARGO_HOLD_CAPACITY;
@@ -217,7 +290,11 @@ export function beamableLootForPad(
   if (scanContactAwayMissionStub(entry) && entry.outcome !== 'atmosphere') return [];
   if (pad.lootKind === 'raw' && entry.outcome !== 'atmosphere') return [];
   if (pad.lootKind === 'ship' && entry.outcome !== 'debris') return [];
-  return entry.loot.filter((l) => l.remaining > 0 && (pad.lootKind === 'raw' ? RAW_IDS.has(l.materialId) : SHIP_IDS.has(l.materialId)));
+  return entry.loot.filter((l) => {
+    if (l.remaining <= 0) return false;
+    const mid = migrateUnrefinedMaterialId(l.materialId);
+    return pad.lootKind === 'raw' ? UNREFINED_IDS.has(mid) : SHIP_IDS.has(l.materialId);
+  });
 }
 
 export function formatLootSummary(entry: ScanResultEntry): string {

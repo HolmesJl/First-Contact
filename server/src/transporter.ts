@@ -1,5 +1,5 @@
 import { inRange } from '../../shared/opening';
-import { materialName } from '../../shared/items';
+import { materialName, migrateUnrefinedMaterialId } from '../../shared/items';
 import { normalizeScanResults, type ScanResultEntry } from '../../shared/scanning';
 import {
   CARGO_HOLD_FULL_MESSAGE,
@@ -11,7 +11,6 @@ import {
   canStartLabTransporter,
   cargoHoldHasRoom,
   normalizeCargoHoldStock,
-  normalizeRefineryStock,
   normalizeTransporterSkill,
   refineryHasRoom,
   transporterStationById,
@@ -21,6 +20,7 @@ import {
   type TransporterSkill,
   LAB_TRANSPORTER_INTERACT_ID,
 } from '../../shared/transporter';
+import { getRefineryStocks, normalizeShipRefinery } from './refining';
 import type { MemberRecord, ShipRecord } from './store';
 
 const activeTransports = new Map<string, { shipCode: string; endsAt: number; padId: TransporterPadId; scanId: string; materialId: string; qty: number }>();
@@ -47,7 +47,7 @@ export function memberTransporterSkill(m: MemberRecord): TransporterSkill {
 }
 
 export function normalizeShipStocks(ship: ShipRecord) {
-  ship.refineryStock = normalizeRefineryStock(ship.refineryStock);
+  normalizeShipRefinery(ship);
   ship.cargoHoldStock = normalizeCargoHoldStock(ship.cargoHoldStock);
 }
 
@@ -94,12 +94,14 @@ export function applyTransportStart(
   const entry = ship.scanResults?.find((r) => r.id === scanId);
   if (!entry) return { ok: false, message: 'That contact is no longer on the log.' };
 
-  const lootLine = beamableLootForPad(pad, entry).find((l) => l.materialId === materialId);
+  const wantId = migrateUnrefinedMaterialId(materialId);
+  const lootLine = beamableLootForPad(pad, entry).find((l) => migrateUnrefinedMaterialId(l.materialId) === wantId);
   if (!lootLine || lootLine.remaining < beamQty) return { ok: false, message: 'Not enough material left at that contact.' };
 
   normalizeShipStocks(ship);
+  const stocks = getRefineryStocks(ship);
   if (pad.destination === 'refinery') {
-    if (!refineryHasRoom(ship.refineryStock!, beamQty)) return { ok: false, message: REFINERY_FULL_MESSAGE };
+    if (!refineryHasRoom(stocks.unrefined, stocks.refined, beamQty)) return { ok: false, message: REFINERY_FULL_MESSAGE };
   } else if (!cargoHoldHasRoom(ship.cargoHoldStock!, beamQty)) {
     return { ok: false, message: CARGO_HOLD_FULL_MESSAGE };
   }
@@ -123,7 +125,8 @@ export interface TransportCompletePayload {
   skill: TransporterSkill;
   leveledUp: boolean;
   scanResults: ScanResultEntry[];
-  refineryStock: Record<string, number>;
+  refineryUnrefined: Record<string, number>;
+  refineryRefined: Record<string, number>;
   cargoHoldStock: Record<string, number>;
 }
 
@@ -150,10 +153,12 @@ function completeTransportForMember(ship: ShipRecord, member: MemberRecord, row:
       message = 'Not enough material left at that contact.';
     } else {
       normalizeShipStocks(ship);
+      const stocks = getRefineryStocks(ship);
+      const beamId = migrateUnrefinedMaterialId(row.materialId);
       if (pad.destination === 'refinery') {
-        if (!refineryHasRoom(ship.refineryStock!, row.qty)) message = REFINERY_FULL_MESSAGE;
+        if (!refineryHasRoom(stocks.unrefined, stocks.refined, row.qty)) message = REFINERY_FULL_MESSAGE;
         else {
-          ship.refineryStock![row.materialId] = (ship.refineryStock![row.materialId] ?? 0) + row.qty;
+          stocks.unrefined[beamId] = (stocks.unrefined[beamId] ?? 0) + row.qty;
           ok = true;
         }
       } else if (!cargoHoldHasRoom(ship.cargoHoldStock!, row.qty)) {
@@ -180,7 +185,8 @@ function completeTransportForMember(ship: ShipRecord, member: MemberRecord, row:
     skill,
     leveledUp,
     scanResults: ship.scanResults ?? [],
-    refineryStock: ship.refineryStock!,
+    refineryUnrefined: ship.refineryUnrefined!,
+    refineryRefined: ship.refineryRefined!,
     cargoHoldStock: ship.cargoHoldStock!,
   };
 }

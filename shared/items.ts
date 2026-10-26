@@ -311,26 +311,75 @@ export interface MaterialDef {
   recipe?: { qty: number; of: string }[];
 }
 
-export const RAW_MATERIALS: readonly MaterialDef[] = [
-  { id: 'lithium', name: 'Lithium' },
-  { id: 'plastics', name: 'Plastics' },
-  { id: 'copper', name: 'Copper' },
-  { id: 'iron', name: 'Iron' },
-  { id: 'tin', name: 'Tin' },
+/** Beamed / unrefined stock in the Refinery (Lab transporter destination). */
+export const UNREFINED_MATERIALS: readonly MaterialDef[] = [
+  { id: 'lithium_bilge', name: 'Lithium Bilge' },
+  { id: 'tin_ore', name: 'Tin Ore' },
+  { id: 'iron_ore', name: 'Iron Ore' },
+  { id: 'copper_ore', name: 'Copper Ore' },
+  { id: 'plastic_resin', name: 'Plastic Resin' },
   { id: 'minerals', name: 'Minerals' },
   { id: 'seeds', name: 'Plant seeds' },
 ];
 
+/** Purified outputs in the Refinery (Printer / food inputs). */
+export const REFINED_MATERIALS: readonly MaterialDef[] = [
+  { id: 'lithium', name: 'Lithium' },
+  { id: 'tin', name: 'Tin' },
+  { id: 'iron', name: 'Iron' },
+  { id: 'copper', name: 'Copper' },
+  { id: 'plastics', name: 'Plastics' },
+  { id: 'trace_minerals', name: 'Trace Minerals' },
+];
+
+/** Macro minerals auto-routed from Minerals refine (not stored in Refined). */
+export const MACRO_MATERIALS: readonly MaterialDef[] = [
+  { id: 'phosphorus', name: 'Phosphorus' },
+  { id: 'sulfur', name: 'Sulfur' },
+  { id: 'chloride', name: 'Chloride' },
+  { id: 'sodium', name: 'Sodium' },
+];
+
+/** @deprecated Use {@link UNREFINED_MATERIALS} for transporter / refinery unrefined lists. */
+export const RAW_MATERIALS = UNREFINED_MATERIALS;
+
+/** Legacy saved ids → unrefined ids (pre–FC-2 refinery stock and scan loot). */
+export const LEGACY_UNREFINED_ID: Record<string, string> = {
+  lithium: 'lithium_bilge',
+  tin: 'tin_ore',
+  iron: 'iron_ore',
+  copper: 'copper_ore',
+  plastics: 'plastic_resin',
+};
+
+export function migrateUnrefinedMaterialId(id: string): string {
+  return LEGACY_UNREFINED_ID[id] ?? id;
+}
+
+/** 1:1 unrefined → refined (Minerals handled separately on the server). */
+export const UNREFINED_TO_REFINED: Record<string, string> = {
+  lithium_bilge: 'lithium',
+  tin_ore: 'tin',
+  iron_ore: 'iron',
+  copper_ore: 'copper',
+  plastic_resin: 'plastics',
+};
+
 export const SHIP_MATERIALS: readonly MaterialDef[] = [
   { id: 'paneling', name: 'Paneling', recipe: [{ qty: 2, of: 'plastics' }] },
-  { id: 'alloys', name: 'Alloys', recipe: [{ qty: 1, of: 'minerals' }, { qty: 1, of: 'tin' }, { qty: 1, of: 'iron' }] },
-  { id: 'cables', name: 'Cables', recipe: [{ qty: 1, of: 'plastics' }, { qty: 1, of: 'minerals' }] },
+  { id: 'alloys', name: 'Alloys', recipe: [{ qty: 1, of: 'copper' }, { qty: 1, of: 'tin' }, { qty: 1, of: 'iron' }] },
+  { id: 'cables', name: 'Cables', recipe: [{ qty: 1, of: 'plastics' }, { qty: 1, of: 'copper' }] },
   { id: 'struts', name: 'Struts', recipe: [{ qty: 1, of: 'plastics' }, { qty: 1, of: 'iron' }] },
-  { id: 'conduit', name: 'Conduit', recipe: [{ qty: 1, of: 'plastics' }, { qty: 1, of: 'tin' }, { qty: 1, of: 'minerals' }] },
+  { id: 'conduit', name: 'Conduit', recipe: [{ qty: 1, of: 'plastics' }, { qty: 1, of: 'tin' }, { qty: 1, of: 'copper' }] },
   { id: 'battery', name: 'Battery', recipe: [{ qty: 2, of: 'lithium' }] },
 ];
 
-export const materialName = (id: string) => RAW_MATERIALS.find((m) => m.id === id)?.name ?? SHIP_MATERIALS.find((m) => m.id === id)?.name ?? id;
+export const materialName = (id: string) =>
+  UNREFINED_MATERIALS.find((m) => m.id === id)?.name ??
+  REFINED_MATERIALS.find((m) => m.id === id)?.name ??
+  MACRO_MATERIALS.find((m) => m.id === id)?.name ??
+  SHIP_MATERIALS.find((m) => m.id === id)?.name ??
+  id;
 
 export function recipeText(m: MaterialDef) {
   return (m.recipe ?? []).map((r) => `${r.qty}x ${materialName(r.of)}`).join(' + ');

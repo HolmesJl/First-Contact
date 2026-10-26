@@ -135,8 +135,14 @@ export interface ShipMeta {
   cabinDoor: CabinDoorState;
   /** Ship-wide item and material counts by id (Eatery food, Cargo Hold armor, printer and refinery materials). */
   stock: Record<string, number>;
-  /** Raw materials in the refinery (beamed from atmosphere finds). */
-  refineryStock: Record<string, number>;
+  /** Unrefined materials in the refinery (beamed from atmosphere finds). */
+  refineryUnrefined: Record<string, number>;
+  /** Refined materials ready for the Printer. */
+  refineryRefined: Record<string, number>;
+  /** Macro minerals in Armory storage (auto-routed from refine). */
+  armoryStock: Record<string, number>;
+  /** Macro minerals in Medical Bay storage (auto-routed from refine). */
+  medicalStock: Record<string, number>;
   /** Ship materials in the cargo hold (beamed from debris finds). */
   cargoHoldStock: Record<string, number>;
   scanResults: ScanResultEntry[];
@@ -202,7 +208,11 @@ export interface PlayerState {
   padArchive: PadArchiveItem[];
   /** Quest 2 progress, or null until the pad issues it on the Bridge. */
   scavenger: ScavengerState | null;
-  skills: { scanning: ScanningSkill; transporter: import('./transporter').TransporterSkill };
+  skills: {
+    scanning: ScanningSkill;
+    transporter: import('./transporter').TransporterSkill;
+    engineer: import('./refining').EngineerSkill;
+  };
 }
 
 /** [id, x, z, rot, moving] */
@@ -239,6 +249,9 @@ export type ClientMsg =
   | { t: 'scanStart'; x: number; z: number }
   /** Beam material from a scan contact at a transporter pad. */
   | { t: 'transportStart'; padId: string; scanId: string; materialId: string; qty: number; x: number; z: number }
+  | { t: 'refineStart'; materialId: string; mode: 'one' | 'all'; x: number; z: number }
+  | { t: 'refineCancel'; x: number; z: number }
+  | { t: 'printStart'; materialId: string; x: number; z: number }
   /** Move an active datapad entry into the bunk archive. */
   | { t: 'padArchive'; kind: import('./datapad').PadArchiveKind; id: string }
   /** Captain starts warp to a scan contact from the helm console. */
@@ -317,9 +330,25 @@ export type ServerMsg =
       skill: import('./transporter').TransporterSkill;
       leveledUp: boolean;
       scanResults: ScanResultEntry[];
-      refineryStock: Record<string, number>;
+      refineryUnrefined: Record<string, number>;
+      refineryRefined: Record<string, number>;
       cargoHoldStock: Record<string, number>;
     }
+  | { t: 'refineProgress'; endsAt: number }
+  | {
+      t: 'refineComplete';
+      hit: boolean;
+      skill: import('./refining').EngineerSkill;
+      leveledUp: boolean;
+      message?: string;
+      refineryUnrefined: Record<string, number>;
+      refineryRefined: Record<string, number>;
+      armoryStock: Record<string, number>;
+      medicalStock: Record<string, number>;
+      continued?: boolean;
+      endsAt?: number;
+    }
+  | { t: 'printComplete'; ok: boolean; message?: string; refineryRefined: Record<string, number>; cargoHoldStock: Record<string, number> }
   | { t: 'helmProgress'; endsAt: number; mode: 'warp' | 'f-warp' }
   | { t: 'helmComplete'; scanId: string; scanResults: ScanResultEntry[] };
 
@@ -455,6 +484,17 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (typeof m.id !== 'string' || !m.id) return null;
       return { t: 'padArchive', kind, id: m.id };
     }
+    case 'refineStart':
+      if (typeof m.materialId !== 'string' || (m.mode !== 'one' && m.mode !== 'all')) return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'refineStart', materialId: m.materialId, mode: m.mode, x: m.x as number, z: m.z as number };
+    case 'refineCancel':
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'refineCancel', x: m.x as number, z: m.z as number };
+    case 'printStart':
+      if (typeof m.materialId !== 'string') return null;
+      if (![m.x, m.z].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+      return { t: 'printStart', materialId: m.materialId, x: m.x as number, z: m.z as number };
     default:
       return null;
   }

@@ -17,6 +17,7 @@
     "smoke:scan": "tsx tools/scan-smoke.ts",
     "smoke:helm": "tsx tools/helm-smoke.ts",
     "smoke:transport": "tsx tools/transport-smoke.ts",
+    "smoke:refine": "tsx tools/refine-smoke.ts",
     "smoke:datapad": "tsx tools/datapad-smoke.ts",
     "smoke:transporter-pick": "tsx tools/transporter-pick-smoke.ts",
     "smoke:transporter-dialog": "tsx tools/transporter-dialog-smoke.ts",
